@@ -15,18 +15,34 @@ import { serveMcp } from '../src/mcp.mjs';
 import { startDashboard } from '../src/server.mjs';
 import { createAutomaticRouter, validateModelMap } from '../src/automatic.mjs';
 
-const help=`The Effort Project · 0.1.0\nLocal effort decisions, with evidence you can inspect.\n\n  effort doctor [--json]\n  effort recommend "task" [--provider codex|claude|generic] [--cwd path] [--json]\n  effort run "task" --provider codex|claude --cwd path [--allow-write]\n    [--verify '["node","--test"]'] [--max-attempts 3] [--timeout 120]\n    [--effort auto|low|medium|high] [--max-effort high] [--model model-id]\n    [--prompt-file path] [--dry-run] [--json]\n  effort auto codex|claude [--cwd path] [--effort auto|low|medium|high]\n    [--min-effort low] [--max-effort high] [--model model-id]\n    [--routing-config path] [--dry-run] [--allow-write (Claude only)]\n  effort dashboard [--port 0]\n  effort history [--json]\n  effort mcp\n  effort config codex|claude|opencode\n\nAuto Codex: normal Codex terminal UI through an experimental local router.\nAuto Claude: Effort's text session, resuming Claude Code between prompts.\nAuto selects before each user turn; fixed --effort and --model override routing.\nOpenCode: config opencode prints a native plugin module; see docs/automatic.md.\nManaged runs use your installed, signed-in provider CLI and its billed access.\nRun/Claude defaults: read-only, 120 seconds per task/turn, high effort ceiling.\nAuto Codex preserves the official interface's sandbox and approval settings.\n--allow-write permits provider-constrained edits. Verification is your explicitly\nchosen local command; it is NOT sandboxed by Effort. Review it before running.\nWithout --verify a completed task is UNVERIFIED and never auto-retried.\nDesktop MCP offers advice; it cannot change the host chat's effort.\nPrompts, code, responses and test output are not stored by Effort. Provider CLIs\nhave their own storage policies. EFFORT_DATA_DIR changes the metadata directory.\n`;
+const help=`The Effort Project · 0.1.0\nLocal effort decisions, with evidence you can inspect.\n\n  effort doctor [--json]\n  effort recommend "task" [--provider codex|claude|generic] [--cwd path] [--json]\n  effort run "task" --provider codex|claude --cwd path [--allow-write]\n    [--max-attempts 3] [--timeout 120]\n    [--effort auto|low|medium|high] [--max-effort high] [--model model-id]\n    [--prompt-file path] [--dry-run] [--json] [-- verification command]\n  effort auto codex|claude [--cwd path] [--effort auto|low|medium|high]\n    [--min-effort low] [--max-effort high] [--model model-id]\n    [--routing-config path] [--dry-run] [--allow-write (Claude only)]\n  effort dashboard [--port 0]\n  effort history [--json]\n  effort mcp\n  effort config codex|claude|opencode\n\nAuto Codex: normal Codex terminal UI through an experimental local router.\nAuto Claude: Effort's text session, resuming Claude Code between prompts.\nAuto selects before each user turn; fixed --effort and --model override routing.\nOpenCode: config opencode prints a native plugin module; see docs/automatic.md.\nManaged runs use your installed, signed-in provider CLI and its billed access.\nRun/Claude defaults: read-only, 120 seconds per task/turn, high effort ceiling.\nAuto Codex preserves the official interface's sandbox and approval settings.\n--allow-write permits provider-constrained edits. Verification is your explicitly\nchosen local command; it is NOT sandboxed by Effort. Review it before running.\nPut it last, after --: effort run "task" --provider codex -- node --test\nIn PowerShell, quote the separator: '--'. The JSON form --verify '["node","--test"]'\nstill works where your shell keeps the inner quotes.\nWithout a verification command a completed task is UNVERIFIED and never auto-retried.\nDesktop MCP offers advice; it cannot change the host chat's effort.\nPrompts, code, responses and test output are not stored by Effort. Provider CLIs\nhave their own storage policies. EFFORT_DATA_DIR changes the metadata directory.\n`;
 const controller=new AbortController();
 function handleCancellation(){process.once('SIGINT',()=>controller.abort());process.once('SIGTERM',()=>controller.abort());}
 function number(value,fallback){if(value===undefined)return fallback;const n=Number(value);if(!Number.isFinite(n))throw new Error('Numeric option is invalid.');return n;}
 function print(data,json){process.stdout.write((json?JSON.stringify(data,null,2):String(data))+'\n');}
+const separatorHint=`In PowerShell, a bare -- can be removed before Effort sees it; quote it as '--'.`;
+// Windows PowerShell 5.1 strips the inner quotes of '["node","--test"]', so the
+// command after -- is the portable form. JSON remains for existing scripts.
+function verification(json,argv){
+  if(json!==undefined&&argv!==undefined)throw new Error('Give the verification command once: after -- or with --verify, not both.');
+  if(argv!==undefined){if(!argv.length)throw new Error('Put the verification command after --, for example: -- node --test');return argv;}
+  if(json===undefined)return undefined;
+  let parsed;try{parsed=JSON.parse(json);}catch{}
+  if(!Array.isArray(parsed)||!parsed.length||parsed.some(x=>typeof x!=='string'))throw new Error(`--verify expects a JSON array of strings such as ["node","--test"], but received ${JSON.stringify(json.slice(0,80))}. If your shell removed the inner quotes (Windows PowerShell 5.1 does), put the command last, after -- instead: effort run "task" --provider codex -- node --test. ${separatorHint}`);
+  return parsed;
+}
 async function main(){
-  const {values,positionals}=parseArgs({allowPositionals:true,strict:true,options:{
+  const {values,tokens}=parseArgs({allowPositionals:true,strict:true,tokens:true,options:{
     help:{type:'boolean',short:'h'},version:{type:'boolean'},json:{type:'boolean'},provider:{type:'string'},cwd:{type:'string'},model:{type:'string'},effort:{type:'string'},'min-effort':{type:'string'},'max-effort':{type:'string'},'routing-config':{type:'string'},'allow-write':{type:'boolean'},verify:{type:'string'},'max-attempts':{type:'string'},timeout:{type:'string'},port:{type:'string'},'prompt-file':{type:'string'},'dry-run':{type:'boolean'}
   }});
+  // Everything after -- is the verification argv, passed literally to verification.
+  const terminator=tokens.find(token=>token.kind==='option-terminator');
+  const positionals=tokens.filter(token=>token.kind==='positional'&&!(terminator&&token.index>terminator.index)).map(token=>token.value);
+  const verifyArgv=terminator?tokens.filter(token=>token.kind==='positional'&&token.index>terminator.index).map(token=>token.value):undefined;
   const command=positionals[0];
   if(values.version)return print('0.1.0');
   if(values.help||!command)return print(help);
+  if(verifyArgv!==undefined&&!['run','auto'].includes(command))throw new Error('Only effort run accepts a verification command after --.');
   if(command==='mcp'){serveMcp();return;}
   if(command==='doctor'){
     const checks=['codex','claude'].map(name=>{const r=spawnSync(name,['--version'],{encoding:'utf8',timeout:5000,windowsHide:true,shell:false});return {provider:name,installed:!r.error&&r.status===0,version:r.status===0?r.stdout.trim().slice(0,150):null,authenticated:'not checked',liveTest:'not performed'};});
@@ -42,7 +58,7 @@ async function main(){
   if(command==='auto'){
     const provider=positionals[1]??values.provider;
     if(!['codex','claude'].includes(provider))throw new Error('Use effort auto codex or effort auto claude.');
-    if(values.json||values.verify||values['max-attempts']||values['prompt-file']||positionals.length>2)throw new Error('Auto is interactive. Use effort run for a single task, JSON output, or verification/retries.');
+    if(values.json||values.verify!==undefined||verifyArgv!==undefined||values['max-attempts']||values['prompt-file']||positionals.length>2)throw new Error('Auto is interactive. Use effort run for a single task, JSON output, or verification/retries.');
     if(provider==='codex'&&(values['allow-write']||values.timeout))throw new Error('Auto Codex uses the official terminal UI permissions and cancellation controls. Do not pass --allow-write or --timeout.');
     const cwd=resolve(values.cwd??process.cwd());
     if(!(await stat(cwd)).isDirectory())throw new Error('Workspace is not a directory.');
@@ -109,7 +125,9 @@ async function main(){
     if(!values.provider)throw new Error('Choose --provider codex or claude explicitly.');
     handleCancellation();
     const adapter=getAdapter(values.provider);
-    const options={prompt,cwd,model:values.model,effort:values.effort??'auto',maxEffort:values['max-effort']??'high',allowWrite:values['allow-write']??false,maxAttempts:number(values['max-attempts'],3),timeoutMs:number(values.timeout,120)*1000,verify:values.verify?JSON.parse(values.verify):undefined,signal:controller.signal};
+    const options={prompt,cwd,model:values.model,effort:values.effort??'auto',maxEffort:values['max-effort']??'high',allowWrite:values['allow-write']??false,maxAttempts:number(values['max-attempts'],3),timeoutMs:number(values.timeout,120)*1000,verify:verification(values.verify,verifyArgv),signal:controller.signal};
+    // A shim can drop a bare -- in PowerShell, turning the command into extra task words.
+    if(process.platform==='win32'&&!options.verify&&!values['prompt-file']&&positionals.length>2)process.stderr.write(`[effort] The task arrived as ${positionals.length-1} separate words and no verification command was given. ${separatorHint}\n`);
     if(values['dry-run']){
       const recommendation=recommend({prompt,provider:values.provider,facts:await repositoryFacts(cwd,prompt),maxEffort:options.maxEffort});
       return print({provider:values.provider,model:values.model??'provider default',effort:options.effort==='auto'?recommendation.effort:options.effort,allowWrite:options.allowWrite,verification:options.verify??null,maxAttempts:options.maxAttempts,timeoutMs:options.timeoutMs,willExecute:false,recommendation},true);
@@ -135,4 +153,4 @@ async function main(){
   }
   throw new Error(`Unknown command: ${command}. Use effort --help.`);
 }
-main().catch(e=>{process.stderr.write(`effort: ${e.message}\n`);process.exitCode=1;});
+main().catch(e=>{process.stderr.write(`effort: ${e.message}${e.code==='ERR_PARSE_ARGS_UNKNOWN_OPTION'&&process.platform==='win32'?` ${separatorHint}`:''}\n`);process.exitCode=1;});

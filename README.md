@@ -62,12 +62,18 @@ To permit constrained code edits and check a Node project:
 
 ```sh
 effort run "Fix the failing sum test" --provider codex --cwd /path/to/project \
-  --allow-write --verify '["node","--test"]' --max-attempts 3 --timeout 180
+  --allow-write --max-attempts 3 --timeout 180 -- node --test
+```
+
+Everything after `--` is the verification command. Put it last. In PowerShell, quote the separator, because PowerShell removes a bare `--` when `effort` runs through npm's `effort.ps1` shim:
+
+```powershell
+effort run "Fix the failing sum test" --provider codex --cwd . --allow-write '--' node --test
 ```
 
 Use `--provider claude` for Claude Code. Its adapter allows restricted file edits; it does not give the model a general shell. The verification command runs separately.
 
-**Verification is a local executable and argument array, not a shell string. It runs with your normal user privileges, outside the provider sandbox. Only supply commands you trust.** On shells with different quoting rules, pass the JSON array with that shell's standard quoting. `--prompt-file path` avoids long prompt arguments. `--dry-run` prints a plan without starting a provider.
+**Verification is a local executable and argument array, not a shell string. It runs with your normal user privileges, outside the provider sandbox. Only supply commands you trust.** Effort passes the arguments after `--` literally, without a shell. The older JSON form, `--verify '["node","--test"]'`, still works in shells that keep the inner quotes; Windows PowerShell 5.1 removes them, so use `--` there. `--prompt-file path` avoids long prompt arguments. `--dry-run` prints a plan without starting a provider.
 
 The defaults are three attempts, 120 seconds total, and a `high` ceiling. Use `--effort low` to override the initial recommendation, `--max-effort medium` to set a lower ceiling, or `--model` to choose a model explicitly. Supported levels are checked by adapters; an unsupported model/effort is not silently replaced. There is no universal dollar cap: timeout, attempt, and effort bounds limit activity, but do not guarantee a final bill.
 

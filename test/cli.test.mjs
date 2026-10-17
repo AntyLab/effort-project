@@ -35,3 +35,54 @@ test('a polyglot checkout does not raise a short mechanical recommendation', asy
   assert.match(text.stdout, /^LOW · heuristic recommendation/);
   assert.match(f.invoke(['recommend', 'Add a settings page', '--cwd', f.cwd]).stdout, /^HIGH /);
 });
+
+test('the verification command can follow -- and the JSON form still works', async (t) => {
+  const f = await fixture(t);
+  const plan = (args) => {
+    const result = f.invoke(['run', 'Fix the sum test', '--provider', 'codex', '--cwd', f.cwd, '--dry-run', ...args]);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.stderr, '');
+    return JSON.parse(result.stdout);
+  };
+  const separated = plan(['--', 'node', '--test', '--test-reporter=tap', 'a b.test.mjs']);
+  assert.deepEqual(separated.verification, ['node', '--test', '--test-reporter=tap', 'a b.test.mjs']);
+  assert.equal(separated.recommendation.features.promptCharacters, 'Fix the sum test'.length);
+  assert.equal(separated.willExecute, false);
+  assert.deepEqual(plan(['--verify', '["node","--test"]']).verification, ['node', '--test']);
+  assert.equal(plan([]).verification, null);
+});
+
+test('invalid verification input fails with guidance before any provider starts', async (t) => {
+  const f = await fixture(t);
+  const run = (...args) => f.invoke(['run', 'Fix the sum test', '--provider', 'codex', '--cwd', f.cwd, ...args]);
+  const failure = (result, message) => {
+    assert.equal(result.status, 1, result.stdout || result.stderr);
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, message);
+    assert.doesNotMatch(result.stderr, /SyntaxError|Unexpected token/);
+  };
+  // Windows PowerShell 5.1 delivers '["node","--test"]' as [node,--test].
+  const mangled = run('--verify', '[node,--test]');
+  failure(mangled, /--verify expects a JSON array of strings/);
+  assert.match(mangled.stderr, /after -- instead/);
+  failure(run('--verify', '"node --test"'), /JSON array of strings/);
+  failure(run('--verify', '[]'), /JSON array of strings/);
+  failure(run('--verify', '["node"]', '--', 'node'), /not both/);
+  failure(run('--'), /after --, for example/);
+  failure(f.invoke(['recommend', 'Fix the sum test', '--', 'node', '--test']), /Only effort run/);
+  // No provider was resolved or launched, and nothing was recorded.
+  failure(run('--verify', '[node,--test]', '--dry-run'), /JSON array/);
+});
+
+test('Windows explains a separator removed by the PowerShell shim', { skip: process.platform !== 'win32' }, async (t) => {
+  const f = await fixture(t);
+  // What effort.ps1 delivers for: effort run "task" --provider codex -- node --test
+  const unknown = f.invoke(['run', 'Fix the sum test', '--provider', 'codex', 'node', '--test']);
+  assert.equal(unknown.status, 1);
+  assert.match(unknown.stderr, /Unknown option '--test'.*quote it as '--'/);
+  // ...and for: effort run "task" --provider codex -- npm test
+  const merged = f.invoke(['run', 'Fix the sum test', '--provider', 'codex', '--cwd', f.cwd, '--dry-run', 'npm', 'test']);
+  assert.equal(merged.status, 0, merged.stderr);
+  assert.match(merged.stderr, /3 separate words and no verification command.*quote it as '--'/);
+  assert.equal(JSON.parse(merged.stdout).verification, null);
+});

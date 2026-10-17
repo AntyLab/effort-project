@@ -82,7 +82,7 @@ test('invalid bounds, fixed models, and Claude execution settings fail even in d
 test('single-task flags and provider-specific permission flags cannot silently change auto behavior', async (t) => {
   const f = await fixture(t);
   for (const args of [
-    ['claude', '--json'], ['claude', '--verify', '["node","--test"]'],
+    ['claude', '--json'], ['claude', '--verify', '["node","--test"]'], ['claude', '--', 'node', '--test'],
     ['claude', '--max-attempts', '2'], ['claude', '--prompt-file', 'task.txt'],
     ['claude', 'a hidden one-shot prompt'], ['codex', '--allow-write'], ['codex', '--timeout', '5'],
     ['unsupported-provider'],
