@@ -1,0 +1,4 @@
+# Benchmark output (runs.jsonl, meta.json, summary.md, charts). Commit a result
+# deliberately with `git add -f` if you want to publish it.
+*
+!.gitignore
