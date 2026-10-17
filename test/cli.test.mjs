@@ -72,7 +72,10 @@ test('a polyglot checkout does not raise a short mechanical recommendation', asy
   assert.equal(JSON.parse(json.stdout).effort, 'low');
   const text = f.invoke(['recommend', 'Fix the typo in the README', '--cwd', f.cwd]);
   assert.match(text.stdout, /^LOW · heuristic recommendation/);
-  assert.match(f.invoke(['recommend', 'Add a settings page', '--cwd', f.cwd]).stdout, /^HIGH /);
+  // The language count describes the checkout, so ordinary requests stay at medium.
+  for (const task of ['Add a settings page', 'Bump the version number in package.json', 'Change the button color from blue to green']) {
+    assert.match(f.invoke(['recommend', task, '--cwd', f.cwd]).stdout, /^MEDIUM /, task);
+  }
 });
 
 test('the verification command can follow -- and the JSON form still works', async (t) => {

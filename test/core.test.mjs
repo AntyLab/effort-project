@@ -15,12 +15,14 @@ test('unknown tasks remain uncertain and mechanical requests can start low',()=>
   assert.equal(recommend({prompt:'Rename the authentication token and migrate all permissions'}).effort,'high');
   assert.equal(recommend({prompt:'Investigate a race condition'}).confidence,'low');
 });
-test('repository breadth raises uncertain requests one level but never a narrow mechanical one',()=>{
+test('the checkout language count is informational; only files the request names raise effort',()=>{
   const languages=['javascript','python','typescript'];
   assert.equal(recommend({prompt:'Fix the typo in the README',facts:{languages,mentionedFiles:0}}).effort,'low');
-  assert.equal(recommend({prompt:'Add a settings page',facts:{languages:['python']}}).effort,'medium');
-  assert.equal(recommend({prompt:'Add a settings page',facts:{languages}}).effort,'high');
-  assert.equal(recommend({prompt:'Add a settings page',facts:{languages},maxEffort:'medium'}).effort,'medium');
+  for(const prompt of ['Add a settings page','Fix the broken link in the README','Bump the version number in package.json','Change the button color from blue to green']){
+    const result=recommend({prompt,facts:{languages,mentionedFiles:1}});
+    assert.equal(result.effort,'medium',prompt);assert.equal(result.features.manyLanguages,true);
+    assert.ok(result.reasons.some(reason=>/several languages/.test(reason)),prompt);
+  }
   // Naming many files makes even a mechanical edit broad.
   const broad=recommend({prompt:'Rename the helper in a.ts b.ts c.ts d.ts e.ts',facts:{mentionedFiles:5}});
   assert.equal(broad.effort,'high');assert.equal(broad.features.broadEdit,true);
@@ -135,13 +137,22 @@ test('repository metadata skips dependencies, dotfiles and symlink targets',asyn
   const facts=await repositoryFacts(dir,'Change main.py');
   assert.deepEqual(facts.languages,['python']);assert.equal(facts.scannedFiles,1);assert.equal(facts.mentionedFiles,1);
 });
-test('repository metadata counts each mentioned file name once',async()=>{
+test('repository metadata counts distinct mentioned files: by path, or once per bare name',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'effort-mentions-'));
   await writeFile(join(dir,'index.ts'),'x');
   for(const sub of ['a','b','c','d']){await mkdir(join(dir,sub));await writeFile(join(dir,sub,'index.ts'),'x');}
   await writeFile(join(dir,'util.ts'),'x');
   assert.equal((await repositoryFacts(dir,'Fix the import in index.ts')).mentionedFiles,1);
   assert.equal((await repositoryFacts(dir,'Move util.ts into index.ts')).mentionedFiles,2);
+  assert.equal((await repositoryFacts(dir,'Compare a/index.ts with index.ts')).mentionedFiles,2);
+  // Five files that share a basename are five files when the prompt names their paths.
+  const packages=await mkdtemp(join(tmpdir(),'effort-packages-'));
+  for(const name of ['a','b','c','d','e']){await mkdir(join(packages,'packages',name),{recursive:true});await writeFile(join(packages,'packages',name,'index.ts'),'x');}
+  const prompt='Export the new helper from packages/a/index.ts, packages/b/index.ts, packages\\c\\index.ts, packages/d/index.ts and packages/e/index.ts';
+  const facts=await repositoryFacts(packages,prompt);
+  assert.equal(facts.mentionedFiles,5);
+  assert.equal(recommend({prompt,facts}).effort,'high');
+  assert.equal((await repositoryFacts(packages,'Export the helper from every index.ts')).mentionedFiles,1);
 });
 test('store rejects traversal, symlink records and malformed files',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'effort-store-'));const store=await new Store(dir).initialize();
