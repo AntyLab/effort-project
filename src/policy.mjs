@@ -1,4 +1,4 @@
-export const POLICY_VERSION = 'rules-0.1';
+export const POLICY_VERSION = 'rules-0.2';
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
 export function validateLevel(level) {
@@ -14,20 +14,30 @@ export function recommend({ prompt, provider = 'generic', facts = {}, maxEffort 
   const critical = /\b(auth(?:entication|orization)?|permission|cryptograph\w*|encrypt\w*|payment|migration|race condition|deadlock|data loss|security|vulnerability)\b/i.test(prompt);
   const complex = /\b(architect\w*|investigate|diagnos\w*|refactor|concurren\w*|intermittent|distributed|across|root cause|regression|debug)\b/i.test(prompt);
   const mechanical = /\b(rename|typo|spelling|format|translate|summarize|capitaliz\w*)\b/i.test(prompt) && prompt.length < 350;
-  const repoComplex = Number(facts.languages?.length) >= 3 || Number(facts.mentionedFiles) >= 5;
-  let effort = critical || complex ? 'high' : mechanical && !repoComplex ? 'low' : 'medium';
+  // Repository breadth is weak evidence about one request. Naming five or more
+  // workspace files makes an edit broad; several languages only describe the checkout.
+  const broadEdit = Number(facts.mentionedFiles) >= 5;
+  const manyLanguages = Number(facts.languages?.length) >= 3;
+  const narrow = mechanical && !broadEdit;
+  let effort = critical || complex ? 'high' : narrow ? 'low' : 'medium';
   const reasons = [];
   if (critical) reasons.push('The request touches behavior where an incorrect change can be costly.');
   if (complex) reasons.push('The request suggests investigation or changes with interacting parts.');
-  if (mechanical && !critical && !complex) reasons.push('The request appears short and mechanical; verify the result before accepting it.');
-  if (repoComplex) { effort = 'high'; reasons.push('Available repository metadata suggests several languages or affected files.'); }
+  if (narrow && !critical && !complex) reasons.push('The request appears short and mechanical; verify the result before accepting it.');
+  // Breadth raises at most one level, never past high, and never overrides a narrow mechanical request.
+  if ((broadEdit || manyLanguages) && !narrow && LEVELS.indexOf(effort) < LEVELS.indexOf('high')) {
+    const raised = LEVELS[LEVELS.indexOf(effort) + 1];
+    const evidence = [broadEdit && 'the request names five or more workspace files', manyLanguages && 'the workspace contains several languages'].filter(Boolean).join(' and ');
+    reasons.push(`Repository breadth raised ${effort} to ${raised}: ${evidence}.`);
+    effort = raised;
+  } else if (manyLanguages && narrow && !critical && !complex) reasons.push('Several workspace languages do not by themselves raise a short mechanical request.');
   if (!reasons.length) reasons.push('Difficulty is uncertain; start at medium and use an independent check.');
   const unclamped = effort;
   const index = Math.max(LEVELS.indexOf(minEffort), Math.min(LEVELS.indexOf(maxEffort), LEVELS.indexOf(effort)));
   effort = LEVELS[index];
   if (effort !== unclamped) reasons.push(`Your configured effort bounds changed ${unclamped} to ${effort}.`);
   return { effort, reasons, policyVersion: POLICY_VERSION, confidence: 'low',
-    features: { promptCharacters: prompt.length, critical, complex, mechanical, repositoryComplex: repoComplex },
+    features: { promptCharacters: prompt.length, critical, complex, mechanical, broadEdit, repositoryComplex: broadEdit || manyLanguages },
     control: provider === 'generic' ? 'advisory' : 'managed-turns',
     caveat: 'A transparent heuristic, not a trained difficulty model or a measured quality guarantee.' };
 }

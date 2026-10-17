@@ -3,7 +3,7 @@
 The first release has five small components: a deterministic policy, provider adapters, a verification-driven runner, a local metadata store, and two interfaces (CLI/dashboard and advisory MCP). No model is trained. There is no background watcher or global effort override.
 
 1. Collect bounded metadata from the selected workspace without reading file contents or following symlinks. Prompt features stay local until a managed run sends the prompt to the chosen provider.
-2. Recommend low/medium/high using visible rules. Unknown tasks start at medium. Respect explicit bounds and provider capabilities.
+2. Recommend low/medium/high using visible rules. Unknown tasks start at medium. Repository breadth can raise a request one level, never past high: naming five or more distinct workspace files marks a broad edit, and three or more languages can raise an otherwise uncertain request. Languages alone never raise a short mechanical request. Respect explicit bounds and provider capabilities.
 3. Start a provider turn with a real effort parameter. Capture completion and supported usage fields.
 4. Run the user's explicit verification command, if any. Without one, label completion unverified.
 5. Stop on access, permission, environment, timeout, or unknown failures. Recognized failed tests can prompt a focused retry. Repeated matching failures can increase effort on a resumed turn, within total-time and attempt limits.

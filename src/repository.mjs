@@ -7,7 +7,7 @@ export async function repositoryFacts(cwd, prompt = '') {
   const root = resolve(cwd);
   if (!(await lstat(root)).isDirectory()) throw new Error('Workspace must be a directory.');
   const start = performance.now();
-  const languages = new Set(); let files = 0, mentionedFiles = 0, hasTests = false, truncated = false;
+  const languages = new Set(), mentioned = new Set(); let files = 0, hasTests = false, truncated = false;
   async function walk(dir, depth) {
     if (files >= 500 || performance.now() - start > 50) { truncated = true; return; }
     for (const e of await readdir(dir, { withFileTypes: true })) {
@@ -21,9 +21,10 @@ export async function repositoryFacts(cwd, prompt = '') {
       const lang = ({'.js':'javascript','.mjs':'javascript','.ts':'typescript','.tsx':'typescript','.py':'python','.swift':'swift','.rs':'rust','.go':'go','.java':'java','.cpp':'cpp','.c':'c'})[extension];
       if (lang) languages.add(lang);
       if (/test|spec/i.test(relative(root, path))) hasTests = true;
-      if (prompt.includes(e.name)) mentionedFiles++;
+      // A name counts once: five index.ts files are still one mentioned file.
+      if (prompt.includes(e.name)) mentioned.add(e.name);
     }
   }
   await walk(root, 0);
-  return { languages: [...languages].sort(), scannedFiles: files, mentionedFiles, hasTests, truncated };
+  return { languages: [...languages].sort(), scannedFiles: files, mentionedFiles: mentioned.size, hasTests, truncated };
 }

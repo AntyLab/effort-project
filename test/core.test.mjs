@@ -15,6 +15,19 @@ test('unknown tasks remain uncertain and mechanical requests can start low',()=>
   assert.equal(recommend({prompt:'Rename the authentication token and migrate all permissions'}).effort,'high');
   assert.equal(recommend({prompt:'Investigate a race condition'}).confidence,'low');
 });
+test('repository breadth raises uncertain requests one level but never a narrow mechanical one',()=>{
+  const languages=['javascript','python','typescript'];
+  assert.equal(recommend({prompt:'Fix the typo in the README',facts:{languages,mentionedFiles:0}}).effort,'low');
+  assert.equal(recommend({prompt:'Add a settings page',facts:{languages:['python']}}).effort,'medium');
+  assert.equal(recommend({prompt:'Add a settings page',facts:{languages}}).effort,'high');
+  assert.equal(recommend({prompt:'Add a settings page',facts:{languages},maxEffort:'medium'}).effort,'medium');
+  // Naming many files makes even a mechanical edit broad.
+  const broad=recommend({prompt:'Rename the helper in a.ts b.ts c.ts d.ts e.ts',facts:{mentionedFiles:5}});
+  assert.equal(broad.effort,'high');assert.equal(broad.features.broadEdit,true);
+  // Breadth never pushes past high, even when the caller allows more.
+  assert.equal(recommend({prompt:'Investigate the race condition',facts:{languages,mentionedFiles:9},maxEffort:'max'}).effort,'high');
+  assert.equal(recommend({prompt:'Add a settings page',facts:{languages,mentionedFiles:9},maxEffort:'max'}).effort,'high');
+});
 test('explicit caps and invalid inputs are respected',()=>{
   assert.equal(recommend({prompt:'Investigate concurrency',maxEffort:'medium'}).effort,'medium');
   for(const prompt of ['',null,{},'x'.repeat(100001)])assert.throws(()=>recommend({prompt}));
@@ -40,6 +53,14 @@ test('repository metadata skips dependencies, dotfiles and symlink targets',asyn
   if(process.platform!=='win32')await symlink(tmpdir(),join(dir,'linked'));
   const facts=await repositoryFacts(dir,'Change main.py');
   assert.deepEqual(facts.languages,['python']);assert.equal(facts.scannedFiles,1);assert.equal(facts.mentionedFiles,1);
+});
+test('repository metadata counts each mentioned file name once',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'effort-mentions-'));
+  await writeFile(join(dir,'index.ts'),'x');
+  for(const sub of ['a','b','c','d']){await mkdir(join(dir,sub));await writeFile(join(dir,sub,'index.ts'),'x');}
+  await writeFile(join(dir,'util.ts'),'x');
+  assert.equal((await repositoryFacts(dir,'Fix the import in index.ts')).mentionedFiles,1);
+  assert.equal((await repositoryFacts(dir,'Move util.ts into index.ts')).mentionedFiles,2);
 });
 test('store rejects traversal, symlink records and malformed files',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'effort-store-'));const store=await new Store(dir).initialize();
