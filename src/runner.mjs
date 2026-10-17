@@ -17,6 +17,9 @@ export function checkRunOptions(options, { adapter, verifyFn = verify } = {}) {
     // A command that cannot start (for example npm missing from PATH) stops here, before a billed turn.
     verifyFn.preflight?.(options.verify, { cwd: options.cwd, env: options.env });
   }
+  // Claude's agentic turn limit per attempt (the adapter default is 12). Other adapters have no such limit.
+  if (options.maxTurns !== undefined && adapter.capabilities.id !== 'claude') throw new Error('maxTurns applies only to the Claude adapter.');
+  if (options.maxTurns !== undefined && (!Number.isInteger(options.maxTurns) || options.maxTurns < 1 || options.maxTurns > 50)) throw new Error('maxTurns must be between 1 and 50.');
   if (options.effort && options.effort !== 'auto') {
     validateLevel(options.effort);
     if (!adapter.capabilities.levels.includes(options.effort)) throw new Error('Selected adapter does not support this effort.');
@@ -47,7 +50,7 @@ export async function runTask(options, { adapter, store, verifyFn = verify } = {
       if (performance.now() >= deadline) { task.status='blocked'; task.stopReason='Task time limit reached.'; break; }
       const start = performance.now();
       onEvent({type:'attempt',number,effort});
-      const result = await adapter.run({prompt:currentPrompt,cwd,effort,model,sessionId,allowWrite,timeoutMs:Math.max(100,Math.min(turnLimitMs,Math.floor(deadline-performance.now()))),signal,onEvent,env,executable,executableArgs});
+      const result = await adapter.run({prompt:currentPrompt,cwd,effort,model,sessionId,allowWrite,timeoutMs:Math.max(100,Math.min(turnLimitMs,Math.floor(deadline-performance.now()))),signal,onEvent,env,executable,executableArgs,maxTurns:options.maxTurns});
       sessionId = result.sessionId || sessionId; text = result.text || '';
       const attempt = {number,effort,status:result.status,effortEvidence:result.effortEvidence,usage:result.usage??null,verification:{status:'not-run'},durationMs:Math.round(performance.now()-start)};
       task.attempts.push(attempt);

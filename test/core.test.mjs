@@ -335,3 +335,12 @@ test('provider errors are recorded as blocked without raw error persistence',asy
   const r=await runTask({prompt:'Rename',cwd:f.cwd},{...f});assert.equal(r.task.status,'blocked');
   assert.ok(!JSON.stringify(await f.store.get(r.task.id)).includes('SECRET_PROVIDER_PAYLOAD'));
 });
+test('a Claude turn limit reaches every attempt and is refused for other adapters',async()=>{
+  const calls=[];const f=await fixture(async o=>{calls.push(o);return completed;});let checks=0;
+  const claude={...f.adapter,capabilities:{id:'claude',levels:['low','medium','high']}};
+  await runTask({prompt:'Rename variable',cwd:f.cwd,effort:'low',maxTurns:5,verify:['fake-check'],maxAttempts:2},{...f,adapter:claude,verifyFn:async()=>++checks===2?{status:'passed',exitCode:0}:{status:'failed',kind:'test',exitCode:1,output:'FAIL',fingerprint:'same'}});
+  assert.deepEqual(calls.map(x=>x.maxTurns),[5,5]);
+  for(const maxTurns of [0,51,2.5,'5'])await assert.rejects(runTask({prompt:'Rename',cwd:f.cwd,maxTurns},{...f,adapter:claude}),/maxTurns must be/);
+  await assert.rejects(runTask({prompt:'Rename',cwd:f.cwd,maxTurns:5},{...f}),/only to the Claude adapter/);
+  assert.equal(calls.length,2);
+});

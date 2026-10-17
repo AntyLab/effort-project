@@ -123,6 +123,63 @@ test('explicit write mode retains restrictions and resumes at the next effort', 
   assert.equal(result.usage.costScope, 'conversation');
 });
 
+// Top-level assistant events as the CLI streams them: one per content block,
+// each repeating its API response's id and usage, with a placeholder output count.
+const ASSISTANT = `const assistant = (id, usage, content, parent = null) => emit({ type: 'assistant', session_id: initial.session_id, parent_tool_use_id: parent, message: { id, model: initial.model, content, usage } });
+const first = { input_tokens: 6, cache_read_input_tokens: 4000, cache_creation_input_tokens: 300, output_tokens: 1 };
+const second = { input_tokens: 9, cache_read_input_tokens: 4300, cache_creation_input_tokens: 0, output_tokens: 1 };
+`;
+
+test('a resumed turn reports its own tokens when its assistant events account for the result usage', async (t) => {
+  const f = await fixture(t, `${ASSISTANT}
+    assistant('msg_1', first, [{ type: 'text', text: 'Reading.' }]);
+    assistant('msg_1', first, [{ type: 'tool_use', id: 'toolu_1', name: 'Read', input: { file_path: 'notes.txt' } }]);
+    emit({ type: 'user', session_id: initial.session_id, parent_tool_use_id: null, message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'toolu_1', content: 'notes' }] } });
+    assistant('msg_sub', { input_tokens: 500, output_tokens: 50 }, [], 'toolu_9');
+    emit({ type: 'assistant', session_id: initial.session_id, parent_tool_use_id: null, message: { model: '<synthetic>', content: [], usage: { input_tokens: 0, output_tokens: 0 } } });
+    assistant('msg_2', second, [{ type: 'text', text: 'Done.' }]);
+    emit({ ...success, usage: { input_tokens: 15, cache_read_input_tokens: 8300, cache_creation_input_tokens: 300, output_tokens: 420 }, total_cost_usd: 0.31 });
+  `);
+  const result = await run({ ...f.options, sessionId: SESSION });
+  assert.equal(result.status, 'completed');
+  // msg_1 counts once, the subagent and <synthetic> events not at all, and the
+  // output count comes from the result, not from the placeholders.
+  assert.deepEqual(result.usage, { inputTokens: 15, outputTokens: 420, cachedInputTokens: 8300, costUsd: null,
+    conversationCostUsd: 0.31, costScope: 'conversation', tokenScope: 'turn' });
+});
+
+test('a resumed turn keeps null tokens when they cannot be attributed to it', async (t) => {
+  const cumulative = `${ASSISTANT}
+    assistant('msg_1', first, [{ type: 'text', text: 'Done.' }]);
+    emit({ ...success, usage: { input_tokens: 60, cache_read_input_tokens: 40000, cache_creation_input_tokens: 3000, output_tokens: 700 } });`;
+  const cases = [
+    ['no assistant events', 'emit(success);'],
+    ['usage that includes earlier turns', cumulative],
+    ['usage that leaves out a response', `${ASSISTANT}
+      assistant('msg_1', first, [{ type: 'text', text: 'Working.' }]);
+      assistant('msg_2', second, [{ type: 'text', text: 'Over budget.' }]);
+      emit({ ...success, subtype: 'error_max_budget_usd', is_error: true, usage: { ...first, output_tokens: 80 } });`],
+    ['an event without a message id', `${ASSISTANT}
+      assistant(undefined, first, [{ type: 'text', text: 'Done.' }]);
+      emit({ ...success, usage: { ...first, output_tokens: 80 } });`],
+    ['an event without usage', `${ASSISTANT}
+      assistant('msg_1', undefined, [{ type: 'text', text: 'Done.' }]);
+      emit({ ...success, usage: { ...first, output_tokens: 80 } });`],
+    ['an invalid result output count', `${ASSISTANT}
+      assistant('msg_1', first, [{ type: 'text', text: 'Done.' }]);
+      emit({ ...success, usage: { ...first, output_tokens: '80' } });`],
+  ];
+  for (const [name, body] of cases) {
+    const f = await fixture(t, body);
+    const result = await run({ ...f.options, sessionId: SESSION });
+    assert.deepEqual(result.usage, { inputTokens: null, outputTokens: null, cachedInputTokens: null, costUsd: null,
+      conversationCostUsd: 0.012, costScope: 'conversation', tokenScope: 'unverified-on-resume' }, name);
+  }
+  // A new session has no earlier turns, so its result usage is reported as before.
+  const f = await fixture(t, cumulative);
+  assert.deepEqual((await run(f.options)).usage, { inputTokens: 60, outputTokens: 700, cachedInputTokens: 40000, costUsd: 0.012 });
+});
+
 test('validates inputs before any process launch', async (t) => {
   const f = await fixture(t);
   const invalid = [
