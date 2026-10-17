@@ -27,10 +27,13 @@ const DIRECTION = { high: 'lower', low: 'higher' };
  *
  * Claude Code documents the session's effort level (the event's effort.level and
  * $CLAUDE_EFFORT) only for events inside a tool-use context, and 2.1.299 passes
- * neither to UserPromptSubmit hooks. Known level: speak only when the suggestion
- * differs from it. Unknown level: never claim one. effort is $CLAUDE_EFFORT.
+ * neither to UserPromptSubmit hooks. So only the event's level counts: a
+ * $CLAUDE_EFFORT value seen here was inherited from another process, such as a
+ * shell started by another Claude Code session, and says nothing about this one.
+ * Known level: speak only when the suggestion differs from it. Unknown level:
+ * never claim one.
  */
-export function promptAdvice(event, { effort } = {}) {
+export function promptAdvice(event) {
   if (!event || typeof event !== 'object' || Array.isArray(event)) return null;
   if (event.hook_event_name !== undefined && event.hook_event_name !== 'UserPromptSubmit') return null;
   const { prompt } = event;
@@ -42,7 +45,7 @@ export function promptAdvice(event, { effort } = {}) {
   try { suggested = recommend({ prompt, provider: 'claude', maxEffort: CEILING }).effort; } catch { return null; }
   const direction = DIRECTION[suggested];
   if (!direction) return null;
-  const current = levelOf(event.effort?.level) || levelOf(effort);
+  const current = levelOf(event.effort?.level);
   if (!current) return { systemMessage: `Effort suggests ${suggested} for this prompt. If you're on a ${direction} level, apply it with /effort ${suggested}` };
   // A suggestion at the ceiling means "high or more", which xhigh and max satisfy.
   if (suggested === current || (suggested === CEILING && rank(current) > rank(CEILING))) return null;
@@ -80,15 +83,14 @@ const write = (stream, text) => new Promise((done, fail) => stream.write(text, e
  * Never throws, blocks, or rewrites the prompt; the caller always exits 0.
  */
 export async function runPromptHook({
-  stdin = process.stdin, stdout = process.stdout, stderr = process.stderr,
-  env = process.env, inputTimeoutMs = 3000,
+  stdin = process.stdin, stdout = process.stdout, stderr = process.stderr, inputTimeoutMs = 3000,
 } = {}) {
   try {
     const text = await readEvent(stdin, inputTimeoutMs);
     if (!text) return null;
     let event;
     try { event = JSON.parse(text); } catch { return null; }
-    const advice = promptAdvice(event, { effort: env.CLAUDE_EFFORT });
+    const advice = promptAdvice(event);
     if (advice) await write(stdout, JSON.stringify(advice) + '\n');
     return advice;
   } catch {
