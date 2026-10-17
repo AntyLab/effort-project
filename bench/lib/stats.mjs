@@ -13,16 +13,39 @@ export function wilson(successes, trials, z = Z95) {
   return { estimate: p, lower: Math.max(0, center - margin), upper: Math.min(1, center + margin) };
 }
 
-/** Newcombe (1998, method 10) hybrid score interval for the difference p1 − p2. */
-export function newcombe(successes1, trials1, successes2, trials2, z = Z95) {
-  const a = wilson(successes1, trials1, z);
-  const b = wilson(successes2, trials2, z);
-  if (!a || !b) return null;
-  const estimate = a.estimate - b.estimate;
+/**
+ * Newcombe's hybrid score interval for p1 − p2 from paired binary outcomes
+ * (Newcombe 1998, Statistics in Medicine 17:2635–2650, method 10). Each pair is
+ * counted once: `both` passed, only the first passed (`firstOnly`), only the
+ * second passed (`secondOnly`), or `neither` did. Null when there are no pairs.
+ *
+ * Arms run the same tasks and repeats, so their outcomes are paired. Chosen
+ * over a task-clustered bootstrap, which would also model correlated repeats:
+ * with about eleven tasks a percentile bootstrap undercovers, and when every
+ * pair agrees (likely in a small pilot) it collapses to a zero-width interval
+ * that reads as non-inferior. This one is closed form, needs no seed and keeps
+ * its width there. Its limit: pairs count as independent, so repeats of one
+ * task, which are correlated, still make the interval too narrow.
+ */
+export function newcombePaired(both, firstOnly, secondOnly, neither, z = Z95) {
+  const cells = [both, firstOnly, secondOnly, neither];
+  if (!cells.every((value) => Number.isInteger(value) && value >= 0)) throw new RangeError('paired counts must be non-negative integers.');
+  const pairs = both + firstOnly + secondOnly + neither;
+  if (pairs === 0) return null;
+  const first = wilson(both + firstOnly, pairs, z);
+  const second = wilson(both + secondOnly, pairs, z);
+  // Correlation of the two outcomes (phi), 0 when any margin is empty. Newcombe
+  // reduces a positive numerator by n/2 before dividing.
+  const margins = (both + firstOnly) * (secondOnly + neither) * (both + secondOnly) * (firstOnly + neither);
+  let numerator = both * neither - firstOnly * secondOnly;
+  if (numerator > 0) numerator = Math.max(numerator - pairs / 2, 0);
+  const phi = margins ? numerator / Math.sqrt(margins) : 0;
+  const combine = (x, y) => Math.sqrt(Math.max(0, x * x - 2 * phi * x * y + y * y));
+  const estimate = (firstOnly - secondOnly) / pairs;
   return {
     estimate,
-    lower: estimate - Math.sqrt((a.estimate - a.lower) ** 2 + (b.upper - b.estimate) ** 2),
-    upper: estimate + Math.sqrt((a.upper - a.estimate) ** 2 + (b.estimate - b.lower) ** 2),
+    lower: estimate - combine(first.estimate - first.lower, second.upper - second.estimate),
+    upper: estimate + combine(first.upper - first.estimate, second.estimate - second.lower),
   };
 }
 

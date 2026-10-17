@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describe, newcombe, nonInferiority, wilson } from './stats.mjs';
+import { describe, newcombePaired, nonInferiority, wilson } from './stats.mjs';
 import { isRoutingArm, renderChart } from './chart.mjs';
 
 const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -38,18 +38,41 @@ export function summarizeArm(arm, records) {
   };
 }
 
+const pairKey = (record) => `${record.provider}/${record.task}/${record.repeat}`;
+
+/**
+ * Match an arm's runs with the reference arm's runs of the same provider, task
+ * and repeat, and count the four kinds of pair. A run whose partner is missing
+ * or was excluded (harness error, interruption) is unpaired: it stays in its
+ * arm's own pass rate but not in the difference, and is counted here.
+ */
+export function pairRuns(armRecords, referenceRecords) {
+  const reference = new Map(referenceRecords.map((record) => [pairKey(record), record]));
+  const counts = { both: 0, armOnly: 0, referenceOnly: 0, neither: 0 };
+  let unpairedArm = 0;
+  for (const record of armRecords) {
+    const partner = reference.get(pairKey(record));
+    if (!partner) unpairedArm++;
+    else counts[record.accepted ? (partner.accepted ? 'both' : 'armOnly') : (partner.accepted ? 'referenceOnly' : 'neither')]++;
+  }
+  const pairs = armRecords.length - unpairedArm;
+  return { ...counts, pairs, unpairedArm, unpairedReference: referenceRecords.length - pairs };
+}
+
 export function aggregate(records, meta) {
   const { included, excluded } = analyzableRecords(records);
   const armNames = meta.arms.map((arm) => arm.name);
   const providers = meta.providers.map((provider) => {
     const rows = included.filter((record) => record.provider === provider);
-    const arms = armNames.map((arm) => summarizeArm(arm, rows.filter((record) => record.arm === arm)));
+    const armRows = (arm) => rows.filter((record) => record.arm === arm);
+    const arms = armNames.map((arm) => summarizeArm(arm, armRows(arm)));
     const reference = arms.find((arm) => arm.arm === meta.referenceArm && arm.runs > 0);
     const comparisons = reference ? arms.filter((arm) => arm !== reference && arm.runs > 0).map((arm) => {
-      const difference = newcombe(arm.passed, arm.runs, reference.passed, reference.runs);
+      const pairs = pairRuns(armRows(arm.arm), armRows(reference.arm));
+      const difference = newcombePaired(pairs.both, pairs.armOnly, pairs.referenceOnly, pairs.neither);
       const ratio = (value, base) => (value !== null && base ? value / base : null);
       return {
-        arm: arm.arm, difference, verdict: nonInferiority(difference, meta.margin),
+        arm: arm.arm, pairs, difference, verdict: nonInferiority(difference, meta.margin),
         tokenRatio: ratio(arm.tokens.median, reference.tokens.median), timeRatio: ratio(arm.wallMs.median, reference.wallMs.median),
         tokensKnown: [arm.tokens.n, arm.runs], referenceTokensKnown: [reference.tokens.n, reference.runs],
       };
@@ -106,7 +129,7 @@ function providerSection(summary, meta, chartFile) {
     lines.push(`**At a glance, against \`${summary.reference}\`:**`, '');
     for (const comparison of highlights) {
       const difference = comparison.difference
-        ? `${points(comparison.difference.estimate)} (95% CI ${points(comparison.difference.lower)} to ${points(comparison.difference.upper)})` : 'not comparable';
+        ? `${points(comparison.difference.estimate)} (95% CI ${points(comparison.difference.lower)} to ${points(comparison.difference.upper)}, ${comparison.pairs.pairs} paired runs)` : 'not comparable (no paired runs)';
       const tokens = comparison.tokenRatio === null ? 'unknown'
         : `${comparison.tokenRatio.toFixed(2)}×${comparison.tokensKnown[0] < comparison.tokensKnown[1] ? ' (incomplete usage, see below)' : ''}`;
       lines.push(`- \`${comparison.arm}\`: pass rate ${difference}, **${comparison.verdict}**; median tokens ${tokens}.`);
@@ -140,11 +163,13 @@ function providerSection(summary, meta, chartFile) {
   }
   if (summary.comparisons.length) {
     lines.push(`### Compared with \`${summary.reference}\``, '');
-    lines.push(`Pass-rate difference = arm − \`${summary.reference}\`, with a Newcombe 95% interval. The non-inferiority margin of ${(meta.margin * 100).toFixed(1)} percentage points was fixed when the benchmark started: *non-inferior* means the whole interval lies above −${(meta.margin * 100).toFixed(1)} pp, *inferior* means it lies entirely below, anything else is *inconclusive*.`, '');
+    lines.push(`Pass-rate difference = arm − \`${summary.reference}\` over paired runs. Each run is matched with the \`${summary.reference}\` run of the same task and repeat, and the difference is (only the arm passed − only the reference passed) ÷ pairs, with Newcombe's 95% interval for paired proportions. A run whose partner is missing or excluded is left out of the difference but still counts in the outcomes table, so the difference can differ from the gap between the two pass rates there. The non-inferiority margin of ${(meta.margin * 100).toFixed(1)} percentage points was fixed when the benchmark started: *non-inferior* means the whole interval lies above −${(meta.margin * 100).toFixed(1)} pp, *inferior* means it lies entirely below, anything else is *inconclusive*.`, '');
     lines.push(table(
-      ['Arm', 'Pass-rate difference (95% CI)', 'Verdict', 'Median tokens vs reference', 'Median wall time vs reference'],
+      ['Arm', 'Paired runs', 'Only one passed (arm / reference)', 'Pass-rate difference (95% CI)', 'Verdict', 'Median tokens vs reference', 'Median wall time vs reference'],
       summary.comparisons.map((comparison) => [
         `\`${comparison.arm}\``,
+        `${comparison.pairs.pairs}${comparison.pairs.unpairedArm || comparison.pairs.unpairedReference ? ` (unpaired: ${comparison.pairs.unpairedArm} arm, ${comparison.pairs.unpairedReference} reference)` : ''}`,
+        `${comparison.pairs.armOnly} / ${comparison.pairs.referenceOnly}`,
         comparison.difference ? `${points(comparison.difference.estimate)} (${points(comparison.difference.lower)} to ${points(comparison.difference.upper)})` : '—',
         comparison.verdict,
         comparison.tokenRatio === null ? 'unknown' : `${comparison.tokenRatio.toFixed(2)}× (usage known ${comparison.tokensKnown.join('/')} vs ${comparison.referenceTokensKnown.join('/')})`,
@@ -192,7 +217,7 @@ export function renderSummary(meta, records) {
   lines.push(
     '- **Unknown usage is not counted as zero.** Token and cost medians and totals use only runs where every attempt reported usage. The "Usage known" column shows how many runs that is. Codex reports no cost, and Claude reports no per-turn tokens on resumed turns, so multi-attempt Claude runs have unknown token totals.',
     '- Token fields are what each CLI reports, and the two CLIs count input and cached tokens differently. Compare arms within a provider, not across providers.',
-    '- The intervals treat runs as independent. Repeats of one task are correlated, so with a corpus this small the real uncertainty is larger than shown. Overlapping intervals mean this data cannot tell the arms apart. A small pilot cannot establish equal quality (see docs/architecture.md, "Evaluate before learning").',
+    '- Per-arm pass-rate intervals (Wilson) treat every run as independent. The difference from the reference arm pairs runs by task and repeat, so tasks that both arms find easy or hard do not widen it, but it still treats the pairs as independent. Repeats of one task are correlated, so with more than one repeat and a corpus this small the real uncertainty is larger than shown. Judge a difference by its paired interval, not by whether two per-arm intervals overlap. A small pilot cannot establish equal quality (see docs/architecture.md, "Evaluate before learning").',
     '- Single-attempt arms get no feedback. `auto-escalate` also gets up to two retries with the visible check\'s output, so its pass rate mixes retrying and escalating. Add the opt-in `medium-retry` arm to separate the two.',
     '- The visible check is the agent\'s own test command, the one Effort retries on. It can pass while the hidden check fails (see "Visible passed, hidden failed").',
     '- Wall time covers the whole managed run: provider turns, process start-up and visible checks. It excludes the hidden acceptance check.',
