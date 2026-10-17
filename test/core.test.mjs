@@ -169,6 +169,19 @@ test('repository metadata counts distinct mentioned files: by path, or once per 
   assert.equal(recommend({prompt,facts}).effort,'high');
   assert.equal((await repositoryFacts(packages,'Export the helper from every index.ts')).mentionedFiles,1);
 });
+test('a mentioned path must start at a path boundary',async()=>{
+  // A root index.ts plus packages/{a,b,c,d}/index.ts.
+  const dir=await mkdtemp(join(tmpdir(),'effort-boundary-'));
+  await writeFile(join(dir,'index.ts'),'x');
+  for(const name of ['a','b','c','d']){await mkdir(join(dir,'packages',name),{recursive:true});await writeFile(join(dir,'packages',name,'index.ts'),'x');}
+  const four='Export the new helper from packages/a/index.ts, packages/b/index.ts, packages/c/index.ts and packages/d/index.ts';
+  const facts=await repositoryFacts(dir,four);
+  assert.equal(facts.mentionedFiles,4);assert.equal(recommend({prompt:four,facts}).effort,'medium');
+  assert.equal((await repositoryFacts(dir,'Fix the import in packages/a/index.ts')).mentionedFiles,1);
+  assert.equal((await repositoryFacts(dir,'Compare ./packages/a/index.ts with ./index.ts')).mentionedFiles,2);
+  assert.equal((await repositoryFacts(dir,`Compare ${join(dir,'packages','a','index.ts')} with "index.ts"`)).mentionedFiles,2);
+  assert.equal((await repositoryFacts(dir,'Rename index.tsx to app.tsx')).mentionedFiles,0);
+});
 test('store rejects traversal, symlink records and malformed files',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'effort-store-'));const store=await new Store(dir).initialize();
   await assert.rejects(store.get('../../private'));

@@ -4,18 +4,29 @@ import { performance } from 'node:perf_hooks';
 
 const skip = new Set(['.git', 'node_modules', '.venv', 'venv', 'vendor', 'build', 'dist', '.next', 'target', '.effort']);
 
+const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// A mention starts at the beginning of the prompt or after a character that cannot be part
+// of a path, and ends where the name does: neither 'packages/a/index.ts' nor 'index.tsx'
+// mentions the root index.ts.
+const mention = (name, flags = '') => new RegExp(`(?<![\\w.\\\\/-])${literal(name)}(?![\\w-]|\\.\\w)`, flags);
+
 // Distinct files the prompt names: each relative path it contains, written with either
 // separator, plus each remaining bare file name once. Five packages/*/index.ts named by
 // path are five files; 'index.ts' alone is one, however many index.ts files exist.
-function countMentioned(prompt, paths) {
-  let rest = prompt, count = 0;
-  for (const path of paths) {
-    const spellings = [path.split(sep).join('/'), path.split(sep).join('\\')];
-    if (!spellings.some((spelling) => prompt.includes(spelling))) continue;
-    count++;
-    for (const spelling of spellings) rest = rest.split(spelling).join(' ');
+function countMentioned(prompt, paths, root) {
+  // Read './x' and absolute paths inside the workspace as workspace-relative paths.
+  let text = prompt.replace(/(^|[^\w.])\.[\\/]/g, '$1');
+  for (const spelling of new Set([root.split(sep).join('/'), root.split(sep).join('\\')])) {
+    for (const separator of ['/', '\\']) text = text.split(spelling + separator).join(' ');
   }
-  return count + new Set(paths.map((path) => basename(path)).filter((name) => rest.includes(name))).size;
+  let rest = text, count = 0;
+  for (const path of paths) {
+    const spellings = [...new Set([path.split(sep).join('/'), path.split(sep).join('\\')])];
+    if (!spellings.some((spelling) => mention(spelling).test(text))) continue;
+    count++;
+    for (const spelling of spellings) rest = rest.replace(mention(spelling, 'g'), ' ');
+  }
+  return count + new Set(paths.map((path) => basename(path)).filter((name) => mention(name).test(rest))).size;
 }
 
 export async function repositoryFacts(cwd, prompt = '') {
@@ -41,5 +52,5 @@ export async function repositoryFacts(cwd, prompt = '') {
     }
   }
   await walk(root, 0);
-  return { languages: [...languages].sort(), scannedFiles: files, mentionedFiles: countMentioned(prompt, paths), hasTests, truncated };
+  return { languages: [...languages].sort(), scannedFiles: files, mentionedFiles: countMentioned(prompt, paths, root), hasTests, truncated };
 }
