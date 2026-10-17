@@ -72,6 +72,20 @@ test('a suite that could not run stops even inside a test-runner report',()=>{
     ["not ok 1 - retries after ECONNREFUSED\n# fail 1",'test'],
   ])assert.equal(classifyFailure(text),expected,text);
 });
+test('blocker words in test names and assertion messages do not stop a run',()=>{
+  for(const [runner,text] of Object.entries({
+    mocha:"  errors\n    1) maps EACCES to a 403 response\n\n  0 passing (6ms)\n  1 failing\n\n  1) errors\n       maps EACCES to a 403 response:\n\n      AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n500 !== 403\n",
+    'jest verbose':" FAIL  src/client.test.js\n  client\n    ✕ shows a retry banner on connection refused (4 ms)\n\n  ● client › shows a retry banner on connection refused\n\n    expect(received).toBe(expected) // Object.is equality\n\nTests:       1 failed, 1 total",
+    vitest:" ❯ src/acl.test.ts (1 test | 1 failed) 6ms\n   × acl > shows Permission denied to guests 4ms\n     → expected false to be true\n\n FAIL  src/acl.test.ts > acl > shows Permission denied to guests\nAssertionError: expected false to be true\n Test Files  1 failed (1)",
+    'node:test assertion':"✖ maps ENOENT to 404 (0.9ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n  'EACCES' !== 'ENOENT'\nℹ fail 1",
+  }))assert.equal(classifyFailure(text),'test',runner);
+});
+test('a failing assertion about an error code retries and escalates instead of stopping',async()=>{
+  const calls=[];const f=await fixture(async o=>{calls.push(o.effort);return completed;});
+  await writeFile(join(f.cwd,'errors.test.mjs'),"import test from 'node:test';import assert from 'node:assert/strict';test('maps ENOENT to 404',()=>assert.equal('EACCES','ENOENT'));");
+  const result=await runTask({prompt:'Fix the error mapping',cwd:f.cwd,effort:'low',verify:[process.execPath,'--test','errors.test.mjs'],maxAttempts:3},{...f});
+  assert.deepEqual(calls,['low','low','medium']);assert.equal(result.task.status,'failed');
+});
 test('classification and fingerprints stay linear on long runs of blank lines',async()=>{
   const blank='\n'.repeat(32_000)+'FAIL: test_x (t.T.test_x)\n';
   let started=performance.now();classifyFailure(blank);assert.ok(performance.now()-started<250,'classifyFailure');
