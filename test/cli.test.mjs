@@ -49,7 +49,20 @@ test('the verification command can follow -- and the JSON form still works', asy
   assert.equal(separated.recommendation.features.promptCharacters, 'Fix the sum test'.length);
   assert.equal(separated.willExecute, false);
   assert.deepEqual(plan(['--verify', '["node","--test"]']).verification, ['node', '--test']);
-  assert.equal(plan([]).verification, null);
+  const defaults = plan([]);
+  assert.equal(defaults.verification, null);
+  assert.equal(defaults.timeoutMs, 600_000);
+  assert.equal(defaults.verifyTimeoutMs, null);
+  const bounded = plan(['--timeout', '900', '--verify-timeout', '300', '--', 'npm', 'test']);
+  assert.equal(bounded.timeoutMs, 900_000);
+  assert.equal(bounded.verifyTimeoutMs, 300_000);
+});
+
+test('a verification time limit requires a verification command', async (t) => {
+  const f = await fixture(t);
+  const result = f.invoke(['run', 'Fix the sum test', '--provider', 'codex', '--cwd', f.cwd, '--dry-run', '--verify-timeout', '30']);
+  assert.equal(result.status, 1, result.stdout);
+  assert.match(result.stderr, /--verify-timeout needs a verification command/);
 });
 
 test('invalid verification input fails with guidance before any provider starts', async (t) => {

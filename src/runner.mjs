@@ -6,10 +6,12 @@ import { repositoryFacts } from './repository.mjs';
 
 export async function runTask(options, { adapter, store, verifyFn = verify } = {}) {
   const {prompt,cwd,model,allowWrite=false,signal,onEvent=()=>{},env,executable,executableArgs} = options;
-  const maxAttempts = options.maxAttempts ?? 3, timeoutMs = options.timeoutMs ?? 120_000;
+  const maxAttempts = options.maxAttempts ?? 3, timeoutMs = options.timeoutMs ?? 600_000, verifyTimeoutMs = options.verifyTimeoutMs;
   const maxEffort = validateLevel(options.maxEffort ?? 'high');
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 5) throw new Error('maxAttempts must be between 1 and 5.');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 3_600_000) throw new Error('timeoutMs must be 100–3,600,000.');
+  if (verifyTimeoutMs !== undefined && (!Number.isInteger(verifyTimeoutMs) || verifyTimeoutMs < 100 || verifyTimeoutMs > timeoutMs)) throw new Error('verifyTimeoutMs must be from 100 to timeoutMs.');
+  if (verifyTimeoutMs !== undefined && !options.verify) throw new Error('verifyTimeoutMs requires a verification command.');
   if (options.verify) validateCommand(options.verify);
   const facts = await repositoryFacts(cwd, prompt);
   const prediction = recommend({prompt,provider:adapter.capabilities.id,facts,maxEffort});
@@ -35,8 +37,10 @@ export async function runTask(options, { adapter, store, verifyFn = verify } = {
       if (result.status !== 'completed') { task.status=result.status==='cancelled'?'cancelled':'blocked'; task.stopReason='Provider did not complete. Inspect the foreground provider error; no automatic effort retry.'; break; }
       if (!options.verify) { task.status='unverified'; task.stopReason='No independent verification command was supplied.'; break; }
       if (performance.now() >= deadline) { task.status='blocked'; task.stopReason='Task time limit reached before verification.'; break; }
-      const check = await verifyFn(options.verify,{cwd,timeoutMs:Math.min(60_000,Math.max(100,Math.floor(deadline-performance.now()))),signal,env});
-      attempt.verification = {status:check.status,kind:check.kind,exitCode:check.exitCode};
+      // A check may use the time left in the task unless verifyTimeoutMs sets a shorter limit.
+      const remainingMs = Math.floor(deadline-performance.now()), checkTimeoutMs = Math.max(100,Math.min(verifyTimeoutMs ?? remainingMs,remainingMs));
+      const check = await verifyFn(options.verify,{cwd,timeoutMs:checkTimeoutMs,signal,env});
+      attempt.verification = {status:check.status,kind:check.kind,exitCode:check.exitCode,timeoutMs:checkTimeoutMs};
       onEvent({type:'verification',status:check.status,kind:check.kind});
       if (check.status==='passed') { task.status='verified'; task.stopReason='The selected verification command passed; this is not proof of complete correctness.'; break; }
       if (check.kind==='cancelled') { task.status='cancelled'; break; }
@@ -44,6 +48,7 @@ export async function runTask(options, { adapter, store, verifyFn = verify } = {
       previousFingerprint=check.fingerprint;
       const decision=nextDecision({effort,kind:check.kind??'unknown',repeatCount,maxEffort,supportedLevels:adapter.capabilities.levels});
       task.decisions.push(decision);
+      if (check.kind==='timeout') { task.status='blocked'; task.stopReason=`Verification exceeded its ${+(checkTimeoutMs/1000).toFixed(1)}-second limit${checkTimeoutMs<(verifyTimeoutMs??Infinity)?', the time left in the task':''}.`; break; }
       if (decision.action==='stop' || number===maxAttempts) { task.status=check.kind==='test'?'failed':'blocked'; task.stopReason=number===maxAttempts?'Attempt limit reached.':decision.reason; break; }
       if (!sessionId) { task.status='blocked'; task.stopReason='Provider returned no resumable session; cannot safely continue.'; break; }
       effort=decision.effort; task.effort=effort;

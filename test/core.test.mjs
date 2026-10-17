@@ -156,6 +156,29 @@ test('managed runs resume same session and escalate only after repeated check fa
   const saved=await readFile(join(f.store.dir,`${result.task.id}.json`),'utf8');
   for(const secret of ['Rename variable','sensitive response','sensitive test output','fake-session'])assert.ok(!saved.includes(secret));
 });
+test('verification may use the remaining task time unless a shorter limit is set',async()=>{
+  const limits=[],turns=[];const f=await fixture(async o=>{turns.push(o.timeoutMs);return completed;});
+  const verifyFn=async(argv,o)=>{limits.push(o.timeoutMs);return {status:'passed',exitCode:0};};
+  await runTask({prompt:'Fix the slow suite',cwd:f.cwd,verify:['fake-check']},{...f,verifyFn});
+  // The default task budget is 600 s, and a check is no longer capped at 60 s.
+  assert.ok(turns[0]>590_000&&turns[0]<=600_000,String(turns[0]));
+  assert.ok(limits[0]>590_000&&limits[0]<=600_000,String(limits[0]));
+  await runTask({prompt:'Fix the slow suite',cwd:f.cwd,verify:['fake-check'],timeoutMs:900_000,verifyTimeoutMs:300_000},{...f,verifyFn});
+  assert.equal(limits[1],300_000);
+  await runTask({prompt:'Fix the slow suite',cwd:f.cwd,verify:['fake-check'],timeoutMs:5_000,verifyTimeoutMs:5_000},{...f,verifyFn});
+  assert.ok(limits[2]<=5_000&&limits[2]>=100,String(limits[2]));
+  for(const options of [{verifyTimeoutMs:99},{verifyTimeoutMs:1.5e3+0.5},{timeoutMs:1_000,verifyTimeoutMs:1_001},{verify:undefined,verifyTimeoutMs:1_000}]){
+    await assert.rejects(runTask({prompt:'Fix it',cwd:f.cwd,verify:['fake-check'],...options},{...f,verifyFn}),/verifyTimeoutMs/);
+  }
+});
+test('a slow verification stops with the limit it exceeded',async()=>{
+  const f=await fixture(async()=>completed);
+  const result=await runTask({prompt:'Fix the slow suite',cwd:f.cwd,verify:[process.execPath,'-e','setTimeout(()=>{},5000)'],verifyTimeoutMs:200},{...f});
+  assert.equal(result.task.status,'blocked');
+  assert.equal(result.task.stopReason,'Verification exceeded its 0.2-second limit.');
+  assert.equal(result.task.attempts[0].verification.kind,'timeout');
+  assert.equal(result.task.attempts[0].verification.timeoutMs,200);
+});
 test('provider completion alone is unverified and no re-prompt is invented',async()=>{
   let count=0;const f=await fixture(async()=>{count++;return completed;});
   const result=await runTask({prompt:'Summarize',cwd:f.cwd},{...f});
