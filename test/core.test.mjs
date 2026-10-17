@@ -251,6 +251,16 @@ test('verification may use the remaining task time unless a shorter limit is set
     await assert.rejects(runTask({prompt:'Fix it',cwd:f.cwd,verify:['fake-check'],...options},{...f,verifyFn}),/verifyTimeoutMs/);
   }
 });
+test('each turn stays within the adapter turn limit while the task may run longer',async()=>{
+  const limits=[];
+  // Like the Claude adapter, which accepts at most 30 minutes per turn.
+  const f=await fixture(async o=>{if(o.timeoutMs>1_800_000)throw new RangeError('turn too long');limits.push(o.timeoutMs);return completed;});
+  f.adapter.capabilities.maxTurnTimeoutMs=1_800_000;
+  const result=await runTask({prompt:'Port the service',cwd:f.cwd,timeoutMs:3_600_000},{...f});
+  assert.equal(result.task.status,'unverified');assert.equal(limits[0],1_800_000);
+  const {capabilities:claude}=await import('../src/adapters/claude.mjs');
+  assert.equal(claude.maxTurnTimeoutMs,1_800_000);
+});
 test('a slow verification stops with the limit it exceeded',async()=>{
   const f=await fixture(async()=>completed);
   const result=await runTask({prompt:'Fix the slow suite',cwd:f.cwd,verify:[process.execPath,'-e','setTimeout(()=>{},5000)'],verifyTimeoutMs:200},{...f});

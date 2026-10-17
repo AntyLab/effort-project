@@ -9,7 +9,7 @@ import { spawnSync } from 'node:child_process';
 import { recommend, LEVELS } from '../src/policy.mjs';
 import { repositoryFacts } from '../src/repository.mjs';
 import { Store } from '../src/store.mjs';
-import { runTask } from '../src/runner.mjs';
+import { runTask, checkRunOptions } from '../src/runner.mjs';
 import { getAdapter, capabilities } from '../src/registry.mjs';
 import { serveMcp } from '../src/mcp.mjs';
 import { startDashboard } from '../src/server.mjs';
@@ -21,6 +21,8 @@ const help=`The Effort Project · ${VERSION}\nLocal effort decisions, with evide
 const controller=new AbortController();
 function handleCancellation(){process.once('SIGINT',()=>controller.abort());process.once('SIGTERM',()=>controller.abort());}
 function number(value,fallback){if(value===undefined)return fallback;const n=Number(value);if(!Number.isFinite(n))throw new Error('Numeric option is invalid.');return n;}
+// Seconds on the command line, whole milliseconds inside: 16.1 s is 16100 ms, not 16100.000000000002.
+function milliseconds(value,fallbackSeconds){const n=number(value,fallbackSeconds);return n===undefined?undefined:Math.round(n*1000);}
 function print(data,json){process.stdout.write((json?JSON.stringify(data,null,2):String(data))+'\n');}
 const separatorHint=`In PowerShell, a bare -- can be removed before Effort sees it; quote it as '--'.`;
 // Windows PowerShell 5.1 strips the inner quotes of '["node","--test"]', so the
@@ -133,11 +135,12 @@ async function main(){
     if(!values.provider)throw new Error('Choose --provider codex or claude explicitly.');
     handleCancellation();
     const adapter=getAdapter(values.provider);
-    const options={prompt,cwd,model:values.model,effort:values.effort??'auto',maxEffort:values['max-effort']??'high',allowWrite:values['allow-write']??false,maxAttempts:number(values['max-attempts'],3),timeoutMs:number(values.timeout,600)*1000,verifyTimeoutMs:values['verify-timeout']===undefined?undefined:number(values['verify-timeout'])*1000,verify:verification(values.verify,verifyArgv),signal:controller.signal};
+    const options={prompt,cwd,model:values.model,effort:values.effort??'auto',maxEffort:values['max-effort']??'high',allowWrite:values['allow-write']??false,maxAttempts:number(values['max-attempts'],3),timeoutMs:milliseconds(values.timeout,600),verifyTimeoutMs:milliseconds(values['verify-timeout']),verify:verification(values.verify,verifyArgv),signal:controller.signal};
     if(options.verifyTimeoutMs!==undefined&&!options.verify)throw new Error('--verify-timeout needs a verification command after --.');
     // A shim can drop a bare -- in PowerShell, turning the command into extra task words.
     if(process.platform==='win32'&&!options.verify&&!values['prompt-file']&&positionals.length>2)process.stderr.write(`[effort] The task arrived as ${positionals.length-1} separate words and no verification command was given. ${separatorHint}\n`);
     if(values['dry-run']){
+      checkRunOptions(options,{adapter}); // The same checks the real run makes, including that the verification command can start.
       const recommendation=recommend({prompt,provider:values.provider,facts:await repositoryFacts(cwd,prompt),maxEffort:options.maxEffort});
       return print({provider:values.provider,model:values.model??'provider default',effort:options.effort==='auto'?recommendation.effort:options.effort,allowWrite:options.allowWrite,verification:options.verify??null,maxAttempts:options.maxAttempts,timeoutMs:options.timeoutMs,verifyTimeoutMs:options.verifyTimeoutMs??null,willExecute:false,recommendation},true);
     }

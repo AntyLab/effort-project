@@ -8,6 +8,7 @@ export const capabilities = Object.freeze({
   name: 'Claude Code',
   levels: Object.freeze(['low', 'medium', 'high']),
   control: 'managed-turns',
+  maxTurnTimeoutMs: 1_800_000,
   notes: 'Launches isolated CLI turns with --effort; resumes by session ID. Applied effort is not reported by the CLI and policy caps can apply.',
 });
 
@@ -65,7 +66,7 @@ function validate(options) {
     throw new TypeError('sessionId must be a UUID, not a session name or transcript path.');
   }
   if (typeof allowWrite !== 'boolean') throw new TypeError('allowWrite must be a boolean.');
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 1_800_000) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > capabilities.maxTurnTimeoutMs) {
     throw new RangeError('timeoutMs must be an integer between 1 and 1800000.');
   }
   if (!Number.isSafeInteger(maxTurns) || maxTurns < 1 || maxTurns > 50) {

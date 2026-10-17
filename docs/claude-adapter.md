@@ -38,7 +38,7 @@ The built-in bounds are:
 | Retained answer | 512 KiB |
 | Retained stderr for classification | 32 KiB |
 | Parsed events | 20,000 |
-| Timeout | 120 seconds by default; caller range 1 ms–30 minutes |
+| Timeout | 120 seconds by default; caller range 1 ms–30 minutes (`capabilities.maxTurnTimeoutMs`). `effort run` gives each turn at most 30 minutes of a longer task budget |
 | CLI help preflight | Up to 5 seconds, within the total timeout |
 | Internal agent turns | 12 by default; optional `maxTurns` range 1–50 |
 | Optional estimated spend cap | `maxBudgetUsd`, greater than 0 and at most 100 |

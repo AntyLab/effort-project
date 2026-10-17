@@ -4,19 +4,32 @@ import { recommend, nextDecision, POLICY_VERSION, validateLevel, LEVELS } from '
 import { verify, validateCommand } from './verify.mjs';
 import { repositoryFacts } from './repository.mjs';
 
-export async function runTask(options, { adapter, store, verifyFn = verify } = {}) {
-  const {prompt,cwd,model,allowWrite=false,signal,onEvent=()=>{},env,executable,executableArgs} = options;
+/** Checks run options before any provider turn. `effort run --dry-run` makes the same checks. */
+export function checkRunOptions(options, { adapter, verifyFn = verify } = {}) {
   const maxAttempts = options.maxAttempts ?? 3, timeoutMs = options.timeoutMs ?? 600_000, verifyTimeoutMs = options.verifyTimeoutMs;
   const maxEffort = validateLevel(options.maxEffort ?? 'high');
-  if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 5) throw new Error('maxAttempts must be between 1 and 5.');
-  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 3_600_000) throw new Error('timeoutMs must be 100–3,600,000.');
-  if (verifyTimeoutMs !== undefined && (!Number.isInteger(verifyTimeoutMs) || verifyTimeoutMs < 100 || verifyTimeoutMs > timeoutMs)) throw new Error('verifyTimeoutMs must be from 100 to timeoutMs.');
-  if (verifyTimeoutMs !== undefined && !options.verify) throw new Error('verifyTimeoutMs requires a verification command.');
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 5) throw new Error('maxAttempts (--max-attempts) must be between 1 and 5.');
+  if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 3_600_000) throw new Error('timeoutMs (--timeout) must be between 0.1 and 3600 seconds.');
+  if (verifyTimeoutMs !== undefined && (!Number.isInteger(verifyTimeoutMs) || verifyTimeoutMs < 100 || verifyTimeoutMs > timeoutMs)) throw new Error('verifyTimeoutMs (--verify-timeout) must be at least 0.1 seconds and no longer than timeoutMs (--timeout).');
+  if (verifyTimeoutMs !== undefined && !options.verify) throw new Error('verifyTimeoutMs (--verify-timeout) needs a verification command.');
   if (options.verify) {
     validateCommand(options.verify);
     // A command that cannot start (for example npm missing from PATH) stops here, before a billed turn.
-    verifyFn.preflight?.(options.verify, { cwd, env });
+    verifyFn.preflight?.(options.verify, { cwd: options.cwd, env: options.env });
   }
+  if (options.effort && options.effort !== 'auto') {
+    validateLevel(options.effort);
+    if (!adapter.capabilities.levels.includes(options.effort)) throw new Error('Selected adapter does not support this effort.');
+    if (LEVELS.indexOf(options.effort) > LEVELS.indexOf(maxEffort)) throw new Error('Requested effort exceeds --max-effort.');
+  }
+  return { maxAttempts, timeoutMs, verifyTimeoutMs, maxEffort };
+}
+
+export async function runTask(options, { adapter, store, verifyFn = verify } = {}) {
+  const {prompt,cwd,model,allowWrite=false,signal,onEvent=()=>{},env,executable,executableArgs} = options;
+  const { maxAttempts, timeoutMs, verifyTimeoutMs, maxEffort } = checkRunOptions(options, { adapter, verifyFn });
+  // An adapter can bound one turn below the task budget (Claude: 30 minutes).
+  const turnLimitMs = adapter.capabilities.maxTurnTimeoutMs ?? Infinity;
   const facts = await repositoryFacts(cwd, prompt);
   const prediction = recommend({prompt,provider:adapter.capabilities.id,facts,maxEffort});
   let effort = options.effort && options.effort !== 'auto' ? validateLevel(options.effort) : prediction.effort;
@@ -34,7 +47,7 @@ export async function runTask(options, { adapter, store, verifyFn = verify } = {
       if (performance.now() >= deadline) { task.status='blocked'; task.stopReason='Task time limit reached.'; break; }
       const start = performance.now();
       onEvent({type:'attempt',number,effort});
-      const result = await adapter.run({prompt:currentPrompt,cwd,effort,model,sessionId,allowWrite,timeoutMs:Math.max(100,Math.floor(deadline-performance.now())),signal,onEvent,env,executable,executableArgs});
+      const result = await adapter.run({prompt:currentPrompt,cwd,effort,model,sessionId,allowWrite,timeoutMs:Math.max(100,Math.min(turnLimitMs,Math.floor(deadline-performance.now()))),signal,onEvent,env,executable,executableArgs});
       sessionId = result.sessionId || sessionId; text = result.text || '';
       const attempt = {number,effort,status:result.status,effortEvidence:result.effortEvidence,usage:result.usage??null,verification:{status:'not-run'},durationMs:Math.round(performance.now()-start)};
       task.attempts.push(attempt);

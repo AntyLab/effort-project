@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, delimiter } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
@@ -13,7 +13,8 @@ const manifest = JSON.parse(await readFile(new URL('../package.json', import.met
 async function fixture(t) {
   const cwd = await realpath(await mkdtemp(join(tmpdir(), 'effort-cli-')));
   t.after(() => rm(cwd, { recursive: true, force: true }));
-  const env = { PATH: cwd, HOME: cwd, USERPROFILE: cwd, EFFORT_DATA_DIR: join(cwd, 'metadata') };
+  // Node's own directory is on PATH so verification commands such as node and npm can be found.
+  const env = { PATH: [cwd, dirname(process.execPath)].join(delimiter), HOME: cwd, USERPROFILE: cwd, EFFORT_DATA_DIR: join(cwd, 'metadata') };
   for (const key of ['SYSTEMROOT', 'WINDIR', 'TEMP', 'TMP', 'TMPDIR']) if (process.env[key]) env[key] = process.env[key];
   const invoke = (args, extraEnv = {}) => {
     const result = spawnSync(process.execPath, [cli, ...args], {
@@ -99,6 +100,28 @@ test('the verification command can follow -- and the JSON form still works', asy
   const bounded = plan(['--timeout', '900', '--verify-timeout', '300', '--', 'npm', 'test']);
   assert.equal(bounded.timeoutMs, 900_000);
   assert.equal(bounded.verifyTimeoutMs, 300_000);
+});
+
+test('--dry-run rejects what the real run would reject', async (t) => {
+  const f = await fixture(t);
+  const plan = (...args) => f.invoke(['run', 'Fix the sum test', '--provider', 'codex', '--cwd', f.cwd, '--dry-run', ...args]);
+  for (const [args, message] of [
+    [['--timeout', '60', '--verify-timeout', '120', '--', 'node', '--test'], /--verify-timeout.*no longer than timeoutMs \(--timeout\)/],
+    [['--verify-timeout', '0.05', '--', 'node', '--test'], /at least 0\.1 seconds/],
+    [['--max-attempts', '9'], /--max-attempts\) must be between 1 and 5/],
+    [['--', 'effort-missing-verifier', 'test'], /"effort-missing-verifier" was not found on PATH/],
+  ]) {
+    const result = plan(...args);
+    assert.equal(result.status, 1, args.join(' '));
+    assert.match(result.stderr, message);
+  }
+  // Seconds are rounded to whole milliseconds.
+  const rounded = plan('--verify-timeout', '16.1', '--', 'node', '--test');
+  assert.equal(rounded.status, 0, rounded.stderr);
+  assert.equal(JSON.parse(rounded.stdout).verifyTimeoutMs, 16_100);
+  // A Claude task may run longer than one Claude turn's 30-minute limit.
+  const long = f.invoke(['run', 'Fix the sum test', '--provider', 'claude', '--cwd', f.cwd, '--dry-run', '--timeout', '3600']);
+  assert.equal(long.status, 0, long.stderr);
 });
 
 test('a verification time limit requires a verification command', async (t) => {
