@@ -4,10 +4,10 @@
   "description": "Shows one line when Effort's local, rule-based effort recommendation differs from your current /effort level, and adds Effort's read-only MCP tools. Advisory: hooks cannot set effort, so you apply a level with /effort.",
   "author": {
     "name": "The Effort Project contributors",
-    "url": "https://github.com/AntyXO/effort-project"
+    "url": "https://github.com/AntyLab/effort-project"
   },
-  "homepage": "https://github.com/AntyXO/effort-project/blob/main/docs/claude-code-plugin.md",
-  "repository": "https://github.com/AntyXO/effort-project",
+  "homepage": "https://github.com/AntyLab/effort-project/blob/main/docs/claude-code-plugin.md",
+  "repository": "https://github.com/AntyLab/effort-project",
   "license": "MIT",
   "keywords": ["effort", "reasoning-effort", "advisory", "hooks", "mcp"],
   "mcpServers": {

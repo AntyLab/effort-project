@@ -25,11 +25,11 @@ You need Node.js 22 or later available as `node` on your `PATH`, and a current C
 In a Claude Code session:
 
 ```text
-/plugin marketplace add AntyXO/effort-project
+/plugin marketplace add AntyLab/effort-project
 /plugin install effort-project@effort-project
 ```
 
-Claude Code 2.1.275 and later also accept the one-step form `/plugin install effort-project --marketplace AntyXO/effort-project`. From a shell, use `claude plugin marketplace add AntyXO/effort-project` and then `claude plugin install effort-project@effort-project`.
+Claude Code 2.1.275 and later also accept the one-step form `/plugin install effort-project --marketplace AntyLab/effort-project`. From a shell, use `claude plugin marketplace add AntyLab/effort-project` and then `claude plugin install effort-project@effort-project`.
 
 To try the plugin from a clone for one session, without installing it:
 
@@ -92,7 +92,7 @@ The repository-root layout has these consequences:
 - Each install copies the whole repository, a few hundred kilobytes today, including documentation and tests.
 - The MCP server is declared in `.claude-plugin/plugin.json`, not in a root `.mcp.json`. Claude Code would also read a root `.mcp.json` as project MCP configuration for anyone who opens this repository, where `${CLAUDE_PLUGIN_ROOT}` is undefined.
 - While the plugin is enabled, Claude Code puts a plugin's top-level `bin/` folder on the `PATH` of Claude's shell. `effort.mjs` can then be run by name there on macOS and Linux. It runs only when someone invokes it, and your Bash permission rules still apply. claude.ai and Cowork do not install plugins that have a top-level `bin/` folder, so this plugin is for Claude Code: the terminal, the desktop app and the IDE extensions.
-- Neither `plugin.json` nor the marketplace entry sets `version`, so Claude Code versions each install by commit. `/plugin marketplace update effort-project` or `claude plugin update effort-project@effort-project` fetches newer commits. `claude plugin validate` warns about the missing version, which is intentional. To stay on a release instead, add the marketplace at a tag that contains the plugin, for example `/plugin marketplace add AntyXO/effort-project#<tag>`.
+- Neither `plugin.json` nor the marketplace entry sets `version`, so Claude Code versions each install by commit. `/plugin marketplace update effort-project` or `claude plugin update effort-project@effort-project` fetches newer commits. `claude plugin validate` warns about the missing version, which is intentional. To stay on a release instead, add the marketplace at a tag that contains the plugin, for example `/plugin marketplace add AntyLab/effort-project#<tag>`.
 
 ## Validation
 
