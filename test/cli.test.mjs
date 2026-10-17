@@ -1,12 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, realpath, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const cli = fileURLToPath(new URL('../bin/effort.mjs', import.meta.url));
+const manifest = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 
 // The CLI runs with an empty PATH and private metadata directory: no provider can launch.
 async function fixture(t) {
@@ -23,6 +24,15 @@ async function fixture(t) {
   };
   return { cwd, env, invoke };
 }
+
+test('the CLI reports the package.json version and the package lists only real paths', async (t) => {
+  const f = await fixture(t);
+  const version = f.invoke(['--version']);
+  assert.equal(version.status, 0, version.stderr);
+  assert.equal(version.stdout.trim(), manifest.version);
+  assert.equal(f.invoke(['--help']).stdout.split('\n')[0], `The Effort Project · ${manifest.version}`);
+  for (const entry of manifest.files) await access(new URL(`../${entry}`, import.meta.url));
+});
 
 test('doctor finds npm-installed and overridden provider CLIs without a shell', async (t) => {
   const f = await fixture(t);

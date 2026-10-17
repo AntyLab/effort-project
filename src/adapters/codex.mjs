@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { realpath, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { providerCommand } from '../provider-cli.mjs';
+import { VERSION } from '../version.mjs';
 
 export const capabilities = Object.freeze({
   id: 'codex',
@@ -293,7 +294,7 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
     } });
     emit({ type: 'status', status: 'starting', sandbox: allowWrite ? 'workspace-write' : 'read-only' });
     const execute = async () => {
-      await server.request('initialize', { clientInfo: { name: 'effort_project', title: 'Effort Project', version: '0.1.0' } });
+      await server.request('initialize', { clientInfo: { name: 'effort_project', title: 'Effort Project', version: VERSION } });
       server.write({ method: 'initialized', params: {} });
       const threadParams = {
         cwd: directory, sandbox: allowWrite ? 'workspace-write' : 'read-only',

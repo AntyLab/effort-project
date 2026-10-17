@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
@@ -11,8 +11,10 @@ import { handleRpc } from '../src/mcp.mjs';
 import { startDashboard } from '../src/server.mjs';
 
 const rpc=(method,params)=>({jsonrpc:'2.0',id:1,method,params});
+const {version}=JSON.parse(await readFile(new URL('../package.json',import.meta.url),'utf8'));
 test('MCP negotiation, discovery, error handling, and advisory semantics',()=>{
   assert.equal(handleRpc(rpc('initialize',{protocolVersion:'2025-06-18'})).result.protocolVersion,'2025-06-18');
+  assert.deepEqual(handleRpc(rpc('initialize',{protocolVersion:'2025-06-18'})).result.serverInfo,{name:'effort-project',version});
   assert.equal(handleRpc(rpc('tools/list')).result.tools.length,3);
   assert.equal(handleRpc({jsonrpc:'2.0',method:'notifications/initialized'}),null);
   const r=handleRpc(rpc('tools/call',{name:'effort_recommend',arguments:{prompt:'debug race condition',provider:'codex'}}));
@@ -46,7 +48,8 @@ test('dashboard requires token and rejects cross-origin, bad host and path acces
   const {server,url,token}=await startDashboard({store});t.after(()=>server.close());const base=url.split('/#')[0];
   assert.equal((await fetch(`${base}/api/status`)).status,401);
   const headers={Authorization:`Bearer ${token}`};
-  const status=await fetch(`${base}/api/status`,{headers});assert.equal(status.status,200);assert.equal((await status.json()).stats.tasks,0);
+  const status=await fetch(`${base}/api/status`,{headers});assert.equal(status.status,200);
+  const body=await status.json();assert.equal(body.stats.tasks,0);assert.equal(body.version,version);
   assert.equal((await fetch(`${base}/api/status`,{headers:{...headers,Origin:'https://evil.invalid'}})).status,403);
   const badHostStatus=await new Promise((resolve,reject)=>{const req=request(`${base}/api/status`,{headers:{...headers,Host:'evil.invalid'}},res=>{res.resume();resolve(res.statusCode);});req.on('error',reject);req.end();});
   assert.equal(badHostStatus,403);

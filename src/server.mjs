@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { recommend, POLICY_VERSION } from './policy.mjs';
 import { capabilities } from './registry.mjs';
+import { VERSION } from './version.mjs';
 
 const assets=new Map([['/',['index.html','text/html; charset=utf-8']],['/app.js',['app.js','text/javascript; charset=utf-8']],['/style.css',['style.css','text/css; charset=utf-8']]]);
 const safeEqual=(a,b)=>{const x=Buffer.from(a),y=Buffer.from(b);return x.length===y.length && timingSafeEqual(x,y);};
@@ -31,7 +32,7 @@ export async function startDashboard({store,port=0}={}) {
         if(!safeEqual(req.headers.authorization??'',`Bearer ${token}`))return json(401,{error:'Open the dashboard URL printed by effort dashboard to authenticate.'});
         if(path==='/api/status'&&req.method==='GET'){
           const tasks=await store.list(100);
-          return json(200,{version:'0.1.0',policyVersion:POLICY_VERSION,capabilities:capabilities(),stats:{tasks:tasks.length,verified:tasks.filter(t=>t.status==='verified').length,unverified:tasks.filter(t=>t.status==='unverified').length,blocked:tasks.filter(t=>['blocked','failed','cancelled'].includes(t.status)).length},tasks});
+          return json(200,{version:VERSION,policyVersion:POLICY_VERSION,capabilities:capabilities(),stats:{tasks:tasks.length,verified:tasks.filter(t=>t.status==='verified').length,unverified:tasks.filter(t=>t.status==='unverified').length,blocked:tasks.filter(t=>['blocked','failed','cancelled'].includes(t.status)).length},tasks});
         }
         if(path.startsWith('/api/tasks/')&&req.method==='GET'){
           try{return json(200,await store.get(path.slice('/api/tasks/'.length)));}catch{return json(404,{error:'Task not found.'});}

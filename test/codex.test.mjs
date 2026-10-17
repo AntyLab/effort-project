@@ -110,6 +110,8 @@ test('Codex sends effort per turn over stdin, discovers support, and defaults to
   const log = await f.readLog();
   assert.deepEqual(log[0].argv, ['app-server', '--listen', 'stdio://']);
   assert.equal(log[0].argv.includes(f.options.prompt), false);
+  const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(log.find((message) => message.method === 'initialize').params.clientInfo.version, version);
   const request = log.find((message) => message.method === 'turn/start');
   assert.equal(request.params.effort, 'low');
   assert.equal(request.params.input[0].text, f.options.prompt);

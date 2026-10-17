@@ -38,6 +38,7 @@ try {
   assert.equal(Object.keys(manifest.dependencies ?? {}).length, 0);
   const entry = join(installed, manifest.bin.effort);
   assert.match(execute([entry, '--help']), /The Effort Project/);
+  assert.equal(execute([entry, '--version']).trim(), manifest.version);
   const recommendation = JSON.parse(execute([entry, 'recommend', 'Rename a local variable', '--json']));
   assert.equal(recommendation.effort, 'low');
   const automatic = JSON.parse(execute([entry, 'auto', 'claude', '--dry-run']));
