@@ -43,7 +43,7 @@ node bench/run.mjs
 3. When `runTask` returns, the final workspace is copied again. The task's hidden `accept/` files are placed in that copy as `bench_accept/`, replacing anything the agent created under that name, and the task's accept command runs there. **Pass means this hidden check passed.** The agent's workspace itself is never modified.
 4. The record is appended to `runs.jsonl` and the temporary directories are removed. Keep them for inspection with `--keep-workspaces`.
 
-The visible and hidden checks run agent-written code. Both run without provider or service credentials and without `NODE_OPTIONS`, `PYTHONPATH` or similar injection variables.
+The visible and hidden checks run agent-written code. Both run without credential environment variables (provider and service keys and tokens, and the `SSH_AUTH_SOCK` agent socket) and without `NODE_OPTIONS`, `PYTHONPATH` or similar injection variables. They still run as your user account, so files it can read, such as `~/.codex`, `~/.claude` or `~/.ssh`, are not hidden from them. Run live benchmarks under a disposable account or in a container.
 
 Runs execute one at a time. Ctrl+C cancels the current run and writes the summary of the finished runs. Continue later with `--out <dir> --resume` and the original options. Finished runs are skipped, and an interrupted run is redone. Resuming refuses changed options or changed tasks.
 
@@ -120,7 +120,7 @@ Each line of `runs.jsonl` is one run:
 
 | Field | Meaning |
 | --- | --- |
-| `key`, `order`, `benchId` | `provider/task/arm/repeat`, position in the randomized schedule, benchmark id |
+| `key`, `order`, `benchId` | `provider/task/arm/repeat`, position in that provider's randomized schedule (each provider's runs are shuffled and numbered separately, and the providers run one after the other), benchmark id |
 | `provider`, `task`, `language`, `difficulty`, `category`, `arm`, `repeat` | What ran |
 | `model.requested`, `model.observed` | Model asked for (null = provider default) and models the CLI reported |
 | `effort.initial`, `effort.final`, `effort.decisions`, `effort.features`, `effort.policyVersion` | Effort decisions with their fixed reasons; no task text |
@@ -205,7 +205,7 @@ No real run has been made with this harness, so there is no measured cost per tu
 
 Each provider turn is a full agentic session: the CLI's own instructions and tools plus several model calls to read and edit files. Estimate the cost as *runs × average turns per run × tokens per turn × your price per token*, with tokens per turn taken from the pilot. Most runs end long before their time limit, so the time column is a ceiling, not an estimate. There is no universal spending cap. `--max-runs`, the attempt limits and the time limit bound activity, not the final bill.
 
-The Claude adapter allows 12 agentic turns per CLI invocation (`runTask` does not expose this). A task that needs more ends `blocked`, and `meta.json` records the limit.
+The Claude adapter allows 12 agentic turns per CLI invocation by default. `runTask` accepts `maxTurns`, but the harness does not set it yet. A task that needs more ends `blocked`, and `meta.json` records the limit.
 
 ## Tests
 
@@ -217,11 +217,10 @@ The Claude adapter allows 12 agentic turns per CLI invocation (`runTask` does no
 
 Python tasks are skipped when Python 3.8 or later is not installed. No test can start a real provider.
 
-## Possible hooks in `src/` (not made here)
+## Possible next steps
 
-The harness uses only `runTask` and the adapters as they are. These changes would make real runs more informative:
+The harness uses only `runTask` and the adapters as they are. `src/` has since gained what the first version of this list asked for; the harness does not use it yet:
 
-1. **Per-turn usage for resumed Claude turns.** Summing `message.usage` from the turn's `assistant` events, or reading `modelUsage` from the result, would give retried Claude runs a known token total instead of null.
-2. **`maxTurns` through `runTask`**, so a benchmark can set and record Claude's agentic turn limit.
-3. **A shared executable resolver**, for example for the `EFFORT_CODEX_BIN` / `EFFORT_CLAUDE_BIN` work on another branch, which `--codex-bin` and `--claude-bin` could reuse, including npm `.cmd` shims on Windows.
-4. **Adding `bench` to [scripts/check.mjs](../scripts/check.mjs)**, so `npm run check` syntax-checks the harness. Today the tests import every harness module, so a syntax error still fails `npm test`.
+1. **Per-turn usage for resumed Claude turns.** The Claude adapter now reports a resumed turn's tokens when the turn's own stream confirms them (`tokenScope: "turn"`, see [the Claude adapter notes](../docs/claude-adapter.md)). The fake Claude CLI does not emit per-message usage, so offline runs still show unknown usage for retried Claude runs.
+2. **`maxTurns`.** `runTask` passes it to the Claude adapter. A harness option could set it and record it in `meta.json`.
+3. **A shared executable resolver.** [src/provider-cli.mjs](../src/provider-cli.mjs) resolves `EFFORT_CODEX_BIN` / `EFFORT_CLAUDE_BIN` and npm `.cmd` shims on Windows. `--codex-bin` and `--claude-bin` could reuse it.

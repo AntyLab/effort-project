@@ -16,7 +16,7 @@ The release suite covers the policy and its uncertainty, effort caps, repeated-f
 
 Before the automatic prototype, the development host passed **75 tests, with zero failures or skips**. The JavaScript syntax check also passed. The current expanded local suite is reported above.
 
-Run `npm test` and `npm run check`. Ordinary tests use fake providers and temporary fixtures, make no paid model calls, and do not modify provider configuration. The public [CI workflow](https://github.com/AntyXO/effort-project/actions/workflows/ci.yml) runs Node 22 and 24 on Linux, macOS, and Windows; refer to the actual run for platform results. POSIX-only process-group assertions are explicitly skipped on Windows.
+Run `npm test` and `npm run check`. Ordinary tests use fake providers and temporary fixtures, make no paid model calls, and do not modify provider configuration. GitHub Actions is turned off for this repository, so there are no CI results: platform results come from local runs, and a pull request should say which platforms and Node.js versions it was tested on. POSIX-only process-group assertions are explicitly skipped on Windows.
 
 Independent review found and corrected four defects before publication: surviving verifier descendants; unstable failure signatures caused by test timing output; swallowed MCP termination signals; and hidden provider diagnostics. Real repeated failing Node tests now produce the same signature. Verification removes node:test's inherited nesting marker so the requested child tests actually execute.
 

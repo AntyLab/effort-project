@@ -58,9 +58,10 @@ test('checks run agent-written code without credentials or code-injection variab
   const env = checkEnvironment({
     PATH: '/bin', HOME: '/home/x', LANG: 'C', ANTHROPIC_API_KEY: 'a', OPENAI_API_KEY: 'b', CODEX_HOME: 'c', CLAUDE_CODE_OAUTH_TOKEN: 'd',
     GITHUB_TOKEN: 'e', AWS_SECRET_ACCESS_KEY: 'f', MY_SERVICE_PASSWORD: 'g', NODE_OPTIONS: '--require x', PYTHONPATH: '/evil', NODE_TEST_CONTEXT: 'child',
+    SSH_AUTH_SOCK: '/tmp/agent.sock',
   });
   for (const kept of ['PATH', 'HOME', 'LANG']) assert.ok(kept in env, kept);
-  for (const dropped of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'CODEX_HOME', 'CLAUDE_CODE_OAUTH_TOKEN', 'GITHUB_TOKEN', 'AWS_SECRET_ACCESS_KEY', 'MY_SERVICE_PASSWORD', 'NODE_OPTIONS', 'PYTHONPATH', 'NODE_TEST_CONTEXT']) {
+  for (const dropped of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'CODEX_HOME', 'CLAUDE_CODE_OAUTH_TOKEN', 'GITHUB_TOKEN', 'AWS_SECRET_ACCESS_KEY', 'MY_SERVICE_PASSWORD', 'NODE_OPTIONS', 'PYTHONPATH', 'NODE_TEST_CONTEXT', 'SSH_AUTH_SOCK']) {
     assert.equal(env[dropped], undefined, dropped);
   }
   assert.equal(env.PYTHONDONTWRITEBYTECODE, '1');

@@ -28,10 +28,10 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/AntyXO/effort-project.git"
+    "url": "https://github.com/AntyLab/effort-project.git"
   },
   "bugs": {
-    "url": "https://github.com/AntyXO/effort-project/issues"
+    "url": "https://github.com/AntyLab/effort-project/issues"
   },
-  "homepage": "https://github.com/AntyXO/effort-project#readme"
+  "homepage": "https://github.com/AntyLab/effort-project#readme"
 }
