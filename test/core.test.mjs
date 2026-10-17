@@ -102,8 +102,9 @@ test('unittest and Jest suite-load failures fingerprint by name, ignoring line n
 });
 test('identical long failures keep one fingerprint when the kept tail starts mid-line',async()=>{
   const cwd=await mkdtemp(join(tmpdir(),'effort-tail-'));
-  // Lines of varying length shift where the kept 32,000-character tail begins.
-  await writeFile(join(cwd,'noisy.cjs'),"for(let i=0;i<3000;i++)console.log('step '+i+' took '+Math.floor(Math.random()*100000)+'ms');console.log('AssertionError: totals differ');process.exit(1);");
+  // Lines of varying length shift where the kept 32,000-character tail begins. exitCode,
+  // not process.exit(): on POSIX, pipe writes are asynchronous and exit() would drop the tail.
+  await writeFile(join(cwd,'noisy.cjs'),"for(let i=0;i<3000;i++)console.log('step '+i+' took '+Math.floor(Math.random()*100000)+'ms');console.log('AssertionError: totals differ');process.exitCode=1;");
   const first=await verify([process.execPath,'noisy.cjs'],{cwd}),second=await verify([process.execPath,'noisy.cjs'],{cwd});
   assert.equal(first.kind,'test');assert.equal(first.fingerprint,second.fingerprint);
 });
