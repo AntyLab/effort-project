@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: https://github.com/AntyXO/effort-project/blob/main/SECURITY.md
+    about: Please do not open a public issue for a vulnerability. The security policy explains how to report one privately and what Effort does and does not protect.
+  - name: Read the documentation first
+    url: https://github.com/AntyXO/effort-project#readme
+    about: Setup, supported surfaces and the limits of what has been tested are in the README and docs folder. For a usage question, open a blank issue and it will be labeled as a question.

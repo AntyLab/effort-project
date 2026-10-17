@@ -1,0 +1,107 @@
+name: Integration report
+description: Share how an agent CLI, desktop app or MCP host behaves with Effort, whether it works or not.
+title: "[Integration]: "
+labels: ["documentation"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form to report what you saw when using Effort with an agent CLI or host such as Codex, Claude Code, OpenCode or an MCP-capable desktop app. Working, partly working and broken are all useful. Maintainers use these reports to decide what to verify and which version and platform claims the documentation can make.
+
+        A report is an observation, not a guarantee. Please keep apart what Effort advised, what was requested of the host, what the host accepted, and anything you measured about answer quality.
+
+        **Never paste tokens, API keys, auth files, prompt transcripts, private code, `.env` files or dashboard URLs.** If the behavior is plainly wrong rather than different, a [bug report](https://github.com/AntyXO/effort-project/issues/new?template=bug_report.yml) is the better form.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed tokens, prompt transcripts, private code and other secrets from everything below.
+          required: true
+  - type: dropdown
+    id: host
+    attributes:
+      label: Agent CLI or host
+      options:
+        - Codex CLI
+        - Codex desktop app
+        - Claude Code CLI
+        - Claude desktop or Claude Code app
+        - OpenCode
+        - Another MCP host
+        - Another agent CLI
+    validations:
+      required: true
+  - type: input
+    id: host-version
+    attributes:
+      label: Host version
+      description: The output of its version command, or the version shown in the app. Add the model if the host shows one.
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: How did you use Effort?
+      options:
+        - Managed run (effort run)
+        - Automatic session (effort auto)
+        - OpenCode plugin
+        - MCP tools (effort mcp)
+        - Dashboard
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: The output of `effort --version` and `node --version`, and your operating system.
+      value: |
+        Effort version:
+        Node.js version:
+        Operating system:
+    validations:
+      required: true
+  - type: dropdown
+    id: result
+    attributes:
+      label: Overall result
+      options:
+        - Works as documented
+        - Works with caveats
+        - Partly works
+        - Does not work
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: setup
+    attributes:
+      label: What you ran or configured
+      description: Commands and configuration snippets, with secrets and private paths removed.
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: What you observed
+      description: Answer each line. Write "not observable" or "not measured" where that is the honest answer.
+      value: |
+        Advice (what Effort recommended):
+        Requested (what was sent to the host, such as a flag, request field or plugin option):
+        Accepted (what the host confirmed it applied):
+        Quality or cost (what you measured and how):
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Behavior that matters for adapters
+      description: Anything you noticed about the supported effort control, resuming a session, cancellation, permissions and approvals, or usage reporting.
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted output or logs
+      description: Only what is needed to understand the result.
+      render: text
