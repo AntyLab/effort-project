@@ -1,6 +1,6 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { describe, newcombePairedByTask, nonInferiority, wilson } from './stats.mjs';
+import { describe, newcombePairedByTask, nonInferiority, wilsonByTask } from './stats.mjs';
 import { isRoutingArm, renderChart } from './chart.mjs';
 
 const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
@@ -16,13 +16,23 @@ export function analyzableRecords(records) {
   return { included, excluded };
 }
 
+const taskKey = (record) => `${record.provider}/${record.task}`;
+
 export function summarizeArm(arm, records) {
   const passed = records.filter((record) => record.accepted).length;
+  // [passed, runs] per task, so the interval can count a task's repeats as fewer runs.
+  const byTask = new Map();
+  for (const record of records) {
+    if (!byTask.has(taskKey(record))) byTask.set(taskKey(record), [0, 0]);
+    const cells = byTask.get(taskKey(record));
+    if (record.accepted) cells[0]++;
+    cells[1]++;
+  }
   return {
     arm,
     runs: records.length,
     passed,
-    passRate: wilson(passed, records.length),
+    passRate: wilsonByTask([...byTask.values()]),
     visiblePassed: records.filter((record) => record.visibleCheckPassed === true).length,
     // The agent's own check passed but the hidden check did not.
     visibleOnly: records.filter((record) => record.visibleCheckPassed === true && !record.accepted).length,
@@ -38,7 +48,6 @@ export function summarizeArm(arm, records) {
   };
 }
 
-const taskKey = (record) => `${record.provider}/${record.task}`;
 const pairKey = (record) => `${taskKey(record)}/${record.repeat}`;
 const PAIR_KINDS = ['both', 'armOnly', 'referenceOnly', 'neither'];
 
@@ -115,12 +124,14 @@ const integer = (value) => Math.round(value).toLocaleString('en-US');
 const seconds = (ms) => `${(ms / 1000).toFixed(ms < 10_000 ? 2 : 1)} s`;
 const usd = (value) => `$${value.toFixed(value < 1 ? 4 : 2)}`;
 const cell = (value) => String(value).replace(/\|/g, '\\|').replace(/\n/g, ' ');
-// Whether some task contributed more than one pair, so the interval allows for repeats.
+// Whether some task contributed more than one pair, or an arm more than one run, so the interval allows for repeats.
 const clustered = (comparison) => comparison.pairs.pairs > comparison.pairs.tasks;
-const fromTasks = (comparison) => (clustered(comparison) ? ` from ${comparison.pairs.tasks} task${comparison.pairs.tasks === 1 ? '' : 's'}` : '');
-function designEffect(difference) {
-  const text = `${difference.designEffect.toFixed(2)} (${difference.effectivePairs.toFixed(1)})`;
-  return difference.basis === 'upper bound' ? `${text}, upper bound: nothing to estimate it from` : text;
+const repeatedRuns = (arm) => Boolean(arm.passRate) && arm.passRate.runs > arm.passRate.tasks;
+const ofTasks = (tasks) => ` from ${tasks} task${tasks === 1 ? '' : 's'}`;
+const fromTasks = (comparison) => (clustered(comparison) ? ofTasks(comparison.pairs.tasks) : '');
+function designEffect(design, effective) {
+  const text = `${design.designEffect.toFixed(2)} (${effective.toFixed(1)})`;
+  return design.basis === 'upper bound' ? `${text}, upper bound: nothing to estimate it from` : text;
 }
 const table = (header, rows) => [
   `| ${header.map(cell).join(' | ')} |`, `| ${header.map(() => '---').join(' | ')} |`,
@@ -155,12 +166,17 @@ function providerSection(summary, meta, chartFile) {
     lines.push('');
   }
   lines.push(`![${summary.provider}: pass rate and median tokens by arm](${chartFile})`, '');
+  const repeatedArms = summary.arms.some(repeatedRuns);
   lines.push('### Outcomes', '');
+  if (repeatedArms) {
+    lines.push('The repeats of one task share its difficulty, so they are not independent runs. Each pass-rate interval counts them as fewer: runs ÷ the design effect, which comes from how much the arm\'s passes and failures cluster by task and lies between 1 (runs as independent) and runs ÷ tasks (each task counted once). Tasks that always passed or always failed push it toward runs ÷ tasks. When every run of the arm had the same outcome, or there is only one task, there is nothing to estimate it from and each task counts once.', '');
+  }
   lines.push(table(
-    ['Arm', 'Runs', 'Passed', 'Pass rate (95% CI)', 'Visible check passed', 'Visible passed, hidden failed', 'Run status'],
+    ['Arm', 'Runs', 'Passed', 'Pass rate (95% CI)', ...(repeatedArms ? ['Design effect (effective runs)'] : []), 'Visible check passed', 'Visible passed, hidden failed', 'Run status'],
     summary.arms.map((arm) => [
-      `\`${arm.arm}\``, arm.runs, arm.passed,
+      `\`${arm.arm}\``, repeatedRuns(arm) ? `${arm.runs}${ofTasks(arm.passRate.tasks)}` : arm.runs, arm.passed,
       arm.passRate ? `${pct(arm.passRate.estimate)} (${pct(arm.passRate.lower)}–${pct(arm.passRate.upper)})` : '—',
+      ...(repeatedArms ? [arm.passRate ? designEffect(arm.passRate, arm.passRate.effectiveRuns) : '—'] : []),
       arm.visiblePassed, arm.visibleOnly, statusText(arm.statuses),
     ]),
   ), '');
@@ -190,7 +206,7 @@ function providerSection(summary, meta, chartFile) {
         `${comparison.pairs.pairs}${fromTasks(comparison)}${comparison.pairs.unpairedArm || comparison.pairs.unpairedReference ? ` (unpaired: ${comparison.pairs.unpairedArm} arm, ${comparison.pairs.unpairedReference} reference)` : ''}`,
         `${comparison.pairs.armOnly} / ${comparison.pairs.referenceOnly}`,
         comparison.difference ? `${points(comparison.difference.estimate)} (${points(comparison.difference.lower)} to ${points(comparison.difference.upper)})` : '—',
-        ...(repeated ? [comparison.difference ? designEffect(comparison.difference) : '—'] : []),
+        ...(repeated ? [comparison.difference ? designEffect(comparison.difference, comparison.difference.effectivePairs) : '—'] : []),
         comparison.verdict,
         comparison.tokenRatio === null ? 'unknown' : `${comparison.tokenRatio.toFixed(2)}× (usage known ${comparison.tokensKnown.join('/')} vs ${comparison.referenceTokensKnown.join('/')})`,
         comparison.timeRatio === null ? '—' : `${comparison.timeRatio.toFixed(2)}×`,
@@ -237,7 +253,7 @@ export function renderSummary(meta, records) {
   lines.push(
     '- **Unknown usage is not counted as zero.** Token and cost medians and totals use only runs where every attempt reported usage. The "Usage known" column shows how many runs that is. Codex reports no cost, and Claude reports no per-turn tokens on resumed turns, so multi-attempt Claude runs have unknown token totals.',
     '- Token fields are what each CLI reports, and the two CLIs count input and cached tokens differently. Compare arms within a provider, not across providers.',
-    '- Per-arm pass-rate intervals (Wilson) treat every run as independent, so with more than one repeat they are too narrow. The difference from the reference arm pairs runs by task and repeat, so tasks that both arms find easy or hard do not widen it, and it counts the repeats of one task as fewer, effective pairs. It still rests on the tasks in the corpus: a failure confined to kinds of task the corpus lacks, or too rare to appear among its tasks, cannot show in any interval, and more repeats cannot replace more tasks. Judge a difference by its paired interval, not by whether two per-arm intervals overlap. A small pilot cannot establish equal quality (see docs/architecture.md, "Evaluate before learning").',
+    '- Per-arm pass-rate intervals (Wilson) count the repeats of one task as fewer, effective runs, because repeats share the task\'s difficulty. The difference from the reference arm pairs runs by task and repeat, so tasks that both arms find easy or hard do not widen it, and it likewise counts the repeats of one task as fewer, effective pairs. Both still rest on the tasks in the corpus: a failure confined to kinds of task the corpus lacks, or too rare to appear among its tasks, cannot show in any interval, and more repeats cannot replace more tasks. Judge a difference by its paired interval, not by whether two per-arm intervals overlap. A small pilot cannot establish equal quality (see docs/architecture.md, "Evaluate before learning").',
     '- Single-attempt arms get no feedback. `auto-escalate` also gets up to two retries with the visible check\'s output, so its pass rate mixes retrying and escalating. Add the opt-in `medium-retry` arm to separate the two.',
     '- The visible check is the agent\'s own test command, the one Effort retries on. It can pass while the hidden check fails (see "Visible passed, hidden failed").',
     '- Wall time covers the whole managed run: provider turns, process start-up and visible checks. It excludes the hidden acceptance check.',

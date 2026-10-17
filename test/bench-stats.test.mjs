@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
-import { describe, newcombePaired, newcombePairedByTask, nonInferiority, normalizeUsage, quantile, taskDesignEffect, totalUsage, wilson } from '../bench/lib/stats.mjs';
+import { describe, newcombePaired, newcombePairedByTask, nonInferiority, normalizeUsage, passDesignEffect, quantile, taskDesignEffect, totalUsage, wilson, wilsonByTask } from '../bench/lib/stats.mjs';
 import { ARMS, DEFAULT_ARMS, FAKE_CLI, SpendGuardError, buildSchedule, checkSpendGuard, maxProviderTurns, parseList, providerLaunch, runKey } from '../bench/lib/plan.mjs';
 import { aggregate, pairRuns, renderSummary } from '../bench/lib/report.mjs';
 import { seededRandom, shuffle, unitHash } from '../bench/lib/random.mjs';
-import { compact, isRoutingArm } from '../bench/lib/chart.mjs';
+import { compact, isRoutingArm, renderChart } from '../bench/lib/chart.mjs';
 
 const close = (actual, expected, tolerance = 5e-4) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} is not within ${tolerance} of ${expected}`);
 
@@ -156,6 +156,77 @@ test('repeating tasks whose outcomes never vary cannot buy a non-inferior verdic
   assert.equal(nonInferiority(clustered, 0.05), 'inconclusive');
 });
 
+test('the per-arm design effect matches hand-computed values', () => {
+  // Four tasks as [passed, runs]: 3/3, 3/3, 1/3 and 0/1 (say a run was excluded), 7 of 10 passed.
+  // Runs as independent: sum of squared deviations 10·0.7·0.3 = 2.1, variance 2.1 / (10·9) = 7/300.
+  // Between tasks: passed − runs·0.7 = 0.9, 0.9, −1.1, −0.7, squares sum to 3.32, variance
+  // (4/3)·3.32 / 10² = 13.28/300. Design effect 13.28/7 = 332/175 = 1.897143, below the bound 10/4.
+  const tasks = [[3, 3], [3, 3], [1, 3], [0, 1]];
+  const design = passDesignEffect(tasks);
+  close(design.designEffect, 332 / 175, 1e-12);
+  assert.deepEqual([design.basis, design.tasks, design.runs], ['estimated', 4, 10]);
+  // Wilson on 3.689759 passes of 5.271084 effective runs: 0.306439 to 0.924938.
+  const rate = wilsonByTask(tasks);
+  close(rate.effectiveRuns, 10 * 175 / 332, 1e-12);
+  assert.equal(rate.estimate, 0.7);
+  close(rate.lower, 0.306439, 1e-6);
+  close(rate.upper, 0.924938, 1e-6);
+  // Unadjusted, the same ten runs give 0.396778 to 0.892209.
+  const unadjusted = wilson(7, 10);
+  close(unadjusted.lower, 0.396778, 1e-6);
+  close(unadjusted.upper, 0.892209, 1e-6);
+
+  // Tasks that always pass or always fail: 8 and 3 of 11, three repeats each. The estimate is
+  // (n − 1)/(K − 1) = 32/10, above runs ÷ tasks, so it is held at 3: the interval is Wilson 8/11,
+  // 0.434355 to 0.902539, not the unadjusted 24/33, 0.557824 to 0.849326.
+  const fixed = wilsonByTask([...Array(8).fill([3, 3]), ...Array(3).fill([0, 3])]);
+  assert.deepEqual([fixed.designEffect, fixed.basis, fixed.effectiveRuns], [3, 'estimated', 11]);
+  assert.equal(fixed.lower, wilson(8, 11).lower);
+  assert.equal(fixed.upper, wilson(8, 11).upper);
+  close(fixed.lower, 0.434355, 1e-6);
+  close(fixed.upper, 0.902539, 1e-6);
+  close(wilson(24, 33).lower, 0.557824, 1e-6);
+
+  // Every task passed one of two runs: no deviation between tasks, so the estimate is 0. It is floored
+  // at 1, never used to narrow the interval, which stays Wilson 4/8.
+  const even = wilsonByTask(Array(4).fill([1, 2]));
+  assert.deepEqual([even.designEffect, even.basis, even.lower, even.upper], [1, 'estimated', wilson(4, 8).lower, wilson(4, 8).upper]);
+});
+
+test('per-arm repeats with nothing to estimate from count each task once', () => {
+  // 11 tasks × 3 repeats, every run passed: the outcomes never vary, so the design effect is the
+  // upper bound 3 and the interval is Wilson 11/11, lower bound 11 / (11 + z²) = 0.741167.
+  // Unadjusted, 33/33 gives 33 / (33 + z²) = 0.895730.
+  const allPassed = wilsonByTask(Array(11).fill([3, 3]));
+  assert.deepEqual([allPassed.designEffect, allPassed.basis, allPassed.effectiveRuns], [3, 'upper bound', 11]);
+  close(allPassed.lower, 0.741167, 1e-6);
+  assert.equal(allPassed.upper, 1);
+  close(wilson(33, 33).lower, 0.895730, 1e-6);
+  // A single task: 2 of 3 passed counts as one run. Wilson with p = 2/3, n = 1 is
+  // (2/3 + z²/2) / (1 + z²) = 0.534425 ± 0.440239, so 0.094186 to 0.974664.
+  const oneTask = wilsonByTask([[2, 3], [0, 0]]);
+  assert.deepEqual([oneTask.designEffect, oneTask.basis, oneTask.tasks, oneTask.runs], [3, 'upper bound', 1, 3]);
+  close(oneTask.lower, 0.094186, 1e-6);
+  close(oneTask.upper, 0.974664, 1e-6);
+  assert.equal(wilsonByTask([]), null);
+  assert.equal(wilsonByTask([[0, 0]]), null);
+  for (const cells of [[3, 2], [-1, 2], [1.5, 2], [1, 2, 3]]) assert.throws(() => wilsonByTask([cells]), RangeError);
+});
+
+test('with one run per task the per-arm interval is plain Wilson', () => {
+  // One repeat: 11 tasks, 7 passed. The design effect is exactly 1 and every number equals
+  // wilson(7, 11), 0.353801 to 0.848335.
+  const rate = wilsonByTask([...Array(7).fill([1, 1]), ...Array(4).fill([0, 1])]);
+  assert.deepEqual([rate.designEffect, rate.basis, rate.tasks, rate.runs, rate.effectiveRuns], [1, 'one run per task', 11, 11, 11]);
+  const plain = wilson(7, 11);
+  assert.deepEqual([rate.estimate, rate.lower, rate.upper], [plain.estimate, plain.lower, plain.upper]);
+  close(rate.lower, 0.353801, 1e-6);
+  close(rate.upper, 0.848335, 1e-6);
+  // Also when every run passed: one run per task is checked before the upper bound.
+  const allPassed = wilsonByTask(Array(5).fill([1, 1]));
+  assert.deepEqual([allPassed.designEffect, allPassed.basis, allPassed.lower], [1, 'one run per task', wilson(5, 5).lower]);
+});
+
 test('the reference comparison pairs runs by task and repeat and sets unpaired runs aside', () => {
   const tasks = Array.from({ length: 21 }, (_, index) => ({ id: `t${index + 1}`, language: 'node', difficulty: 'easy' }));
   const meta = { arms: [{ name: 'fixed-high' }, { name: 'auto-rules' }], providers: ['codex'], referenceArm: 'fixed-high', margin: 0.05, tasks, repeats: 5, mode: 'fake' };
@@ -208,7 +279,8 @@ test('the summary counts repeats of a task as fewer pairs and says so', () => {
       records.push(record(id, 'fixed-high', repeat, reference), record(id, 'auto-rules', repeat, reference && !(index === 0 && repeat < 3)));
     }
   });
-  const [comparison] = aggregate(records, meta).providers[0].comparisons;
+  const [summary] = aggregate(records, meta).providers;
+  const [comparison] = summary.comparisons;
   assert.deepEqual(comparison.pairs.byTask[0], [1, 0, 2, 0]);
   close(comparison.difference.designEffect, 119 / 59, 1e-12);
   close(comparison.difference.lower, -0.071179, 1e-6);
@@ -218,11 +290,42 @@ test('the summary counts repeats of a task as fewer pairs and says so', () => {
   assert.match(markdown, /95% CI −7\.1 pp to \+3\.6 pp, 120 paired runs from 40 tasks\), \*\*inconclusive\*\*/);
   assert.match(markdown, /The repeats of one task are not independent pairs/);
 
-  // Only the first repeat: one pair per task, no design-effect column and no change in wording.
+  // The per-arm pass rates count repeats as fewer runs too. The reference passed t1–t30 every time
+  // and failed t31–t40: the estimate (40/39)·67.5/120² over 0.75·0.25/119 = 119/39 is above 3, so it
+  // is held at 3 and the interval is Wilson 30/40, 0.598060 to 0.858129.
+  const [arm, reference] = ['auto-rules', 'fixed-high'].map((name) => summary.arms.find((entry) => entry.arm === name));
+  assert.deepEqual([reference.passRate.designEffect, reference.passRate.basis], [3, 'estimated']);
+  assert.deepEqual([reference.passRate.lower, reference.passRate.upper], [wilson(30, 40).lower, wilson(30, 40).upper]);
+  close(reference.passRate.lower, 0.598060, 1e-6);
+  // The arm passed 88: t1 once, t2–t30 every time. Deviations from 3·11/15 are −1.2, 0.8 (29 tasks) and
+  // −2.2 (10 tasks), squares 68.4, so (40/39)·68.4/120² over (11/15)(4/15)/119 = 6783/2288 = 2.964598,
+  // 40.48 effective runs, and 0.581354 to 0.844863 (unadjusted 88/120: 0.647876 to 0.804315).
+  close(arm.passRate.designEffect, 6783 / 2288, 1e-12);
+  close(arm.passRate.lower, 0.581354, 1e-6);
+  close(arm.passRate.upper, 0.844863, 1e-6);
+  assert.match(markdown, /\| `fixed-high` \| 120 from 40 tasks \| 90 \| 75\.0% \(59\.8%–85\.8%\) \| 3\.00 \(40\.0\) \|/);
+  assert.match(markdown, /\| `auto-rules` \| 120 from 40 tasks \| 88 \| 73\.3% \(58\.1%–84\.5%\) \| 2\.96 \(40\.5\) \|/);
+  assert.match(markdown, /The repeats of one task share its difficulty, so they are not independent runs/);
+  const chart = renderChart(summary, { fake: true });
+  assert.match(chart, /<title>auto-rules: 88\/120 passed from 40 tasks, 73\.3% \(95% CI 58\.1%–84\.5%; design effect 2\.96, 40\.5 effective runs\)<\/title>/);
+  // The band starts at the adjusted lower bound, not the unadjusted one (the pass panel starts at x = 136, 240 wide).
+  const bandAt = (lower) => `<rect class="band-routing" x="${Number((136 + lower * 240).toFixed(2))}"`;
+  assert.ok(chart.includes(bandAt(arm.passRate.lower)));
+  assert.ok(!chart.includes(bandAt(wilson(88, 120).lower)));
+
+  // Only the first repeat: one pair and one run per task, plain Wilson per arm, no design-effect
+  // column and no change in wording.
   const firstRepeat = records.filter((entry) => entry.repeat === 1);
   const single = renderSummary({ ...meta, repeats: 1 }, firstRepeat).markdown;
   assert.match(single, /\| `auto-rules` \| 40 \| 0 \/ 1 \| −2\.5 pp \(/);
-  assert.doesNotMatch(single, /Design effect|from 40 tasks|not independent pairs/);
+  assert.match(single, /\| `auto-rules` \| 40 \| 29 \| 72\.5% \(/);
+  assert.doesNotMatch(single, /Design effect|from 40 tasks|not independent pairs|not independent runs/);
+  const [singleSummary] = aggregate(firstRepeat, { ...meta, repeats: 1 }).providers;
+  for (const entry of singleSummary.arms) {
+    const plain = wilson(entry.passed, entry.runs);
+    assert.deepEqual([entry.passRate.designEffect, entry.passRate.lower, entry.passRate.upper], [1, plain.lower, plain.upper]);
+  }
+  assert.doesNotMatch(renderChart(singleSummary, { fake: true }), /design effect|effective runs/);
 });
 
 test('non-inferiority verdicts follow the predefined margin', () => {

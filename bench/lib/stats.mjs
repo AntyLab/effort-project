@@ -1,6 +1,9 @@
 export const Z95 = 1.959963984540054;
 
-/** Wilson score interval for a binomial proportion; null when there are no trials. */
+/**
+ * Wilson score interval for a binomial proportion; null when there are no trials.
+ * It treats the trials as independent; for runs that come in tasks, use wilsonByTask.
+ */
 export function wilson(successes, trials, z = Z95) {
   if (!Number.isInteger(trials) || trials < 0) throw new RangeError('trials must be a non-negative integer.');
   if (!Number.isInteger(successes) || successes < 0 || successes > trials) throw new RangeError('successes must be an integer from 0 to trials.');
@@ -8,7 +11,7 @@ export function wilson(successes, trials, z = Z95) {
   return wilsonBounds(successes, trials, z);
 }
 
-// The Wilson formula itself, which also takes the fractional effective counts of newcombePairedByTask.
+// The Wilson formula itself, which also takes the fractional effective counts of wilsonByTask and newcombePairedByTask.
 function wilsonBounds(successes, trials, z) {
   const p = successes / trials;
   const z2 = z * z;
@@ -70,20 +73,68 @@ function newcombeBounds(both, firstOnly, secondOnly, neither, z) {
 export function taskDesignEffect(tasks) {
   const clusters = tasks.map((cells) => {
     if (cells.length !== 4 || !cells.every((value) => Number.isInteger(value) && value >= 0)) throw new RangeError('paired counts must be non-negative integers.');
-    return { size: cells[0] + cells[1] + cells[2] + cells[3], difference: cells[1] - cells[2], discordant: cells[1] + cells[2] };
+    // Each pair's difference is −1, 0 or 1, so its square is 1 exactly when the pair disagrees.
+    return { size: cells[0] + cells[1] + cells[2] + cells[3], sum: cells[1] - cells[2], squares: cells[1] + cells[2] };
   }).filter((cluster) => cluster.size > 0);
+  const { runs, ...design } = clusterDesignEffect(clusters, 'one pair per task');
+  return { ...design, pairs: runs };
+}
+
+/**
+ * The same design effect for one arm's pass rate: the between-task variance of
+ * its pass/fail outcomes over their variance if every run were independent.
+ * `tasks` holds each task's [passed, runs]; tasks without runs are left out.
+ * Bounds and bases as in taskDesignEffect, with 'one run per task' for exactly 1
+ * and 'upper bound' when there is a single task or every run had the same outcome.
+ */
+export function passDesignEffect(tasks) {
+  const clusters = tasks.map((cells) => {
+    if (cells.length !== 2 || !cells.every((value) => Number.isInteger(value) && value >= 0) || cells[0] > cells[1]) throw new RangeError('each task needs [passed, runs], integers with passed ≤ runs.');
+    // A run's outcome is 0 or 1, so the sum of its squares is the number passed.
+    return { size: cells[1], sum: cells[0], squares: cells[0] };
+  }).filter((cluster) => cluster.size > 0);
+  return clusterDesignEffect(clusters, 'one run per task');
+}
+
+// Both design effects: tasks are clusters of runs, each with its run count
+// (`size`), the sum of its runs' values and the sum of their squares. The
+// between-task and independent variances use K − 1 and n − 1, so one run per
+// task gives exactly 1. That case is returned directly, with the basis `single`.
+function clusterDesignEffect(clusters, single) {
   const count = clusters.length;
-  const pairs = clusters.reduce((sum, cluster) => sum + cluster.size, 0);
-  if (pairs === count) return { designEffect: 1, basis: 'one pair per task', tasks: count, pairs };
-  const bound = pairs / count;
-  const mean = clusters.reduce((sum, cluster) => sum + cluster.difference, 0) / pairs;
-  // Each pair's difference is −1, 0 or 1, so the sum of squared deviations is
-  // the discordant count minus pairs × mean².
-  const squares = clusters.reduce((sum, cluster) => sum + cluster.discordant, 0) - pairs * mean * mean;
-  if (count < 2 || squares <= 1e-9) return { designEffect: bound, basis: 'upper bound', tasks: count, pairs };
-  const independent = squares / (pairs * (pairs - 1));
-  const between = (count / (count - 1)) * clusters.reduce((sum, cluster) => sum + (cluster.difference - cluster.size * mean) ** 2, 0) / (pairs * pairs);
-  return { designEffect: Math.min(Math.max(between / independent, 1), bound), basis: 'estimated', tasks: count, pairs };
+  const runs = clusters.reduce((sum, cluster) => sum + cluster.size, 0);
+  if (runs === count) return { designEffect: 1, basis: single, tasks: count, runs };
+  const bound = runs / count;
+  const mean = clusters.reduce((sum, cluster) => sum + cluster.sum, 0) / runs;
+  const squares = clusters.reduce((sum, cluster) => sum + cluster.squares, 0) - runs * mean * mean;
+  if (count < 2 || squares <= 1e-9) return { designEffect: bound, basis: 'upper bound', tasks: count, runs };
+  const independent = squares / (runs * (runs - 1));
+  const between = (count / (count - 1)) * clusters.reduce((sum, cluster) => sum + (cluster.sum - cluster.size * mean) ** 2, 0) / (runs * runs);
+  return { designEffect: Math.min(Math.max(between / independent, 1), bound), basis: 'estimated', tasks: count, runs };
+}
+
+/**
+ * Wilson's interval for an arm's pass rate when its runs come in tasks, as they
+ * do when the benchmark repeats each task. The repeats of one task share its
+ * difficulty, so they are worth fewer independent runs than their number. As in
+ * newcombePairedByTask (Rao and Scott 1992), the passes and runs are divided by
+ * passDesignEffect before the interval is computed. `tasks` holds each task's
+ * [passed, runs]. With one run per task nothing changes and the result equals
+ * wilson(passed, runs); null when there are no runs.
+ *
+ * Unlike the paired difference, an arm's pass rate keeps the variation between
+ * easy and hard tasks, so its design effect is usually larger: when every task
+ * always passes or always fails, with the same number of runs each, it reaches
+ * runs ÷ tasks and the interval is the one-repeat interval. When every run had
+ * the same outcome there is nothing to estimate it from and each task counts
+ * once, so repeats of tasks whose outcomes never vary cannot narrow it.
+ */
+export function wilsonByTask(tasks, z = Z95) {
+  const design = passDesignEffect(tasks);
+  if (!design.runs) return null;
+  const passed = tasks.reduce((sum, cells) => sum + cells[0], 0);
+  const interval = wilsonBounds(passed / design.designEffect, design.runs / design.designEffect, z);
+  return { ...interval, estimate: passed / design.runs, ...design, effectiveRuns: design.runs / design.designEffect };
 }
 
 /**
