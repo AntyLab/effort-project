@@ -5,6 +5,11 @@ export function wilson(successes, trials, z = Z95) {
   if (!Number.isInteger(trials) || trials < 0) throw new RangeError('trials must be a non-negative integer.');
   if (!Number.isInteger(successes) || successes < 0 || successes > trials) throw new RangeError('successes must be an integer from 0 to trials.');
   if (trials === 0) return null;
+  return wilsonBounds(successes, trials, z);
+}
+
+// The Wilson formula itself, which also takes the fractional effective counts of newcombePairedByTask.
+function wilsonBounds(successes, trials, z) {
   const p = successes / trials;
   const z2 = z * z;
   const denominator = 1 + z2 / trials;
@@ -19,21 +24,21 @@ export function wilson(successes, trials, z = Z95) {
  * counted once: `both` passed, only the first passed (`firstOnly`), only the
  * second passed (`secondOnly`), or `neither` did. Null when there are no pairs.
  *
- * Arms run the same tasks and repeats, so their outcomes are paired. Chosen
- * over a task-clustered bootstrap, which would also model correlated repeats:
- * with about eleven tasks a percentile bootstrap undercovers, and when every
- * pair agrees (likely in a small pilot) it collapses to a zero-width interval
- * that reads as non-inferior. This one is closed form, needs no seed and keeps
- * its width there. Its limit: pairs count as independent, so repeats of one
- * task, which are correlated, still make the interval too narrow.
+ * Arms run the same tasks and repeats, so their outcomes are paired. This treats
+ * the pairs as independent, which holds with one pair per task; with repeats,
+ * use newcombePairedByTask.
  */
 export function newcombePaired(both, firstOnly, secondOnly, neither, z = Z95) {
   const cells = [both, firstOnly, secondOnly, neither];
   if (!cells.every((value) => Number.isInteger(value) && value >= 0)) throw new RangeError('paired counts must be non-negative integers.');
+  if (both + firstOnly + secondOnly + neither === 0) return null;
+  return newcombeBounds(both, firstOnly, secondOnly, neither, z);
+}
+
+function newcombeBounds(both, firstOnly, secondOnly, neither, z) {
   const pairs = both + firstOnly + secondOnly + neither;
-  if (pairs === 0) return null;
-  const first = wilson(both + firstOnly, pairs, z);
-  const second = wilson(both + secondOnly, pairs, z);
+  const first = wilsonBounds(both + firstOnly, pairs, z);
+  const second = wilsonBounds(both + secondOnly, pairs, z);
   // Correlation of the two outcomes (phi), 0 when any margin is empty. Newcombe
   // reduces a positive numerator by n/2 before dividing.
   const margins = (both + firstOnly) * (secondOnly + neither) * (both + secondOnly) * (firstOnly + neither);
@@ -47,6 +52,78 @@ export function newcombePaired(both, firstOnly, secondOnly, neither, z = Z95) {
     lower: estimate - combine(first.estimate - first.lower, second.upper - second.estimate),
     upper: estimate + combine(first.upper - first.estimate, second.estimate - second.lower),
   };
+}
+
+/**
+ * How much the clustering of pairs in tasks inflates the variance of the paired
+ * difference: its between-task variance, the clustered variance Obuchowski
+ * (1998, Statistics in Medicine 17:1495–1507) uses for matched pairs, over its
+ * variance if every pair were independent. `tasks` holds each task's
+ * [both, firstOnly, secondOnly, neither] counts; tasks without pairs are left out.
+ *
+ * The result is kept between 1 (pairs as independent) and pairs ÷ tasks (one
+ * pair per task), and `basis` says where it came from: 'one pair per task' (it
+ * is exactly 1), 'estimated', or 'upper bound' when there is nothing to estimate
+ * it from: a single task, or every pair with the same difference (typically,
+ * every pair agreed).
+ */
+export function taskDesignEffect(tasks) {
+  const clusters = tasks.map((cells) => {
+    if (cells.length !== 4 || !cells.every((value) => Number.isInteger(value) && value >= 0)) throw new RangeError('paired counts must be non-negative integers.');
+    return { size: cells[0] + cells[1] + cells[2] + cells[3], difference: cells[1] - cells[2], discordant: cells[1] + cells[2] };
+  }).filter((cluster) => cluster.size > 0);
+  const count = clusters.length;
+  const pairs = clusters.reduce((sum, cluster) => sum + cluster.size, 0);
+  if (pairs === count) return { designEffect: 1, basis: 'one pair per task', tasks: count, pairs };
+  const bound = pairs / count;
+  const mean = clusters.reduce((sum, cluster) => sum + cluster.difference, 0) / pairs;
+  // Each pair's difference is −1, 0 or 1, so the sum of squared deviations is
+  // the discordant count minus pairs × mean².
+  const squares = clusters.reduce((sum, cluster) => sum + cluster.discordant, 0) - pairs * mean * mean;
+  if (count < 2 || squares <= 1e-9) return { designEffect: bound, basis: 'upper bound', tasks: count, pairs };
+  const independent = squares / (pairs * (pairs - 1));
+  const between = (count / (count - 1)) * clusters.reduce((sum, cluster) => sum + (cluster.difference - cluster.size * mean) ** 2, 0) / (pairs * pairs);
+  return { designEffect: Math.min(Math.max(between / independent, 1), bound), basis: 'estimated', tasks: count, pairs };
+}
+
+/**
+ * Newcombe's paired interval for pairs that come in tasks, as they do when the
+ * benchmark repeats each task. Repeats of a task share whatever makes it easy or
+ * hard for one arm and not the other, so they are worth fewer independent pairs
+ * than their number. Following Rao and Scott (1992, Biometrics 48:577–585), the
+ * four counts are divided by taskDesignEffect before the interval is computed,
+ * which widens it by about the square root of the design effect. With one pair
+ * per task nothing changes and the result equals newcombePaired.
+ *
+ * Why this method: a simulation over 11 and 20 tasks, 1 to 10 repeats, tasks
+ * from near-deterministic to noisy, and an arm that always fails a random few
+ * tasks. At 11 tasks and 3 repeats it covered 96–100% (unadjusted: 92–100%) and
+ * gave a non-inferior verdict when the true difference was at the margin in at
+ * most 3.2% of samples (unadjusted: 5.0%). The alternatives:
+ * - Each task as one pair (Newcombe over per-task pass fractions): always covers,
+ *   but repeats never narrow it, so they would buy nothing.
+ * - A t-interval over per-task differences, or a task-clustered bootstrap seeded
+ *   from meta.seed: zero width when every task agrees, and with eleven tasks
+ *   false non-inferior verdicts at the margin in up to 48% (t) and 53%
+ *   (bootstrap) of samples, even with one repeat.
+ * This one is closed form, needs no seed, and never has zero width.
+ *
+ * Two choices protect the non-inferiority verdict. A design effect below 1 is
+ * treated as noise, never as a reason to narrow. When no pair disagrees, the
+ * clustering cannot be estimated and each task counts once, so repeating tasks
+ * whose outcomes never vary cannot buy a non-inferior verdict. (A single
+ * disagreement is then estimated as unclustered, so it can give a narrower
+ * interval than none.) Limits: the design effect is itself estimated from about
+ * eleven tasks, and a failure confined to a few kinds of task may not be in the
+ * sample at all. Repeats cannot reveal it; only more tasks can. With 10 repeats
+ * of near-deterministic tasks coverage fell to 80% (unadjusted: 41%).
+ */
+export function newcombePairedByTask(tasks, z = Z95) {
+  const design = taskDesignEffect(tasks);
+  if (!design.pairs) return null;
+  const totals = [0, 1, 2, 3].map((index) => tasks.reduce((sum, cells) => sum + cells[index], 0));
+  const interval = newcombeBounds(...totals.map((value) => value / design.designEffect), z);
+  return { ...interval, ...design, effectivePairs: design.pairs / design.designEffect };
 }
 
 /** A predefined non-inferiority reading of a difference interval (arm − reference) against `margin`. */

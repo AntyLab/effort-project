@@ -139,7 +139,7 @@ Each line of `runs.jsonl` is one run:
 - median tokens with the interquartile range, median output tokens, total tokens, and cost where reported
 - median wall time, mean attempts and escalations
 - per-task pass counts
-- the pass-rate difference from the reference arm over paired runs, with a 95% interval for paired proportions, and how many runs had no partner (see below)
+- the pass-rate difference from the reference arm over paired runs, with a 95% interval for paired proportions that allows for repeats of a task, and how many runs had no partner (see below)
 
 It then gives a verdict against the non-inferiority margin (`--margin`, default 5 percentage points), which is recorded in `meta.json` when the benchmark starts. `node bench/run.mjs report <dir>` rebuilds the summary from `runs.jsonl`.
 
@@ -149,7 +149,16 @@ Every arm runs the same tasks and repeats, so the comparison with the reference 
 
 A run without a partner is left out of the difference and shown in the "Paired runs" column. That happens when its counterpart hit a harness error, was interrupted, or has not run yet. The run still counts in its own arm's pass rate. So the difference can differ from the gap between the two pass rates in the outcomes table.
 
-A task-clustered bootstrap would also allow for repeats of a task being correlated. It was not used because with about eleven tasks it undercovers. And when every pair agrees, which is likely in a small pilot, it collapses to a zero-width interval that would read as non-inferior. Newcombe's interval is closed form, needs no seed, and keeps a realistic width in that case. Its limit is described below.
+With more than one repeat, the pairs of one task are not independent: whatever makes a task hard for one arm and not the other, such as the rules picking too low an effort for it, shows up in every repeat. So the interval counts them as fewer, *effective* pairs. Following Rao and Scott (1992, *Biometrics* 48:577–585), the four pair counts are divided by a design effect before Newcombe's interval is computed. The design effect compares two variances of the difference: one computed between tasks (the clustered variance Obuchowski used for matched pairs: Obuchowski 1998, *Statistics in Medicine* 17:1495–1507), the other as if every pair were independent. It is kept between 1 and pairs ÷ tasks, so the interval never counts more pairs than were run or fewer than one per task. An estimate below 1 is treated as noise, not as a reason to narrow the interval. When there is nothing to estimate it from, because every pair had the same result (usually, every pair agreed) or there is only one task, each task counts once. Repeating tasks whose outcomes never vary therefore cannot produce a non-inferior verdict. A single disagreement, by contrast, looks like independent noise and gives a design effect of 1, so it can yield a narrower interval than no disagreement at all. With one repeat every task has one pair, the design effect is exactly 1, and nothing changes. The summary shows the design effect and the effective pairs when any task has more than one pair.
+
+Other ways to allow for repeats were tried in a simulation over 11 and 20 tasks with 1 to 10 repeats, from near-deterministic to noisy tasks, including an arm that always fails a random few tasks:
+
+- **Unadjusted pairs** (the interval without the design effect), over eleven tasks, covered the true difference in as few as 92% of samples at 3 repeats and 41% at 10.
+- **One pair per task** (Newcombe over per-task pass fractions) always covered, but more repeats never narrowed it, so they would buy nothing.
+- **A t-interval over per-task differences**, or **a task-clustered bootstrap**: both collapse to zero width when every task agrees, which reads as non-inferior. Over eleven tasks, with the true difference at the margin, they declared non-inferiority in up to 48% and 53% of samples, even with one repeat.
+- **The design-effect interval**, at the default corpus with 3 repeats, covered 96–100% and declared non-inferiority at the margin in at most 3.2% of samples (unadjusted: 5.0%). It is closed form, needs no seed and never has zero width.
+
+`newcombePairedByTask` in [lib/stats.mjs](lib/stats.mjs) records the reasoning. Its limits are described below.
 
 The per-arm pass rates keep their Wilson intervals, which treat every run of the arm as independent.
 
@@ -159,7 +168,8 @@ The charts are separate SVG files because GitHub strips inline `<svg>` from Mark
 
 - **Unknown usage is not counted as zero.** Medians and totals use only runs whose every attempt reported usage, and the summary shows how many that is. Codex reports no cost. Claude reports no per-turn tokens on resumed turns, so Claude runs that retried have unknown totals. That biases token comparisons toward the arms that retry less.
 - Token fields are what each CLI reports, and the CLIs count input and cached tokens differently. Compare arms within a provider, not across providers. Claude also runs in restricted mode without a shell, so it cannot run tests itself, while Codex can.
-- The paired difference removes the task-to-task variation both arms share, but it still treats the pairs as independent, and the per-arm Wilson intervals treat runs as independent. Repeats of one task are correlated, so with more than one repeat and eleven tasks the real uncertainty is larger than shown. With one repeat each pair is a different task. Judge a difference by its paired interval, not by whether two per-arm intervals overlap. A pilot cannot establish equal quality.
+- The paired difference removes the task-to-task variation both arms share and counts the repeats of one task as fewer pairs, but the per-arm Wilson intervals still treat every run as independent, so with more than one repeat they are too narrow. Judge a difference by its paired interval, not by whether two per-arm intervals overlap.
+- **More repeats cannot replace more tasks.** The design effect is itself estimated from eleven tasks. A failure confined to kinds of task the corpus lacks, or too rare to appear among its tasks, cannot show in any interval. In the simulation, 10 repeats of near-deterministic tasks still covered only 80% of the time (41% unadjusted). Repeats narrow the comparison only as far as the arms' disagreements vary within tasks. To make a verdict firmer, add tasks. A pilot cannot establish equal quality.
 - The hidden check guards against accidental or opportunistic test editing, not a determined adversary: an agent that searched the disk could find this repository. `changedFiles` and `visibleTestsChanged` help spot that.
 - Provider-side prompt caching can make later runs cheaper. The randomized order spreads that effect across arms instead of favoring one.
 
@@ -211,7 +221,7 @@ The Claude adapter allows 12 agentic turns per CLI invocation by default. `runTa
 
 `npm test` runs three offline test files:
 
-- `test/bench-stats.test.mjs` covers the Wilson and paired Newcombe intervals against published and hand-computed values, the pairing of runs with the reference arm (including unpaired runs and a verdict that pairing changes), unknown-usage handling, seeded schedules, the spend guard, and the fake-versus-live launch split.
+- `test/bench-stats.test.mjs` covers the Wilson and paired Newcombe intervals against published and hand-computed values, the design effect for repeats against hand-computed values (including a verdict that clustering changes, and repeats that never vary staying at the one-repeat interval), the pairing of runs with the reference arm (including unpaired runs and a verdict that pairing changes), unknown-usage handling, seeded schedules, the spend guard, and the fake-versus-live launch split.
 - `test/bench-corpus.test.mjs` self-tests every task, checks the corpus's coverage and manifest validation, confirms that the hidden check replaces an agent-planted `bench_accept/`, and confirms that checks get no credentials.
 - `test/bench-run.test.mjs` runs end-to-end offline benchmarks through the real adapters (including retries, escalation and unknown Claude usage), a resume after interruption, the CLI with nothing on `PATH`, and the live-run refusals.
 
