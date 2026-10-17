@@ -1,6 +1,4 @@
-import { resolve } from 'node:path';
 import { LEVELS, recommend } from '../policy.mjs';
-import { repositoryFacts } from '../repository.mjs';
 
 // Claude Code UserPromptSubmit hook for the advisory plugin. Hooks cannot set
 // effort, so the only output is a systemMessage line shown to the user. The
@@ -14,24 +12,25 @@ const levelOf = value => {
   const level = typeof value === 'string' ? value.trim().toLowerCase() : '';
   return LEVELS.includes(level) ? level : '';
 };
-// Without a known level, only the suggestions that come from a rule are shown, each
-// worded for the sessions it could help. Medium has no entry: it is the uncertain default.
-const UNKNOWN_LEVEL_DIRECTION = { high: 'lower', low: 'higher' };
+// The two suggestions a prompt rule can make, each worded for the sessions it could
+// help. Medium has no entry: it is the uncertain default, so no rule fired.
+const DIRECTION = { high: 'lower', low: 'higher' };
 
 /**
  * Advice for one UserPromptSubmit event: { systemMessage }, or null to stay silent.
  *
+ * Only Effort's prompt rules count. recommend() gets the prompt alone and no
+ * repository metadata: the breadth of a checkout says nothing about one request,
+ * and it marked every prompt in a three-language repository as high. Without
+ * metadata, a result other than medium means a prompt rule fired. The hook also
+ * reads no files, so a stalled drive cannot hold it past its timeout.
+ *
  * Claude Code documents the session's effort level (the event's effort.level and
  * $CLAUDE_EFFORT) only for events inside a tool-use context, and 2.1.299 passes
- * neither to UserPromptSubmit hooks. So the level is usually unknown here. Known
- * level: speak only when Effort's recommendation differs from it. Unknown level:
- * speak only when a rule fired, that is, for a suggestion other than the medium
- * default, and never claim a level. effort is $CLAUDE_EFFORT. repositoryFactsFn
- * is injectable for offline tests.
+ * neither to UserPromptSubmit hooks. Known level: speak only when the suggestion
+ * differs from it. Unknown level: never claim one. effort is $CLAUDE_EFFORT.
  */
-export async function promptAdvice(event, {
-  effort, cwd = process.cwd(), repositoryFactsFn = repositoryFacts, metadataTimeoutMs = 1000,
-} = {}) {
+export function promptAdvice(event, { effort } = {}) {
   if (!event || typeof event !== 'object' || Array.isArray(event)) return null;
   if (event.hook_event_name !== undefined && event.hook_event_name !== 'UserPromptSubmit') return null;
   const { prompt } = event;
@@ -39,28 +38,15 @@ export async function promptAdvice(event, {
   // Commands and skills arrive as typed (/name args) and ! lines run a shell;
   // neither describes the task the next requests will work on.
   if (/^\s*[/!]/.test(prompt)) return null;
+  let suggested;
+  try { suggested = recommend({ prompt, provider: 'claude', maxEffort: CEILING }).effort; } catch { return null; }
+  const direction = DIRECTION[suggested];
+  if (!direction) return null;
   const current = levelOf(event.effort?.level) || levelOf(effort);
-  let deadline;
-  try {
-    const directory = resolve(typeof event.cwd === 'string' && event.cwd ? event.cwd : cwd);
-    const facts = await Promise.race([
-      Promise.resolve().then(() => repositoryFactsFn(directory, prompt)),
-      new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('Repository metadata timed out.')), metadataTimeoutMs); }),
-    ]);
-    const suggested = recommend({ prompt, provider: 'claude', facts, maxEffort: CEILING }).effort;
-    if (!current) {
-      // No rule fired for medium, the uncertain default, so there is nothing worth showing.
-      const direction = UNKNOWN_LEVEL_DIRECTION[suggested];
-      return direction ? { systemMessage: `Effort suggests ${suggested} for this prompt. If you're on a ${direction} level, apply it with /effort ${suggested}` } : null;
-    }
-    // A suggestion at the ceiling means "high or more", which xhigh and max satisfy.
-    if (suggested === current || (suggested === CEILING && rank(current) > rank(CEILING))) return null;
-    return { systemMessage: `Effort suggests ${suggested} for this prompt (you're on ${current}). Apply with /effort ${suggested}` };
-  } catch {
-    return null; // Without repository metadata the advice could point the wrong way.
-  } finally {
-    clearTimeout(deadline);
-  }
+  if (!current) return { systemMessage: `Effort suggests ${suggested} for this prompt. If you're on a ${direction} level, apply it with /effort ${suggested}` };
+  // A suggestion at the ceiling means "high or more", which xhigh and max satisfy.
+  if (suggested === current || (suggested === CEILING && rank(current) > rank(CEILING))) return null;
+  return { systemMessage: `Effort suggests ${suggested} for this prompt (you're on ${current}). Apply with /effort ${suggested}` };
 }
 
 function readEvent(stream, timeoutMs) {
@@ -95,14 +81,14 @@ const write = (stream, text) => new Promise((done, fail) => stream.write(text, e
  */
 export async function runPromptHook({
   stdin = process.stdin, stdout = process.stdout, stderr = process.stderr,
-  env = process.env, inputTimeoutMs = 3000, ...options
+  env = process.env, inputTimeoutMs = 3000,
 } = {}) {
   try {
     const text = await readEvent(stdin, inputTimeoutMs);
     if (!text) return null;
     let event;
     try { event = JSON.parse(text); } catch { return null; }
-    const advice = await promptAdvice(event, { ...options, effort: env.CLAUDE_EFFORT });
+    const advice = promptAdvice(event, { effort: env.CLAUDE_EFFORT });
     if (advice) await write(stdout, JSON.stringify(advice) + '\n');
     return advice;
   } catch {
