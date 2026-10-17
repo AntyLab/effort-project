@@ -10,12 +10,24 @@ const CEILING = 'high'; // Effort's rules never suggest more than high.
 const MAX_PROMPT_CHARACTERS = 100_000;
 export const MAX_INPUT_BYTES = 1_048_576;
 const rank = level => LEVELS.indexOf(level);
+const levelOf = value => {
+  const level = typeof value === 'string' ? value.trim().toLowerCase() : '';
+  return LEVELS.includes(level) ? level : '';
+};
+// Without a known level, only the suggestions that come from a rule are shown, each
+// worded for the sessions it could help. Medium has no entry: it is the uncertain default.
+const UNKNOWN_LEVEL_DIRECTION = { high: 'lower', low: 'higher' };
 
 /**
- * Advice for one UserPromptSubmit event: { systemMessage } when Effort's
- * recommendation differs from the session level, otherwise null (stay silent).
- * effort is the current level from $CLAUDE_EFFORT. repositoryFactsFn is
- * injectable for offline tests.
+ * Advice for one UserPromptSubmit event: { systemMessage }, or null to stay silent.
+ *
+ * Claude Code documents the session's effort level (the event's effort.level and
+ * $CLAUDE_EFFORT) only for events inside a tool-use context, and 2.1.299 passes
+ * neither to UserPromptSubmit hooks. So the level is usually unknown here. Known
+ * level: speak only when Effort's recommendation differs from it. Unknown level:
+ * speak only when a rule fired, that is, for a suggestion other than the medium
+ * default, and never claim a level. effort is $CLAUDE_EFFORT. repositoryFactsFn
+ * is injectable for offline tests.
  */
 export async function promptAdvice(event, {
   effort, cwd = process.cwd(), repositoryFactsFn = repositoryFacts, metadataTimeoutMs = 1000,
@@ -27,9 +39,7 @@ export async function promptAdvice(event, {
   // Commands and skills arrive as typed (/name args) and ! lines run a shell;
   // neither describes the task the next requests will work on.
   if (/^\s*[/!]/.test(prompt)) return null;
-  // Unset when the model has no effort parameter, so there is nothing to compare.
-  const current = typeof effort === 'string' ? effort.trim().toLowerCase() : '';
-  if (!LEVELS.includes(current)) return null;
+  const current = levelOf(event.effort?.level) || levelOf(effort);
   let deadline;
   try {
     const directory = resolve(typeof event.cwd === 'string' && event.cwd ? event.cwd : cwd);
@@ -38,6 +48,11 @@ export async function promptAdvice(event, {
       new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error('Repository metadata timed out.')), metadataTimeoutMs); }),
     ]);
     const suggested = recommend({ prompt, provider: 'claude', facts, maxEffort: CEILING }).effort;
+    if (!current) {
+      // No rule fired for medium, the uncertain default, so there is nothing worth showing.
+      const direction = UNKNOWN_LEVEL_DIRECTION[suggested];
+      return direction ? { systemMessage: `Effort suggests ${suggested} for this prompt. If you're on a ${direction} level, apply it with /effort ${suggested}` } : null;
+    }
     // A suggestion at the ceiling means "high or more", which xhigh and max satisfy.
     if (suggested === current || (suggested === CEILING && rank(current) > rank(CEILING))) return null;
     return { systemMessage: `Effort suggests ${suggested} for this prompt (you're on ${current}). Apply with /effort ${suggested}` };

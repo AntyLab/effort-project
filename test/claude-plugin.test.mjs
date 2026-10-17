@@ -170,21 +170,53 @@ test('advice names the suggested level only when it differs from the session lev
   assert.equal(seen, join(root, 'src'), 'the event cwd is the scanned workspace');
 });
 
-test('advice stays silent without a level, a task description, or repository metadata', async () => {
+test('the level comes from the event when it carries one, otherwise from $CLAUDE_EFFORT', async () => {
+  // Claude Code documents effort.level and $CLAUDE_EFFORT for tool-use events only, and 2.1.299 sends
+  // neither to UserPromptSubmit hooks, so these cases guard a future change.
+  const advise = (event, effort) => promptAdvice(event, { effort, repositoryFactsFn: jsFacts });
+  assert.equal(await advise(hookEvent(RACE, root, { effort: { level: 'high' } }), 'low'), null, 'the event wins over the environment');
+  assert.deepEqual(await advise(hookEvent(RACE, root, { effort: { level: 'LOW ' } }), 'high'), { systemMessage: message('high', 'low') });
+  assert.deepEqual(await advise(hookEvent(RACE, root, { effort: { level: 'turbo' } }), 'low'), { systemMessage: message('high', 'low') }, 'an unrecognized event level falls back to the environment');
+  for (const effort of ['high', 7, null, [], {}, { level: 3 }]) {
+    assert.deepEqual(await advise(hookEvent(RACE, root, { effort }), 'medium'), { systemMessage: message('high', 'medium') }, `effort ${JSON.stringify(effort)} is ignored`);
+  }
+  assert.equal(await advise(hookEvent(TYPO, root, { effort: { level: 'low' } }), undefined), null, 'the event alone is enough');
+});
+
+test('advice without a known level is shown only for rule-based suggestions and never claims a level', async () => {
+  const lower = "Effort suggests high for this prompt. If you're on a lower level, apply it with /effort high";
+  const higher = "Effort suggests low for this prompt. If you're on a higher level, apply it with /effort low";
+  const advise = (prompt, effort, options = {}) => promptAdvice(hookEvent(prompt, root), { effort, repositoryFactsFn: jsFacts, ...options });
+  // Claude Code 2.1.299 passes UserPromptSubmit hooks no level, so an unset, empty or unrecognized value is the usual case.
+  for (const effort of [undefined, null, '', '  ', 'auto', 'ultra', 7]) {
+    assert.deepEqual(await advise(RACE, effort), { systemMessage: lower }, `race prompt, effort ${effort}`);
+    assert.deepEqual(await advise(TYPO, effort), { systemMessage: higher }, `typo prompt, effort ${effort}`);
+    assert.equal(await advise(PLAIN, effort), null, `no rule fired, effort ${effort}`);
+  }
+  const polyglot = async () => ({ languages: ['go', 'python', 'typescript'], mentionedFiles: 0 });
+  assert.deepEqual(await advise(PLAIN, undefined, { repositoryFactsFn: polyglot }), { systemMessage: lower }, 'repository metadata counts as a rule');
+  for (const text of [lower, higher]) assert.doesNotMatch(text, /you're on (?:low|medium|high|xhigh|max)\b/, 'the level is unknown, so the line does not state one');
+});
+
+test('advice stays silent without a task description or repository metadata', async () => {
   let scans = 0;
   const counting = async () => { scans++; return jsFacts(); };
   const advise = (event, effort, options = {}) => promptAdvice(event, { effort, repositoryFactsFn: counting, ...options });
-  for (const effort of [undefined, '', 'auto', 'ultra', 7]) assert.equal(await advise(hookEvent(RACE, root), effort), null, `effort ${effort}`);
-  for (const prompt of ['', '   ', '/effort-project:explain', '  /deploy staging', '!npm test', 'x'.repeat(100_001), 42, null]) {
-    assert.equal(await advise(hookEvent(prompt, root), 'low'), null, `prompt ${String(prompt).slice(0, 20)}`);
+  const levels = ['low', undefined]; // a known level and an unknown one
+  for (const effort of levels) {
+    for (const prompt of ['', '   ', '/effort-project:explain', '  /deploy staging', '!npm test', 'x'.repeat(100_001), 42, null]) {
+      assert.equal(await advise(hookEvent(prompt, root), effort), null, `prompt ${String(prompt).slice(0, 20)}, effort ${effort}`);
+    }
+    for (const event of [null, [], 'prompt', { ...hookEvent(RACE, root), hook_event_name: 'PreToolUse' }]) assert.equal(await advise(event, effort), null);
   }
-  for (const event of [null, [], 'prompt', { ...hookEvent(RACE, root), hook_event_name: 'PreToolUse' }]) assert.equal(await advise(event, 'low'), null);
   assert.equal(scans, 0, 'skipped events never scan the workspace');
-  assert.equal(await advise(hookEvent(RACE, root), 'low', { repositoryFactsFn: async () => { throw new Error('EACCES'); } }), null);
   const started = performance.now();
-  assert.equal(await advise(hookEvent(RACE, root), 'low', { repositoryFactsFn: () => new Promise(() => {}), metadataTimeoutMs: 20 }), null);
+  for (const effort of levels) {
+    assert.equal(await advise(hookEvent(RACE, root), effort, { repositoryFactsFn: async () => { throw new Error('EACCES'); } }), null);
+    assert.equal(await advise(hookEvent(RACE, root), effort, { repositoryFactsFn: () => new Promise(() => {}), metadataTimeoutMs: 20 }), null);
+    assert.equal(await promptAdvice(hookEvent(RACE, join(root, 'no-such-directory')), { effort }), null);
+  }
   assert.ok(performance.now() - started < 1000, 'a stuck scan is abandoned');
-  assert.equal(await promptAdvice(hookEvent(RACE, join(root, 'no-such-directory')), { effort: 'low' }), null);
 });
 
 test('runPromptHook prints only systemMessage JSON and fails open on bad input', async (t) => {
@@ -236,10 +268,19 @@ test('the hook process prints advice JSON, stays silent on matches, and always e
   assert.deepEqual({ code: differing.code, stderr: differing.stderr }, { code: 0, stderr: '' });
   assert.deepEqual(JSON.parse(differing.stdout), { systemMessage: message('high', 'low') });
 
+  // Claude Code 2.1.299 sets no CLAUDE_EFFORT for UserPromptSubmit hooks, so this is the usual case:
+  // a rule-based suggestion that does not claim a level.
+  const unknown = await runHook(hookEvent(RACE, cwd), { cwd });
+  assert.deepEqual({ code: unknown.code, stderr: unknown.stderr }, { code: 0, stderr: '' });
+  assert.deepEqual(JSON.parse(unknown.stdout), { systemMessage: "Effort suggests high for this prompt. If you're on a lower level, apply it with /effort high" });
+  const fromEvent = await runHook(hookEvent(RACE, cwd, { effort: { level: 'low' } }), { cwd });
+  assert.deepEqual(JSON.parse(fromEvent.stdout), { systemMessage: message('high', 'low') });
+
   const silent = [
     ['matching level', hookEvent(RACE, cwd), { CLAUDE_EFFORT: 'high' }],
     ['matching low level', hookEvent(TYPO, cwd), { CLAUDE_EFFORT: 'low' }],
-    ['missing $CLAUDE_EFFORT', hookEvent(RACE, cwd), {}],
+    ['unknown level, no rule fired', hookEvent(PLAIN, cwd), {}],
+    ['event level matches', hookEvent(RACE, cwd, { effort: { level: 'max' } }), {}],
     ['malformed JSON', '{"hook_event_name":"UserPromptSubmit","prompt":"PRIVATE_PROMPT_MARKER_2718', { CLAUDE_EFFORT: 'low' }],
     ['not an object', '["UserPromptSubmit"]', { CLAUDE_EFFORT: 'low' }],
     ['empty input', '', { CLAUDE_EFFORT: 'low' }],
