@@ -71,7 +71,7 @@ Use `--provider claude` for Claude Code. Its adapter allows restricted file edit
 
 The defaults are three attempts, 120 seconds total, and a `high` ceiling. Use `--effort low` to override the initial recommendation, `--max-effort medium` to set a lower ceiling, or `--model` to choose a model explicitly. Supported levels are checked by adapters; an unsupported model/effort is not silently replaced. There is no universal dollar cap: timeout, attempt, and effort bounds limit activity, but do not guarantee a final bill.
 
-The first recognized test failure can trigger another attempt at the same effort. Repeated matching failures can raise effort for the next managed turn. Access, permission, missing dependency, timeout, and unclassified failures stop instead. Passing the selected check means **that check passed**, not that all requirements are satisfied. Exit status is 0 for completed verified/unverified tasks, 2 for blocked/failed/cancelled tasks, and 1 for invalid CLI input.
+The first recognized test failure can trigger another attempt at the same effort. Repeated matching failures can raise effort for the next managed turn. Access, permission, missing dependency, timeout, and unclassified failures stop instead. A failure report from node:test, Jest, Vitest, pytest, `go test`, `cargo test`, mocha or another TAP producer counts as a test failure even when a failing test mentions authorization, permissions or missing files. Passing the selected check means **that check passed**, not that all requirements are satisfied. Exit status is 0 for completed verified/unverified tasks, 2 for blocked/failed/cancelled tasks, and 1 for invalid CLI input.
 
 ## Automatic sessions
 

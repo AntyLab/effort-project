@@ -38,6 +38,32 @@ test('failures do not all become expensive retries',()=>{
   for(const [text,expected] of [['Error: Cannot find module x','environment'],['Operation not permitted','permission'],['Invalid API key','access'],['AssertionError expected 3 received 2','test'],['something went wrong','unknown']])assert.equal(classifyFailure(text),expected);
   for(const kind of ['access','permission','environment','timeout','unknown'])assert.equal(nextDecision({effort:'low',kind,repeatCount:3}).action,'stop');
 });
+test('test-runner failures win over access, permission and environment words in their output',()=>{
+  const reports={
+    'node:test spec':'✖ rejects unauthorized users (0.8ms)\n  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:\n\n401 !== 200\n\nℹ tests 1\nℹ fail 1',
+    'node:test TAP':'TAP version 13\n# Subtest: reads missing config\nnot ok 1 - reads missing config\n  ---\n  error: "ENOENT: no such file or directory, open \'config.json\'"\n  ...\n1..1\n# fail 1',
+    'jest':'\x1b[1m\x1b[31m FAIL \x1b[39m\x1b[22m src/config.test.js\n  ● config › loads defaults\n\n    ENOENT: no such file or directory, open \'defaults.json\'\n\nTests:       1 failed, 1 total',
+    'vitest':' FAIL  src/auth.test.ts > auth > rejects unauthorized users\nError: expected 401 to be 200\n Test Files  1 failed (1)\n      Tests  1 failed (1)',
+    'pytest':'FAILED tests/test_acl.py::test_permission_denied_for_guest - assert 403 == 200\n========================= 1 failed, 3 passed in 0.12s =========================',
+    'go test':'--- FAIL: TestGuestPermission (0.00s)\n    acl_test.go:12: permission denied for guest\nFAIL\nFAIL\texample.com/acl\t0.005s',
+    'cargo test':'test tests::rejects_unauthorized ... FAILED\n\nfailures:\n    tests::rejects_unauthorized\n\ntest result: FAILED. 0 passed; 1 failed; 0 ignored',
+  };
+  for(const [runner,text] of Object.entries(reports))assert.equal(classifyFailure(text),'test',runner);
+  // Without a test-runner report, the same words still stop the run.
+  for(const [text,expected] of [
+    ['npm ERR! code ENOENT\nnpm ERR! enoent ENOENT: no such file or directory, open \'/repo/package.json\'','environment'],
+    ['============ ERRORS ============\nE   ModuleNotFoundError: No module named \'requests\'\nERROR tests/test_api.py\n============ 1 error in 0.08s ============','environment'],
+    ['Error: connect ECONNREFUSED 127.0.0.1:5432','environment'],
+    ['fatal: Authentication failed for \'https://example.invalid/repo.git\'','access'],
+    ['EACCES: permission denied, open \'/etc/effort\'','permission'],
+  ])assert.equal(classifyFailure(text),expected,text);
+});
+test('a real failing node test about authorization is a retryable test failure',async()=>{
+  const cwd=await mkdtemp(join(tmpdir(),'effort-classify-'));
+  await writeFile(join(cwd,'acl.test.cjs'),"const {test}=require('node:test');const assert=require('node:assert/strict');test('rejects unauthorized users with permission denied',()=>assert.equal(401,200));");
+  const check=await verify([process.execPath,'--test','acl.test.cjs'],{cwd});
+  assert.equal(check.kind,'test');assert.equal(check.status,'failed');
+});
 test('escalation needs repeated checks, obeys support and stops at ceiling',()=>{
   assert.equal(nextDecision({effort:'low',kind:'test'}).effort,'low');
   assert.equal(nextDecision({effort:'low',kind:'test',repeatCount:2}).effort,'medium');

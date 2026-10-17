@@ -6,7 +6,7 @@ The first release has five small components: a deterministic policy, provider ad
 2. Recommend low/medium/high using visible rules. Unknown tasks start at medium. Repository breadth can raise a request one level, never past high: naming five or more distinct workspace files marks a broad edit, and three or more languages can raise an otherwise uncertain request. Languages alone never raise a short mechanical request. Respect explicit bounds and provider capabilities.
 3. Start a provider turn with a real effort parameter. Capture completion and supported usage fields.
 4. Run the user's explicit verification command, if any. Without one, label completion unverified.
-5. Stop on access, permission, environment, timeout, or unknown failures. Recognized failed tests can prompt a focused retry. Repeated matching failures can increase effort on a resumed turn, within total-time and attempt limits.
+5. Stop on access, permission, environment, timeout, or unknown failures. Recognized failed tests can prompt a focused retry. Test-runner failure reports are recognized before access/environment wording, so a failing test named "rejects unauthorized users" is still a test failure. Repeated matching failures can increase effort on a resumed turn, within total-time and attempt limits.
 6. Save decisions and coarse outcomes, never task text. A stopped turn is not automatically a successful task.
 
 Retries are sequential and operate on the same workspace. Effort does not reset, clean, stash, commit, push or revert changes. A user should inspect the final diff, including after failed runs. The initial heuristic is English-oriented; uncertain or unsupported language/task phrasing falls back conservatively and is not a validated multilingual classifier.
