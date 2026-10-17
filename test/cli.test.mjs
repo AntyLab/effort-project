@@ -24,6 +24,31 @@ async function fixture(t) {
   return { cwd, env, invoke };
 }
 
+test('doctor finds npm-installed and overridden provider CLIs without a shell', async (t) => {
+  const f = await fixture(t);
+  const fake = (name) => `console.log(process.argv.includes('--version') ? '${name} 9.9.9-fixture' : 'unexpected');\n`;
+  await writeFile(join(f.cwd, 'claude-entry.cjs'), fake('claude'));
+  const extra = { EFFORT_CLAUDE_BIN: join(f.cwd, 'claude-entry.cjs') };
+  if (process.platform === 'win32') {
+    await mkdir(join(f.cwd, 'node_modules', '@openai', 'codex', 'bin'), { recursive: true });
+    await writeFile(join(f.cwd, 'node_modules', '@openai', 'codex', 'bin', 'codex.js'), fake('codex-cli'));
+    await writeFile(join(f.cwd, 'codex.cmd'), '@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\node_modules\\@openai\\codex\\bin\\codex.js" %*\r\n');
+  } else extra.EFFORT_CODEX_BIN = join(f.cwd, 'missing-codex');
+  const result = f.invoke(['doctor', '--json'], extra);
+  assert.equal(result.status, 0, result.stderr);
+  const checks = Object.fromEntries(JSON.parse(result.stdout).checks.map((check) => [check.provider, check]));
+  assert.equal(checks.claude.installed, true);
+  assert.equal(checks.claude.version, 'claude 9.9.9-fixture');
+  assert.equal(checks.claude.source, 'override');
+  if (process.platform === 'win32') {
+    assert.equal(checks.codex.installed, true);
+    assert.equal(checks.codex.version, 'codex-cli 9.9.9-fixture');
+    assert.equal(checks.codex.source, 'npm-shim');
+  } else assert.equal(checks.codex.installed, false);
+  const text = f.invoke(['doctor'], { EFFORT_CODEX_BIN: join(f.cwd, 'missing-codex') });
+  assert.match(text.stdout, /codex: not found \(set EFFORT_CODEX_BIN to its path\)/);
+});
+
 test('a polyglot checkout does not raise a short mechanical recommendation', async (t) => {
   const f = await fixture(t);
   await mkdir(join(f.cwd, 'scripts'));

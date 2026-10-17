@@ -2,6 +2,7 @@ import { createServer } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createCodexRouting } from './codex-routing.mjs';
+import { providerCommand } from '../provider-cli.mjs';
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const delay = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -22,7 +23,7 @@ async function terminate(child) {
 }
 
 /** A private, single-client transport; no model call occurs until the TUI submits a turn. */
-export async function startCodexRemote({ cwd, executable = 'codex', executableArgs = [], env = process.env,
+export async function startCodexRemote({ cwd, executable, executableArgs = [], env = process.env,
   signal, onDecision = () => {}, WebSocketServerClass, ...routingOptions } = {}) {
   // Loaded only by this integration. The rest of Effort does not need WebSocket support.
   let WebSocketServer = WebSocketServerClass;
@@ -34,6 +35,7 @@ export async function startCodexRemote({ cwd, executable = 'codex', executableAr
     }
   }
   if (signal?.aborted) throw new Error('Automatic session was cancelled.');
+  const command = providerCommand('codex', { executable, executableArgs, env });
   const token = randomBytes(32).toString('hex');
   const internalPrefix = `effort_${randomBytes(16).toString('hex')}_`;
   let sequence = 0, client, child, closed = false, closing, buffer = '', activeTurn = null;
@@ -89,7 +91,7 @@ export async function startCodexRemote({ cwd, executable = 'codex', executableAr
   });
   wss.on('connection', (ws) => {
     client = ws;
-    child = spawn(executable, [...executableArgs, 'app-server', '--listen', 'stdio://'], {
+    child = spawn(command.executable, [...command.executableArgs, 'app-server', '--listen', 'stdio://'], {
       cwd, env, shell: false, detached: process.platform !== 'win32', windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
     });
     child.once('error', fail);
@@ -160,8 +162,10 @@ export async function startCodexRemote({ cwd, executable = 'codex', executableAr
 }
 
 export async function launchCodexAutomatic(options = {}) {
-  const { executable = 'codex', executableArgs = [], cwd, model, signal, env = process.env } = options;
-  const proxy = await startCodexRemote(options);
+  const { cwd, model, signal, env = process.env } = options;
+  // Resolve once so the terminal UI and its app-server use the same installation.
+  const { executable, executableArgs } = providerCommand('codex', { executable: options.executable, executableArgs: options.executableArgs, env });
+  const proxy = await startCodexRemote({ ...options, executable, executableArgs });
   let tui;
   const stop = () => { tui?.kill(); };
   signal?.addEventListener('abort', stop, { once: true });

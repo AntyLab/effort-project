@@ -14,6 +14,7 @@ import { getAdapter, capabilities } from '../src/registry.mjs';
 import { serveMcp } from '../src/mcp.mjs';
 import { startDashboard } from '../src/server.mjs';
 import { createAutomaticRouter, validateModelMap } from '../src/automatic.mjs';
+import { resolveProviderCommand, CLI_OVERRIDES } from '../src/provider-cli.mjs';
 
 const help=`The Effort Project · 0.1.0\nLocal effort decisions, with evidence you can inspect.\n\n  effort doctor [--json]\n  effort recommend "task" [--provider codex|claude|generic] [--cwd path] [--json]\n  effort run "task" --provider codex|claude --cwd path [--allow-write]\n    [--max-attempts 3] [--timeout 600] [--verify-timeout seconds]\n    [--effort auto|low|medium|high] [--max-effort high] [--model model-id]\n    [--prompt-file path] [--dry-run] [--json] [-- verification command]\n  effort auto codex|claude [--cwd path] [--effort auto|low|medium|high]\n    [--min-effort low] [--max-effort high] [--model model-id]\n    [--routing-config path] [--dry-run] [--allow-write (Claude only)]\n  effort dashboard [--port 0]\n  effort history [--json]\n  effort mcp\n  effort config codex|claude|opencode\n\nAuto Codex: normal Codex terminal UI through an experimental local router.\nAuto Claude: Effort's text session, resuming Claude Code between prompts.\nAuto selects before each user turn; fixed --effort and --model override routing.\nOpenCode: config opencode prints a native plugin module; see docs/automatic.md.\nManaged runs use your installed, signed-in provider CLI and its billed access.\nRun defaults: read-only, 600 seconds per task including verification, high effort\nceiling. Each check may use the time left; --verify-timeout sets a shorter limit.\nAuto Claude defaults: read-only, 120 seconds per prompt, high effort ceiling.\nAuto Codex preserves the official interface's sandbox and approval settings.\n--allow-write permits provider-constrained edits. Verification is your explicitly\nchosen local command; it is NOT sandboxed by Effort. Review it before running.\nPut it last, after --: effort run "task" --provider codex -- node --test\nIn PowerShell, quote the separator: '--'. The JSON form --verify '["node","--test"]'\nstill works where your shell keeps the inner quotes.\nWithout a verification command a completed task is UNVERIFIED and never auto-retried.\nDesktop MCP offers advice; it cannot change the host chat's effort.\nPrompts, code, responses and test output are not stored by Effort. Provider CLIs\nhave their own storage policies. EFFORT_DATA_DIR changes the metadata directory.\n`;
 const controller=new AbortController();
@@ -45,8 +46,14 @@ async function main(){
   if(verifyArgv!==undefined&&!['run','auto'].includes(command))throw new Error('Only effort run accepts a verification command after --.');
   if(command==='mcp'){serveMcp();return;}
   if(command==='doctor'){
-    const checks=['codex','claude'].map(name=>{const r=spawnSync(name,['--version'],{encoding:'utf8',timeout:5000,windowsHide:true,shell:false});return {provider:name,installed:!r.error&&r.status===0,version:r.status===0?r.stdout.trim().slice(0,150):null,authenticated:'not checked',liveTest:'not performed'};});
-    return print(values.json?{node:process.version,checks,capabilities:capabilities()}:`Node ${process.version}\n${checks.map(c=>`${c.provider}: ${c.installed?c.version:'not found'}; authentication not checked`).join('\n')}\nDesktop: advisory MCP. Live model access is tested only when you run a task.`,values.json);
+    // The same shell-free resolution as managed runs: EFFORT_*_BIN, then a Windows .exe or npm shim.
+    const checks=['codex','claude'].map(name=>{
+      let cli;try{cli=resolveProviderCommand(name);}catch(e){return {provider:name,installed:false,version:null,source:'override',error:e.message,authenticated:'not checked',liveTest:'not performed'};}
+      const r=spawnSync(cli.executable,[...cli.executableArgs,'--version'],{encoding:'utf8',timeout:5000,windowsHide:true,shell:false});
+      return {provider:name,installed:!r.error&&r.status===0,version:r.status===0?r.stdout.trim().slice(0,150):null,source:cli.source,command:[cli.executable,...cli.executableArgs],authenticated:'not checked',liveTest:'not performed'};
+    });
+    const found=c=>`${c.version}${c.source==='npm-shim'?' (npm shim)':c.source==='override'?` (${CLI_OVERRIDES[c.provider]})`:''}`;
+    return print(values.json?{node:process.version,checks,capabilities:capabilities()}:`Node ${process.version}\n${checks.map(c=>`${c.provider}: ${c.installed?found(c):c.error??`not found (set ${CLI_OVERRIDES[c.provider]} to its path)`}; authentication not checked`).join('\n')}\nDesktop: advisory MCP. Live model access is tested only when you run a task.`,values.json);
   }
   if(command==='config'){
     const target=positionals[1],entry=fileURLToPath(import.meta.url),node=process.execPath;

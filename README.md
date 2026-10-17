@@ -35,6 +35,8 @@ node bin/effort.mjs recommend "Investigate an intermittent race condition" --pro
 node bin/effort.mjs dashboard
 ```
 
+`doctor` reports which provider CLIs Effort can start. On Windows, Effort looks for `codex.exe` or `claude.exe` on `PATH`, then for npm's `codex.cmd` or `claude.cmd` shim, whose JavaScript entry it runs with the current Node; it never starts a shell. To choose a specific installation on any platform, set `EFFORT_CODEX_BIN` or `EFFORT_CLAUDE_BIN` to an executable, a JavaScript entry point, or (on Windows) an npm `.cmd` shim.
+
 Open the local URL printed by `dashboard` and keep that terminal running. You can also start it with `npm start` from the project folder. Its fragment contains an access token. Opening `web/index.html` directly shows a preview with startup instructions; recommendations and history require the running local server and its printed URL.
 
 The dashboard only recommends effort and reads local run metadata; it cannot launch commands. Empty history is intentional until you run a task.

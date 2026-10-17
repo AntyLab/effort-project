@@ -283,6 +283,22 @@ test('missing CLI produces a useful bounded failure', async (t) => {
   assert.ok(f.events.some((event) => event.code === 'cli_not_found'));
 });
 
+test('Codex finds an npm-installed CLI on Windows without a shell', { skip: process.platform !== 'win32' }, async (t) => {
+  const f = await setup(t);
+  // npm writes codex.cmd; Node cannot spawn it directly, so the adapter runs its script.
+  await writeFile(join(f.options.cwd, 'codex.cmd'), `@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\mock codex.mjs" %*\r\n`);
+  const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, PATH: f.options.cwd } });
+  assert.equal(result.status, 'completed');
+  assert.deepEqual((await f.readLog())[0].argv, ['app-server', '--listen', 'stdio://']);
+});
+
+test('EFFORT_CODEX_BIN selects the Codex CLI when no executable is given', async (t) => {
+  const f = await setup(t);
+  const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, EFFORT_CODEX_BIN: f.options.executableArgs[0] } });
+  assert.equal(result.status, 'completed');
+  assert.equal(result.text, 'final answer');
+});
+
 test('executableArgs rejects nonarrays, nonstrings, NUL, and excessive arguments before launch', async (t) => {
   const f = await setup(t);
   for (const executableArgs of ['not-an-array', null, [17], ['a\0b'], Array(101).fill('x'), ['x'.repeat(20_001)]]) {

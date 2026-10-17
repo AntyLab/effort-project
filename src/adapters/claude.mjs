@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
+import { providerCommand } from '../provider-cli.mjs';
 
 export const capabilities = Object.freeze({
   id: 'claude',
@@ -47,7 +48,7 @@ function validate(options) {
   }
   const { prompt, cwd, effort, model, sessionId, allowWrite = false,
     timeoutMs = 120_000, signal, onEvent = () => {}, env = process.env,
-    executable = 'claude', executableArgs = [], maxTurns = 12, maxBudgetUsd } = options;
+    executable, executableArgs = [], maxTurns = 12, maxBudgetUsd } = options;
   if (typeof prompt !== 'string' || !prompt.trim() || prompt.includes('\0')) {
     throw new TypeError('prompt must be a nonempty string without NUL bytes.');
   }
@@ -76,13 +77,15 @@ function validate(options) {
   if (signal !== undefined && !(signal instanceof AbortSignal)) throw new TypeError('signal must be an AbortSignal.');
   if (typeof onEvent !== 'function') throw new TypeError('onEvent must be a function.');
   if (!env || typeof env !== 'object' || Array.isArray(env)) throw new TypeError('env must be an object.');
-  if (typeof executable !== 'string' || !executable || executable.length > 4096 || /[\0\r\n]/.test(executable)) {
+  if (executable !== undefined && (typeof executable !== 'string' || !executable || executable.length > 4096 || /[\0\r\n]/.test(executable))) {
     throw new TypeError('executable must be one executable path or name.');
   }
   if (!Array.isArray(executableArgs) || executableArgs.length > 16 || executableArgs.some((arg) => typeof arg !== 'string' || arg.length > 4096 || /[\0\r\n]/.test(arg))) {
     throw new TypeError('executableArgs must contain at most 16 bounded strings without NULs or newlines.');
   }
-  return { prompt, cwd, effort, model, sessionId, allowWrite, timeoutMs, signal, onEvent, env, executable, executableArgs: [...executableArgs], maxTurns, maxBudgetUsd };
+  // Without an explicit executable, find the installed CLI, including npm's Windows shim.
+  const command = providerCommand('claude', { executable, executableArgs, env });
+  return { prompt, cwd, effort, model, sessionId, allowWrite, timeoutMs, signal, onEvent, env, ...command, maxTurns, maxBudgetUsd };
 }
 
 // Inherit authentication and routing, not arbitrary runtime injection or Claude
@@ -267,7 +270,7 @@ const ERRORS = {
   model_unavailable: ['blocked', 'The requested Claude model is unavailable. No replacement model was selected by this adapter.'],
   unsupported_effort_model: ['blocked', 'This Claude model does not support the adapter’s effort control. Select an effort-capable model.'],
   unsupported_cli: ['blocked', 'Claude CLI lacks required managed-mode flags. Update the CLI; the adapter will not weaken isolation.'],
-  missing_cli: ['blocked', 'Claude CLI executable was not found. Install Claude Code or provide its executable path.'],
+  missing_cli: ['blocked', 'Claude CLI executable was not found. Install Claude Code, or set EFFORT_CLAUDE_BIN to its executable path.'],
   invalid_cwd: ['blocked', 'The working directory does not exist or is not accessible.'],
   isolation_mismatch: ['blocked', 'Claude reported tools, customizations, or permissions outside the managed configuration. The process was stopped.'],
   model_mismatch: ['blocked', 'Claude reported an unexpected model or a model switch. The process was stopped.'],

@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { realpath, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { providerCommand } from '../provider-cli.mjs';
 
 export const capabilities = Object.freeze({
   id: 'codex',
@@ -62,7 +63,7 @@ class AppServer {
     });
     this.child.on('error', (error) => this.fail(new AdapterError(
       error.code === 'ENOENT' ? 'cli_not_found' : 'process_error',
-      error.code === 'ENOENT' ? 'Codex CLI was not found. Install it and sign in before running this adapter.' : 'Codex CLI could not be started.',
+      error.code === 'ENOENT' ? 'Codex CLI was not found. Install it and sign in, or set EFFORT_CODEX_BIN to its executable.' : 'Codex CLI could not be started.',
       'blocked',
     ), onFailure));
     this.child.stdin.on('error', () => {
@@ -164,14 +165,16 @@ class AppServer {
 }
 
 /** Execute exactly one Codex turn; sessionId is the resumable Codex thread ID. */
-export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = false, timeoutMs = 120000, signal, onEvent = () => {}, env = process.env, executable = 'codex', executableArgs = [] } = {}) {
+export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = false, timeoutMs = 120000, signal, onEvent = () => {}, env = process.env, executable, executableArgs = [] } = {}) {
   if (typeof prompt !== 'string' || !prompt.trim() || Buffer.byteLength(prompt) > MAX_TEXT_BYTES) throw new TypeError('prompt must be nonempty text of at most 256 KiB.');
   if (!capabilities.levels.includes(effort)) throw new TypeError('Codex adapter effort must be low, medium, or high.');
   if (typeof cwd !== 'string' || !cwd || cwd.includes('\0')) throw new TypeError('cwd must identify an existing directory.');
   if (typeof allowWrite !== 'boolean') throw new TypeError('allowWrite must be a boolean.');
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647) throw new TypeError('timeoutMs must be a positive, supported timer duration.');
-  if (typeof executable !== 'string' || !executable || executable.includes('\0')) throw new TypeError('executable must be a CLI path or command name.');
+  if (executable !== undefined && (typeof executable !== 'string' || !executable || executable.includes('\0'))) throw new TypeError('executable must be a CLI path or command name.');
   if (!Array.isArray(executableArgs) || executableArgs.length > 100 || executableArgs.some((argument) => typeof argument !== 'string' || argument.includes('\0') || argument.length > 20_000)) throw new TypeError('executableArgs must be an array of at most 100 bounded strings without NUL characters.');
+  // Without an explicit executable, find the installed CLI, including npm's Windows shim.
+  const command = providerCommand('codex', { executable, executableArgs, env });
   for (const [key, value] of [['model', model], ['sessionId', sessionId]]) {
     if (value !== undefined && (typeof value !== 'string' || !value.trim() || value.length > 256 || /[\0\r\n]/.test(value))) throw new TypeError(`${key} must be a nonempty identifier.`);
   }
@@ -262,7 +265,7 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
   if (signal?.aborted) abort();
   try {
     if (failureReason) throw failureReason;
-    server = new AppServer({ executable, executableArgs, cwd: directory, env, onFailure: fail, onMessage: (message) => {
+    server = new AppServer({ ...command, cwd: directory, env, onFailure: fail, onMessage: (message) => {
       if (Object.hasOwn(message, 'id')) {
         // No UI approval callback is in the adapter contract. Deny rather than approve implicitly.
         if (['item/commandExecution/requestApproval', 'item/fileChange/requestApproval'].includes(message.method)) {
