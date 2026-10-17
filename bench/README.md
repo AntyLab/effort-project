@@ -138,9 +138,20 @@ Each line of `runs.jsonl` is one run:
 - pass rate with its Wilson 95% interval, and how often the visible check passed but the hidden one failed
 - median tokens with the interquartile range, median output tokens, total tokens, and cost where reported
 - median wall time, mean attempts and escalations
-- per-task pass counts, and the difference from the reference arm with a Newcombe 95% interval
+- per-task pass counts
+- the pass-rate difference from the reference arm over paired runs, with a 95% interval for paired proportions, and how many runs had no partner (see below)
 
 It then gives a verdict against the non-inferiority margin (`--margin`, default 5 percentage points), which is recorded in `meta.json` when the benchmark starts. `node bench/run.mjs report <dir>` rebuilds the summary from `runs.jsonl`.
+
+### How arms are compared
+
+Every arm runs the same tasks and repeats, so the comparison with the reference arm is paired. Within a provider, each run is matched with the reference arm's run of the same task and repeat. Each pair is one of four kinds: both passed, only the arm passed, only the reference passed, or neither passed. The difference is (only the arm passed − only the reference passed) ÷ pairs. Its 95% interval is Newcombe's method 10 for paired proportions (Newcombe 1998, *Statistics in Medicine* 17:2635–2650): a Wilson interval for each arm's pass rate over the pairs, combined using the correlation between the two arms' outcomes. When the arms pass and fail on the same runs, the interval is narrower than two independent samples would give. When they fail on different runs, it is wider.
+
+A run without a partner is left out of the difference and shown in the "Paired runs" column. That happens when its counterpart hit a harness error, was interrupted, or has not run yet. The run still counts in its own arm's pass rate. So the difference can differ from the gap between the two pass rates in the outcomes table.
+
+A task-clustered bootstrap would also allow for repeats of a task being correlated. It was not used because with about eleven tasks it undercovers. And when every pair agrees, which is likely in a small pilot, it collapses to a zero-width interval that would read as non-inferior. Newcombe's interval is closed form, needs no seed, and keeps a realistic width in that case. Its limit is described below.
+
+The per-arm pass rates keep their Wilson intervals, which treat every run of the arm as independent.
 
 The charts are separate SVG files because GitHub strips inline `<svg>` from Markdown. They paint their own light or dark surface, and every number in them is also in the tables.
 
@@ -148,7 +159,7 @@ The charts are separate SVG files because GitHub strips inline `<svg>` from Mark
 
 - **Unknown usage is not counted as zero.** Medians and totals use only runs whose every attempt reported usage, and the summary shows how many that is. Codex reports no cost. Claude reports no per-turn tokens on resumed turns, so Claude runs that retried have unknown totals. That biases token comparisons toward the arms that retry less.
 - Token fields are what each CLI reports, and the CLIs count input and cached tokens differently. Compare arms within a provider, not across providers. Claude also runs in restricted mode without a shell, so it cannot run tests itself, while Codex can.
-- The intervals assume independent runs. Repeats of one task are correlated, so with eleven tasks the real uncertainty is larger than shown. Overlapping intervals mean the data cannot separate the arms. A pilot cannot establish equal quality.
+- The paired difference removes the task-to-task variation both arms share, but it still treats the pairs as independent, and the per-arm Wilson intervals treat runs as independent. Repeats of one task are correlated, so with more than one repeat and eleven tasks the real uncertainty is larger than shown. With one repeat each pair is a different task. Judge a difference by its paired interval, not by whether two per-arm intervals overlap. A pilot cannot establish equal quality.
 - The hidden check guards against accidental or opportunistic test editing, not a determined adversary: an agent that searched the disk could find this repository. `changedFiles` and `visibleTestsChanged` help spot that.
 - Provider-side prompt caching can make later runs cheaper. The randomized order spreads that effect across arms instead of favoring one.
 
@@ -200,7 +211,7 @@ The Claude adapter allows 12 agentic turns per CLI invocation by default. `runTa
 
 `npm test` runs three offline test files:
 
-- `test/bench-stats.test.mjs` covers Wilson and Newcombe intervals against published values, unknown-usage handling, seeded schedules, the spend guard, and the fake-versus-live launch split.
+- `test/bench-stats.test.mjs` covers the Wilson and paired Newcombe intervals against published and hand-computed values, the pairing of runs with the reference arm (including unpaired runs and a verdict that pairing changes), unknown-usage handling, seeded schedules, the spend guard, and the fake-versus-live launch split.
 - `test/bench-corpus.test.mjs` self-tests every task, checks the corpus's coverage and manifest validation, confirms that the hidden check replaces an agent-planted `bench_accept/`, and confirms that checks get no credentials.
 - `test/bench-run.test.mjs` runs end-to-end offline benchmarks through the real adapters (including retries, escalation and unknown Claude usage), a resume after interruption, the CLI with nothing on `PATH`, and the live-run refusals.
 
