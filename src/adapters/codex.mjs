@@ -18,11 +18,24 @@ const TOKEN_KEYS = ['inputTokens', 'outputTokens', 'cachedInputTokens'];
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
 const emptyUsage = () => ({ inputTokens: null, outputTokens: null, cachedInputTokens: null, costUsd: null });
 const activeSessions = new Set();
+// Shutdown bounds. Each wait ends as soon as the process group is gone; the
+// limits only matter for a stuck process or a slow, heavily loaded machine.
+const TERM_GRACE_MS = 500;
+const KILL_REAP_MS = 5000;
+const CLOSE_WAIT_MS = 2000;
 
-async function waitForProcessGroupExit(pid, timeoutMs) {
+/**
+ * Wait until no member of a POSIX process group remains. Only ESRCH proves that:
+ * macOS reports EPERM while exited members still await reaping, and EPERM also
+ * covers a live member that cannot be signalled, so EPERM means keep waiting.
+ */
+export async function waitForProcessGroupExit(pid, timeoutMs, kill = (target, signal) => process.kill(target, signal)) {
   const deadline = performance.now() + timeoutMs;
   while (true) {
-    try { process.kill(-pid, 0); } catch (error) { return error.code === 'ESRCH'; }
+    try { kill(-pid, 0); } catch (error) {
+      if (error.code === 'ESRCH') return true;
+      if (error.code !== 'EPERM') return false;
+    }
     if (performance.now() >= deadline) return false;
     await sleep(10);
   }
@@ -143,11 +156,11 @@ class AppServer {
     if (pid && process.platform !== 'win32') {
       // Terminate the process group even if its leader exited but tool descendants remain.
       try { process.kill(-pid, 'SIGTERM'); } catch {}
-      if (!await waitForProcessGroupExit(pid, 150)) {
+      if (!await waitForProcessGroupExit(pid, TERM_GRACE_MS)) {
         try { process.kill(-pid, 'SIGKILL'); } catch {}
         // The parent's close event does not establish that children are gone.
-        // Wait for the entire group, including children awaiting OS reaping.
-        cleanupConfirmed = await waitForProcessGroupExit(pid, 1000);
+        // Wait for the entire group, including orphans that launchd or init must reap.
+        cleanupConfirmed = await waitForProcessGroupExit(pid, KILL_REAP_MS);
       }
     } else if (pid && !this.closed) {
       const killer = spawn('taskkill.exe', ['/pid', String(pid), '/T', '/F'], { shell: false, stdio: 'ignore', windowsHide: true });
@@ -155,7 +168,7 @@ class AppServer {
       killer.kill();
       this.child.kill();
     }
-    await Promise.race([this.closedPromise, sleep(250)]);
+    await Promise.race([this.closedPromise, sleep(CLOSE_WAIT_MS)]);
     this.child.stdout.destroy();
     this.child.stderr.destroy();
     this.child.stdin.destroy();

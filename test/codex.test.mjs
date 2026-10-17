@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { run, capabilities } from '../src/adapters/codex.mjs';
+import { run, capabilities, waitForProcessGroupExit } from '../src/adapters/codex.mjs';
 
 // This fixture is an independent JSONL server, not a mock of the adapter internals.
 const fixtureSource = String.raw`
@@ -265,6 +265,34 @@ test('Codex abort interrupts a running turn and reaps descendants on POSIX', { s
   assert.ok(log.some((message) => message.method === 'turn/interrupt'));
   assert.throws(() => process.kill(log[0].pid, 0), { code: 'ESRCH' });
   assert.throws(() => process.kill(childPid, 0), { code: 'ESRCH' });
+});
+
+// macOS answers kill(-pgid, 0) with EPERM while exited group members await
+// reaping (the CI flake: cleanup was reported unconfirmed, so status became
+// 'failed'). Only ESRCH proves that every member, zombies included, is gone.
+test('process-group cleanup waits through EPERM until ESRCH and stays bounded', async () => {
+  const probe = (...codes) => {
+    const calls = [];
+    const kill = (target, signal) => {
+      calls.push([target, signal]);
+      const code = codes[Math.min(calls.length - 1, codes.length - 1)];
+      if (code) throw Object.assign(new Error(code), { code });
+    };
+    return { calls, kill };
+  };
+  // Every ordering of live members (no error) and unreaped members (EPERM) before ESRCH.
+  for (let live = 0; live <= 2; live++) for (let unreaped = 0; unreaped <= 2; unreaped++) {
+    const group = probe(...Array(live).fill(null), ...Array(unreaped).fill('EPERM'), 'ESRCH');
+    assert.equal(await waitForProcessGroupExit(4242, 5000, group.kill), true, `${live} live, ${unreaped} unreaped`);
+    assert.equal(group.calls.length, live + unreaped + 1);
+    assert.ok(group.calls.every(([target, signal]) => target === -4242 && signal === 0));
+  }
+  for (const code of [null, 'EPERM']) {
+    const started = performance.now();
+    assert.equal(await waitForProcessGroupExit(4242, 80, probe(code).kill), false);
+    assert.ok(performance.now() - started >= 75);
+  }
+  assert.equal(await waitForProcessGroupExit(4242, 5000, probe('EINVAL').kill), false);
 });
 
 test('already-aborted calls never launch the CLI; invalid effort is rejected', async (t) => {
