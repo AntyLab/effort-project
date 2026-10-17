@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, realpath, rm, access } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 
 const cli = fileURLToPath(new URL('../bin/effort.mjs', import.meta.url));
@@ -32,6 +32,10 @@ test('the CLI reports the package.json version and the package lists only real p
   assert.equal(version.stdout.trim(), manifest.version);
   assert.equal(f.invoke(['--help']).stdout.split('\n')[0], `The Effort Project · ${manifest.version}`);
   for (const entry of manifest.files) await access(new URL(`../${entry}`, import.meta.url));
+  // A copy of src/ without its manifest still loads and says so.
+  await mkdir(join(f.cwd, 'copied', 'src'), { recursive: true });
+  await writeFile(join(f.cwd, 'copied', 'src', 'version.mjs'), await readFile(new URL('../src/version.mjs', import.meta.url)));
+  assert.equal((await import(pathToFileURL(join(f.cwd, 'copied', 'src', 'version.mjs')).href)).VERSION, 'unknown');
 });
 
 test('doctor finds npm-installed and overridden provider CLIs without a shell', async (t) => {
