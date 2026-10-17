@@ -224,11 +224,40 @@ function reportedNumber(value) {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 }
 
-function reportedUsage(event, resumed) {
+const reportedCount = (value) => Number.isSafeInteger(value) && value >= 0 ? value : null;
+// The CLI counts a missing cache field as zero when it totals a turn.
+const cacheCount = (value) => value === undefined || value === null ? 0 : reportedCount(value);
+const inputCounts = (usage) => [reportedCount(usage.input_tokens), cacheCount(usage.cache_read_input_tokens), cacheCount(usage.cache_creation_input_tokens)];
+
+// Input-side counts of one API response, read from a top-level assistant event.
+// Its output_tokens is only the placeholder reported when the response started.
+function stepCounts(message) {
+  if (typeof message?.id !== 'string' || !message.id || !message.usage || typeof message.usage !== 'object') return null;
+  const counts = inputCounts(message.usage);
+  return counts.includes(null) ? null : counts;
+}
+
+// On resume, total_cost_usd includes the conversation's earlier calls, while
+// the result's usage covers this call's main agent loop. Trust that usage only
+// when this call's own assistant events, one per API response, add up to the
+// same input and cache counts.
+function turnTokens(usage, steps) {
+  if (!steps?.size) return null;
+  const reported = inputCounts(usage);
+  const outputTokens = reportedCount(usage.output_tokens);
+  if (reported.includes(null) || outputTokens === null) return null;
+  const sums = [0, 0, 0];
+  for (const counts of steps.values()) counts.forEach((count, index) => { sums[index] += count; });
+  if (sums.some((sum, index) => sum !== reported[index])) return null;
+  return { inputTokens: reported[0], outputTokens, cachedInputTokens: reportedNumber(usage.cache_read_input_tokens) };
+}
+
+function reportedUsage(event, resumed, steps) {
   const usage = event.usage ?? {};
   if (resumed) {
-    return { ...emptyUsage(), conversationCostUsd: reportedNumber(event.total_cost_usd),
-      costScope: 'conversation', tokenScope: 'unverified-on-resume' };
+    const turn = turnTokens(usage, steps);
+    return { ...emptyUsage(), ...turn, conversationCostUsd: reportedNumber(event.total_cost_usd),
+      costScope: 'conversation', tokenScope: turn ? 'turn' : 'unverified-on-resume' };
   }
   return {
     inputTokens: reportedNumber(usage.input_tokens),
@@ -294,6 +323,8 @@ export async function run(inputOptions) {
   let initialized = false;
   let text = '';
   let usage = emptyUsage();
+  // Input-side counts per API response of this call; null once one cannot be attributed.
+  let turnSteps = new Map();
   let resultEvent = null;
   let eventCount = 0;
   let callbackFailed = false;
@@ -399,6 +430,12 @@ export async function run(inputOptions) {
       if (!emit({ type: 'retry', attempt: reportedNumber(event.attempt), delayMs: reportedNumber(event.retry_delay_ms) })) stop('callback_error');
     } else if (event.type === 'assistant' && !event.parent_tool_use_id) {
       if (event.message?.model && event.message.model !== '<synthetic>' && !modelMatches(observedModel, event.message.model)) { stop('model_mismatch'); return; }
+      // The CLI writes <synthetic> messages itself; they carry no API usage.
+      if (turnSteps && event.message?.model !== '<synthetic>') {
+        const counts = stepCounts(event.message);
+        // Every event of one API response repeats its message id and usage; count it once.
+        if (counts) turnSteps.set(event.message.id, counts); else turnSteps = null;
+      }
       const blocks = event.message?.content;
       if (Array.isArray(blocks)) {
         for (const block of blocks) {
@@ -414,7 +451,7 @@ export async function run(inputOptions) {
     } else if (event.type === 'result') {
       if (resultEvent) { stop('protocol_error'); return; }
       resultEvent = event;
-      usage = reportedUsage(event, Boolean(options.sessionId));
+      usage = reportedUsage(event, Boolean(options.sessionId), turnSteps);
       permissionDenied ||= Array.isArray(event.permission_denials) && event.permission_denials.length > 0;
       if (typeof event.result === 'string' && !event.is_error) {
         if (Buffer.byteLength(event.result) > MAX_TEXT_BYTES) { stop('output_limit'); return; }
