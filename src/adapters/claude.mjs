@@ -83,9 +83,7 @@ function validate(options) {
   if (!Array.isArray(executableArgs) || executableArgs.length > 16 || executableArgs.some((arg) => typeof arg !== 'string' || arg.length > 4096 || /[\0\r\n]/.test(arg))) {
     throw new TypeError('executableArgs must contain at most 16 bounded strings without NULs or newlines.');
   }
-  // Without an explicit executable, find the installed CLI, including npm's Windows shim.
-  const command = providerCommand('claude', { executable, executableArgs, env });
-  return { prompt, cwd, effort, model, sessionId, allowWrite, timeoutMs, signal, onEvent, env, ...command, maxTurns, maxBudgetUsd };
+  return { prompt, cwd, effort, model, sessionId, allowWrite, timeoutMs, signal, onEvent, env, executable, executableArgs: [...executableArgs], maxTurns, maxBudgetUsd };
 }
 
 // Inherit authentication and routing, not arbitrary runtime injection or Claude
@@ -271,6 +269,7 @@ const ERRORS = {
   unsupported_effort_model: ['blocked', 'This Claude model does not support the adapter’s effort control. Select an effort-capable model.'],
   unsupported_cli: ['blocked', 'Claude CLI lacks required managed-mode flags. Update the CLI; the adapter will not weaken isolation.'],
   missing_cli: ['blocked', 'Claude CLI executable was not found. Install Claude Code, or set EFFORT_CLAUDE_BIN to its executable path.'],
+  cli_unavailable: ['blocked', 'The configured Claude CLI cannot be started. Run effort doctor for details.'],
   invalid_cwd: ['blocked', 'The working directory does not exist or is not accessible.'],
   isolation_mismatch: ['blocked', 'Claude reported tools, customizations, or permissions outside the managed configuration. The process was stopped.'],
   model_mismatch: ['blocked', 'Claude reported an unexpected model or a model switch. The process was stopped.'],
@@ -312,19 +311,24 @@ export async function run(inputOptions) {
     try { options.onEvent({ provider: 'claude', ...event }); return true; }
     catch { callbackFailed = true; return false; }
   };
-  const outcome = (status, failure) => {
+  // `detail` is Effort's own explanation, never provider output.
+  const outcome = (status, failure, detail) => {
     if (failure) {
       const info = ERRORS[failure] ?? ERRORS.cli_error;
       status = info[0];
       // Never include raw stderr or provider error bodies in diagnostics.
-      text = info[1];
-      emit({ type: 'error', code: failure, message: info[1], ...(isolationDiagnostic && failure === 'isolation_mismatch' ? { details: isolationDiagnostic } : {}) });
+      text = detail ?? info[1];
+      emit({ type: 'error', code: failure, message: text, ...(isolationDiagnostic && failure === 'isolation_mismatch' ? { details: isolationDiagnostic } : {}) });
     }
     evidence.launchAccepted = initialized;
     evidence.observedModel = observedModel;
     return { provider: 'claude', sessionId, requestedEffort: options.effort, effortEvidence: evidence, text, usage, status };
   };
   if (options.signal?.aborted) return outcome(null, 'aborted');
+  // Without an explicit executable, find the installed CLI (including npm's Windows shim).
+  // A bad EFFORT_CLAUDE_BIN is then a blocked turn that says what is wrong.
+  try { Object.assign(options, providerCommand('claude', { executable: options.executable, executableArgs: options.executableArgs, env: options.env })); }
+  catch (error) { return outcome(null, 'cli_unavailable', error.message); }
   if (knownUnsupportedModel(options.model)) return outcome(null, 'unsupported_effort_model');
   try {
     options.cwd = await realpath(options.cwd);

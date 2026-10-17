@@ -12,7 +12,11 @@ export async function runTask(options, { adapter, store, verifyFn = verify } = {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 3_600_000) throw new Error('timeoutMs must be 100–3,600,000.');
   if (verifyTimeoutMs !== undefined && (!Number.isInteger(verifyTimeoutMs) || verifyTimeoutMs < 100 || verifyTimeoutMs > timeoutMs)) throw new Error('verifyTimeoutMs must be from 100 to timeoutMs.');
   if (verifyTimeoutMs !== undefined && !options.verify) throw new Error('verifyTimeoutMs requires a verification command.');
-  if (options.verify) validateCommand(options.verify);
+  if (options.verify) {
+    validateCommand(options.verify);
+    // A command that cannot start (for example npm missing from PATH) stops here, before a billed turn.
+    verifyFn.preflight?.(options.verify, { cwd, env });
+  }
   const facts = await repositoryFacts(cwd, prompt);
   const prediction = recommend({prompt,provider:adapter.capabilities.id,facts,maxEffort});
   let effort = options.effort && options.effort !== 'auto' ? validateLevel(options.effort) : prediction.effort;

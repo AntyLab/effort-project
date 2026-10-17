@@ -194,8 +194,6 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647) throw new TypeError('timeoutMs must be a positive, supported timer duration.');
   if (executable !== undefined && (typeof executable !== 'string' || !executable || executable.includes('\0'))) throw new TypeError('executable must be a CLI path or command name.');
   if (!Array.isArray(executableArgs) || executableArgs.length > 100 || executableArgs.some((argument) => typeof argument !== 'string' || argument.includes('\0') || argument.length > 20_000)) throw new TypeError('executableArgs must be an array of at most 100 bounded strings without NUL characters.');
-  // Without an explicit executable, find the installed CLI, including npm's Windows shim.
-  const command = providerCommand('codex', { executable, executableArgs, env });
   for (const [key, value] of [['model', model], ['sessionId', sessionId]]) {
     if (value !== undefined && (typeof value !== 'string' || !value.trim() || value.length > 256 || /[\0\r\n]/.test(value))) throw new TypeError(`${key} must be a nonempty identifier.`);
   }
@@ -216,6 +214,13 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
     text: '', usage: emptyUsage(), status: 'failed',
   };
   if (signal?.aborted) return { ...result, status: 'cancelled' };
+  // Without an explicit executable, find the installed CLI (including npm's Windows shim).
+  // A bad EFFORT_CODEX_BIN is then a blocked turn that says what is wrong.
+  let command;
+  try { command = providerCommand('codex', { executable, executableArgs, env }); } catch (error) {
+    emit({ type: 'diagnostic', code: 'cli_unavailable', message: String(error.message).slice(0, 2000) });
+    return { ...result, text: String(error.message).slice(0, 2000), status: 'blocked' };
+  }
   if (sessionId && activeSessions.has(sessionId)) {
     emit({ type: 'diagnostic', code: 'session_busy', message: 'This adapter already has a turn running for that session.' });
     return { ...result, status: 'blocked' };

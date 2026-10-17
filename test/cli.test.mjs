@@ -59,8 +59,9 @@ test('doctor finds npm-installed and overridden provider CLIs without a shell', 
     assert.equal(checks.codex.version, 'codex-cli 9.9.9-fixture');
     assert.equal(checks.codex.source, 'npm-shim');
   } else assert.equal(checks.codex.installed, false);
-  const text = f.invoke(['doctor'], { EFFORT_CODEX_BIN: join(f.cwd, 'missing-codex') });
-  assert.match(text.stdout, /codex: not found \(set EFFORT_CODEX_BIN to its path\)/);
+  assert.match(f.invoke(['doctor']).stdout, /claude: not found \(set EFFORT_CLAUDE_BIN to its path\)/);
+  const misconfigured = f.invoke(['doctor'], { EFFORT_CODEX_BIN: join(f.cwd, 'missing-codex') });
+  assert.match(misconfigured.stdout, /codex: cannot start: EFFORT_CODEX_BIN points to .*missing-codex, which does not exist; authentication not checked/);
 });
 
 test('a polyglot checkout does not raise a short mechanical recommendation', async (t) => {

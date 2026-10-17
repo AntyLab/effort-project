@@ -164,6 +164,14 @@ test('finds an npm-installed Claude CLI on Windows without a shell', { skip: pro
   assert.equal(argValue(JSON.parse(await readFile(f.log, 'utf8')).argv, '--effort'), 'medium');
 });
 
+test('a broken EFFORT_CLAUDE_BIN is a blocked turn that explains itself, not an exception', async (t) => {
+  const f = await fixture(t);
+  const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, EFFORT_CLAUDE_BIN: join(f.cwd, 'missing.cjs') } });
+  assert.equal(result.status, 'blocked');
+  assert.match(result.text, /EFFORT_CLAUDE_BIN points to .*missing\.cjs, which does not exist/);
+  assert.equal(await exists(f.log), false);
+});
+
 test('EFFORT_CLAUDE_BIN selects the Claude CLI when no executable is given', async (t) => {
   const f = await fixture(t);
   const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, EFFORT_CLAUDE_BIN: f.scriptPath } });

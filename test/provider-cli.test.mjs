@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { resolveProviderCommand, providerCommand } from '../src/provider-cli.mjs';
 
@@ -52,12 +52,12 @@ test('Windows prefers a native .exe anywhere on PATH over an npm shim', windows,
   assert.deepEqual(resolveProviderCommand('claude', { env: { PATH: `${shims};${native}` } }), { executable: join(native, 'claude.exe'), executableArgs: [], source: 'path' });
 });
 
-test('Windows ignores batch files that are not usable npm shims', windows, async (t) => {
+test('Windows explains batch files that are not usable npm shims', windows, async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'effort-cli-batch-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, 'codex.cmd'), '@echo off\r\nstart codex-helper %*\r\n');
   await writeFile(join(dir, 'claude.cmd'), npmShim('node_modules\\missing\\cli.js'));
-  for (const name of ['codex', 'claude']) assert.deepEqual(resolveProviderCommand(name, { env: { PATH: dir } }), { executable: name, executableArgs: [], source: 'default' });
+  for (const name of ['codex', 'claude']) assert.throws(() => resolveProviderCommand(name, { env: { PATH: dir } }), new RegExp(`${name} is a batch file .* cannot run without a shell`));
   assert.throws(() => resolveProviderCommand('codex', { env: { PATH: dir, EFFORT_CODEX_BIN: join(dir, 'codex.cmd') } }), /EFFORT_CODEX_BIN names a batch file that is not an npm shim/);
   const { dir: shims, entry } = await prefix(t, 'codex');
   assert.deepEqual(resolveProviderCommand('codex', { env: { effort_codex_bin: join(shims, 'codex.cmd') } }), { executable: process.execPath, executableArgs: [entry], source: 'override' });
@@ -66,19 +66,25 @@ test('Windows ignores batch files that are not usable npm shims', windows, async
 test('EFFORT_CODEX_BIN and EFFORT_CLAUDE_BIN override PATH on every platform', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'effort-cli-override-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const script = join(dir, 'codex entry.mjs');
+  const script = join(dir, 'codex entry.mjs'), native = join(dir, 'claude-native'), relativeScript = join(dir, 'cli.cjs');
+  for (const path of [script, native, relativeScript]) await writeFile(path, '');
   assert.deepEqual(resolveProviderCommand('codex', { env: { PATH: dir, EFFORT_CODEX_BIN: script } }), { executable: process.execPath, executableArgs: [script], source: 'override' });
   assert.deepEqual(resolveProviderCommand('codex', { env: { EFFORT_CODEX_BIN: ` "${script}" ` } }).executableArgs, [script]);
-  assert.deepEqual(resolveProviderCommand('claude', { env: { EFFORT_CLAUDE_BIN: join(dir, 'claude-native') } }), { executable: join(dir, 'claude-native'), executableArgs: [], source: 'override' });
-  assert.deepEqual(resolveProviderCommand('claude', { env: { EFFORT_CLAUDE_BIN: 'relative/cli.cjs' } }).executableArgs, [resolve('relative/cli.cjs')]);
+  assert.deepEqual(resolveProviderCommand('claude', { env: { EFFORT_CLAUDE_BIN: native } }), { executable: native, executableArgs: [], source: 'override' });
+  // A relative override is fixed to one absolute file, so doctor and every adapter run the same one.
+  assert.deepEqual(resolveProviderCommand('claude', { env: { EFFORT_CLAUDE_BIN: relative(process.cwd(), relativeScript) } }).executableArgs, [relativeScript]);
+  assert.deepEqual(resolveProviderCommand('claude', { env: { EFFORT_CLAUDE_BIN: relative(process.cwd(), native) } }).executable, native);
+  // Missing files and unknown command names fail with what is wrong.
+  assert.throws(() => resolveProviderCommand('codex', { env: { EFFORT_CODEX_BIN: join(dir, 'missing.mjs') } }), /EFFORT_CODEX_BIN points to .*missing\.mjs, which does not exist/);
+  assert.throws(() => resolveProviderCommand('claude', { env: { PATH: dir, EFFORT_CLAUDE_BIN: 'effort-missing-claude' } }), /EFFORT_CLAUDE_BIN names effort-missing-claude, which was not found on PATH/);
   assert.equal(resolveProviderCommand('claude', { env: { EFFORT_CLAUDE_BIN: '  ' } }).source, 'default');
   assert.throws(() => resolveProviderCommand('opencode', { env: {} }), /codex or claude/);
 });
 
-test('POSIX leaves PATH lookup to spawn, and explicit executables stay literal', async (t) => {
-  const { dir } = await prefix(t, 'codex');
+test('POSIX leaves default lookup to spawn, and explicit executables stay literal', async (t) => {
+  const { dir, entry } = await prefix(t, 'codex');
   assert.deepEqual(resolveProviderCommand('codex', { env: { PATH: dir }, platform: 'linux' }), { executable: 'codex', executableArgs: [], source: 'default' });
   assert.equal(resolveProviderCommand('codex', { env: { effort_codex_bin: 'x' }, platform: 'linux' }).source, 'default');
   assert.deepEqual(providerCommand('codex', { executable: '/opt/codex', executableArgs: ['--flag'], env: { EFFORT_CODEX_BIN: 'other' } }), { executable: '/opt/codex', executableArgs: ['--flag'] });
-  assert.deepEqual(providerCommand('codex', { executableArgs: ['--flag'], env: { EFFORT_CODEX_BIN: '/opt/codex.mjs' } }), { executable: process.execPath, executableArgs: [resolve('/opt/codex.mjs'), '--flag'] });
+  assert.deepEqual(providerCommand('codex', { executableArgs: ['--flag'], env: { EFFORT_CODEX_BIN: entry } }), { executable: process.execPath, executableArgs: [entry, '--flag'] });
 });

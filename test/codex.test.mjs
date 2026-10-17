@@ -357,6 +357,15 @@ test('Codex finds an npm-installed CLI on Windows without a shell', { skip: proc
   assert.deepEqual((await f.readLog())[0].argv, ['app-server', '--listen', 'stdio://']);
 });
 
+test('a broken EFFORT_CODEX_BIN is a blocked turn that explains itself, not an exception', async (t) => {
+  const f = await setup(t);
+  const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, EFFORT_CODEX_BIN: join(f.options.cwd, 'missing.mjs') } });
+  assert.equal(result.status, 'blocked');
+  assert.match(result.text, /EFFORT_CODEX_BIN points to .*missing\.mjs, which does not exist/);
+  assert.ok(f.events.some((event) => event.code === 'cli_unavailable'));
+  await assert.rejects(readFile(f.log), { code: 'ENOENT' });
+});
+
 test('EFFORT_CODEX_BIN selects the Codex CLI when no executable is given', async (t) => {
   const f = await setup(t);
   const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, EFFORT_CODEX_BIN: f.options.executableArgs[0] } });

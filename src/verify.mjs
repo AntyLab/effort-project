@@ -4,6 +4,7 @@ import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { classifyFailure } from './policy.mjs';
 import { plainReport, failingTestNames } from './test-reports.mjs';
+import { findCommand } from './commands.mjs';
 
 const OUTPUT_LIMIT = 32_000;
 const EXIT_GRACE_MS = 1000;
@@ -71,15 +72,32 @@ export function validateCommand(argv) {
   return argv;
 }
 
+/**
+ * The argv that starts a verification command with shell:false. On Windows this runs
+ * npm, npx, pnpm or yarn through the JavaScript entry point their .cmd wrapper names.
+ * Throws when the command cannot be started, so a run can stop before any provider turn.
+ */
+export function resolveVerification(argv, { cwd, env = process.env } = {}) {
+  validateCommand(argv);
+  const found = findCommand(argv[0], { env, cwd });
+  if (!found) throw new Error(`The verification command ${JSON.stringify(argv[0])} was not found${/[\\/]/.test(argv[0]) ? '' : ' on PATH'}.`);
+  return [found.executable, ...found.executableArgs, ...argv.slice(1)];
+}
+
 export function verify(argv, { cwd, timeoutMs = 60_000, signal, env = process.env } = {}) {
   validateCommand(argv);
   return new Promise(resolve => {
     if (signal?.aborted) return resolve({ status:'blocked', kind:'cancelled', output:'', exitCode:null });
+    const unavailable = output => resolve({ status:'blocked', kind:'environment', output, exitCode:null, fingerprint:failureFingerprint(output,{cwd}) });
+    let command;
+    try { command = resolveVerification(argv, { cwd, env }); } catch (error) { return unavailable(error.message); }
     let output = '', truncated = false, timedOut = false, aborted = false, launchError = null;
     // A fresh verification process must not inherit node:test's nested-run marker:
     // Node can otherwise skip the requested tests and exit successfully.
     const childEnv={...env};delete childEnv.NODE_TEST_CONTEXT;
-    const child = spawn(argv[0], argv.slice(1), { cwd, env:childEnv, shell:false, stdio:['ignore','pipe','pipe'], windowsHide:true, detached:process.platform!=='win32' });
+    let child;
+    try { child = spawn(command[0], command.slice(1), { cwd, env:childEnv, shell:false, stdio:['ignore','pipe','pipe'], windowsHide:true, detached:process.platform!=='win32' }); }
+    catch (error) { return unavailable(error.code || 'launch error'); }
     const collect = data => { output += data.toString(); if (output.length > OUTPUT_LIMIT) { output = output.slice(-OUTPUT_LIMIT); truncated = true; } };
     child.stdout.on('data', collect); child.stderr.on('data', collect);
     let hardKill,reapTimer,exitTimer,settled=false;
@@ -118,3 +136,6 @@ export function verify(argv, { cwd, timeoutMs = 60_000, signal, env = process.en
     child.on('close',finish);
   });
 }
+
+// Lets runTask check, before any provider turn, that the command can start.
+verify.preflight = (argv, options) => { resolveVerification(argv, options); };

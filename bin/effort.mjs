@@ -49,12 +49,12 @@ async function main(){
   if(command==='doctor'){
     // The same shell-free resolution as managed runs: EFFORT_*_BIN, then a Windows .exe or npm shim.
     const checks=['codex','claude'].map(name=>{
-      let cli;try{cli=resolveProviderCommand(name);}catch(e){return {provider:name,installed:false,version:null,source:'override',error:e.message,authenticated:'not checked',liveTest:'not performed'};}
+      let cli;try{cli=resolveProviderCommand(name);}catch(e){return {provider:name,installed:false,version:null,source:null,error:e.message,authenticated:'not checked',liveTest:'not performed'};}
       const r=spawnSync(cli.executable,[...cli.executableArgs,'--version'],{encoding:'utf8',timeout:5000,windowsHide:true,shell:false});
       return {provider:name,installed:!r.error&&r.status===0,version:r.status===0?r.stdout.trim().slice(0,150):null,source:cli.source,command:[cli.executable,...cli.executableArgs],authenticated:'not checked',liveTest:'not performed'};
     });
     const found=c=>`${c.version}${c.source==='npm-shim'?' (npm shim)':c.source==='override'?` (${CLI_OVERRIDES[c.provider]})`:''}`;
-    return print(values.json?{node:process.version,checks,capabilities:capabilities()}:`Node ${process.version}\n${checks.map(c=>`${c.provider}: ${c.installed?found(c):c.error??`not found (set ${CLI_OVERRIDES[c.provider]} to its path)`}; authentication not checked`).join('\n')}\nDesktop: advisory MCP. Live model access is tested only when you run a task.`,values.json);
+    return print(values.json?{node:process.version,checks,capabilities:capabilities()}:`Node ${process.version}\n${checks.map(c=>`${c.provider}: ${c.installed?found(c):c.error?`cannot start: ${c.error.replace(/\.$/,'')}`:`not found (set ${CLI_OVERRIDES[c.provider]} to its path)`}; authentication not checked`).join('\n')}\nDesktop: advisory MCP. Live model access is tested only when you run a task.`,values.json);
   }
   if(command==='config'){
     const target=positionals[1],entry=fileURLToPath(import.meta.url),node=process.execPath;
