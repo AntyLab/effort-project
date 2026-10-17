@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { spawn } from 'node:child_process';
 import { run, capabilities, waitForProcessGroupExit } from '../src/adapters/codex.mjs';
 
 // This fixture is an independent JSONL server, not a mock of the adapter internals.
@@ -312,6 +313,23 @@ test('process-group cleanup waits through EPERM until ESRCH and stays bounded', 
     assert.ok(performance.now() - started >= 75);
   }
   assert.equal(await waitForProcessGroupExit(4242, 5000, probe('EINVAL').kill), false);
+});
+
+test('a finished Codex turn leaves no timers that keep the process alive', async (t) => {
+  const f = await setup(t);
+  // Run one turn in a fresh process and time how long it lingers after run() resolves.
+  const script = join(f.options.cwd, 'one-turn.mjs');
+  await writeFile(script, `import { run } from ${JSON.stringify(new URL('../src/adapters/codex.mjs', import.meta.url).href)};
+const result = await run(JSON.parse(process.argv[2]));
+process.stdout.write(JSON.stringify({ status: result.status, resolvedAt: Date.now() }));`);
+  const { onEvent, ...options } = f.options;
+  const child = spawn(process.execPath, [script, JSON.stringify(options)], { stdio: ['ignore', 'pipe', 'inherit'] });
+  let stdout = '';
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  const exitedAt = await new Promise((done) => child.once('exit', () => done(Date.now())));
+  const { status, resolvedAt } = JSON.parse(stdout);
+  assert.equal(status, 'completed');
+  assert.ok(exitedAt - resolvedAt < 1000, `process exited ${exitedAt - resolvedAt} ms after the turn returned`);
 });
 
 test('already-aborted calls never launch the CLI; invalid effort is rejected', async (t) => {

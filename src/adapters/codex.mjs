@@ -17,6 +17,13 @@ const MAX_STREAM_BYTES = 32 * 1024 * 1024;
 const MAX_TEXT_BYTES = 256 * 1024;
 const TOKEN_KEYS = ['inputTokens', 'outputTokens', 'cachedInputTokens'];
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+// Wait for a promise for at most ms. The timer is always cleared, so a bounded wait
+// never keeps the process alive after a turn has returned.
+async function within(promise, ms, fallback) {
+  let timer;
+  try { return await Promise.race([promise, new Promise((done) => { timer = setTimeout(done, ms, fallback); })]); }
+  finally { clearTimeout(timer); }
+}
 const emptyUsage = () => ({ inputTokens: null, outputTokens: null, cachedInputTokens: null, costUsd: null });
 const activeSessions = new Set();
 // Shutdown bounds. Each wait ends as soon as the process group is gone; the
@@ -148,10 +155,10 @@ class AppServer {
     this.rejectPending(new AdapterError('closed', 'The managed Codex connection closed.'));
     if (interrupt && threadId && turnId && !this.closed) {
       try { this.write({ id: this.nextId++, method: 'turn/interrupt', params: { threadId, turnId } }); } catch {}
-      await Promise.race([this.closedPromise, sleep(150)]);
+      await within(this.closedPromise, 150);
     }
     this.child.stdin.end();
-    await Promise.race([this.closedPromise, sleep(150)]);
+    await within(this.closedPromise, 150);
     const pid = this.child.pid;
     let cleanupConfirmed = true;
     if (pid && process.platform !== 'win32') {
@@ -165,11 +172,11 @@ class AppServer {
       }
     } else if (pid && !this.closed) {
       const killer = spawn('taskkill.exe', ['/pid', String(pid), '/T', '/F'], { shell: false, stdio: 'ignore', windowsHide: true });
-      await Promise.race([new Promise((done) => { killer.once('error', done); killer.once('close', done); }), sleep(1000)]);
+      await within(new Promise((done) => { killer.once('error', done); killer.once('close', done); }), 1000);
       killer.kill();
       this.child.kill();
     }
-    await Promise.race([this.closedPromise, sleep(CLOSE_WAIT_MS)]);
+    await within(this.closedPromise, CLOSE_WAIT_MS);
     this.child.stdout.destroy();
     this.child.stderr.destroy();
     this.child.stdin.destroy();
@@ -349,10 +356,7 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
       const status = await completion.promise;
       result.status = status === 'interrupted' ? 'cancelled' : status;
       if (result.status === 'completed') {
-        const metadata = await Promise.race([
-          server.request('thread/read', { threadId: id, includeTurns: false }).catch(() => null),
-          sleep(1000).then(() => null),
-        ]);
+        const metadata = await within(server.request('thread/read', { threadId: id, includeTurns: false }).catch(() => null), 1000, null);
         const configured = metadata?.thread?.reasoningEffort;
         if (typeof configured === 'string') {
           result.effortEvidence.configuredEffort = configured;
