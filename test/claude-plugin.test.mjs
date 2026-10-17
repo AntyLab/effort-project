@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { cp, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { PassThrough, Readable, Writable } from 'node:stream';
@@ -354,6 +354,17 @@ test('the hook adds little to Node startup and never stores, logs or sends the p
   // Relative bound: on a loaded machine both medians grow several times over.
   assert.ok(median(hook) < 2 * median(bare) + 150, 'the hook adds little beyond starting Node');
   assert.ok(Math.max(...hook) < 5000, 'every run finishes inside the hook timeout');
+});
+
+test('npm run check syntax-checks the hook entry in hooks/', async (t) => {
+  const tree = await mkdtemp(join(tmpdir(), 'effort-plugin-check-'));
+  t.after(() => rm(tree, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  for (const dir of ['src', 'bin', 'test', 'web', 'scripts', 'hooks']) await mkdir(join(tree, dir));
+  await writeFile(join(tree, 'hooks', 'broken.mjs'), 'export const = ;\n');
+  const result = await runProcess([join(root, 'scripts', 'check.mjs')], { cwd: tree });
+  assert.equal(result.code, 1, 'a syntax error under hooks/ fails the check');
+  assert.match(result.stderr, /broken\.mjs/);
+  assert.match(result.stdout, /Syntax checked 1 JavaScript files/);
 });
 
 test('the plugin MCP configuration starts the bundled stdio server', async () => {
