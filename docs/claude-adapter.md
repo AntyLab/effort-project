@@ -53,7 +53,7 @@ The built-in bounds are:
 | Parsed events | 20,000 |
 | Timeout | 120 seconds by default; caller range 1 ms–30 minutes (`capabilities.maxTurnTimeoutMs`). `effort run` gives each turn at most 30 minutes of a longer task budget |
 | CLI help preflight | Up to 5 seconds, within the total timeout |
-| Internal agent turns | 12 by default; optional `maxTurns` range 1–50 |
+| Internal agent turns | 12 by default; optional `maxTurns` range 1–50, which `runTask` passes to every attempt and refuses for other adapters |
 | Optional estimated spend cap | `maxBudgetUsd`, greater than 0 and at most 100 |
 
 The spend cap is optional and a provider estimate, not a guarantee about billing. Timeout/abort sends termination to the process group, then force-kills after 500 ms, with a bounded reap fallback. Windows uses the system `taskkill` process-tree operation; that platform path has not been exercised by the macOS tests. Ordinary successful output is held in memory by the adapter, which writes no transcript.
