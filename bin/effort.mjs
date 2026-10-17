@@ -17,36 +17,50 @@ import { createAutomaticRouter, validateModelMap } from '../src/automatic.mjs';
 import { resolveProviderCommand, CLI_OVERRIDES } from '../src/provider-cli.mjs';
 import { VERSION } from '../src/version.mjs';
 
-const help=`The Effort Project · ${VERSION}\nLocal effort decisions, with evidence you can inspect.\n\n  effort doctor [--json]\n  effort recommend "task" [--provider codex|claude|generic] [--cwd path] [--json]\n  effort run "task" --provider codex|claude --cwd path [--allow-write]\n    [--max-attempts 3] [--timeout 600] [--verify-timeout seconds]\n    [--effort auto|low|medium|high] [--max-effort high] [--model model-id]\n    [--prompt-file path] [--dry-run] [--json] [-- verification command]\n  effort auto codex|claude [--cwd path] [--effort auto|low|medium|high]\n    [--min-effort low] [--max-effort high] [--model model-id]\n    [--routing-config path] [--dry-run] [--allow-write (Claude only)]\n  effort dashboard [--port 0]\n  effort history [--json]\n  effort mcp\n  effort config codex|claude|opencode\n\nAuto Codex: normal Codex terminal UI through an experimental local router.\nAuto Claude: Effort's text session, resuming Claude Code between prompts.\nAuto selects before each user turn; fixed --effort and --model override routing.\nOpenCode: config opencode prints a native plugin module; see docs/automatic.md.\nManaged runs use your installed, signed-in provider CLI and its billed access.\nRun defaults: read-only, 600 seconds per task including verification, high effort\nceiling. Each check may use the time left; --verify-timeout sets a shorter limit.\nAuto Claude defaults: read-only, 120 seconds per prompt, high effort ceiling.\nAuto Codex preserves the official interface's sandbox and approval settings.\n--allow-write permits provider-constrained edits. Verification is your explicitly\nchosen local command; it is NOT sandboxed by Effort. Review it before running.\nPut it last, after --: effort run "task" --provider codex -- node --test\nIn PowerShell, quote the separator: '--'. The JSON form --verify '["node","--test"]'\nstill works where your shell keeps the inner quotes.\nWithout a verification command a completed task is UNVERIFIED and never auto-retried.\nDesktop MCP offers advice; it cannot change the host chat's effort.\nPrompts, code, responses and test output are not stored by Effort. Provider CLIs\nhave their own storage policies. EFFORT_DATA_DIR changes the metadata directory.\n`;
+const help=`The Effort Project · ${VERSION}\nLocal effort decisions, with evidence you can inspect.\n\n  effort doctor [--json]\n  effort recommend "task" [--provider codex|claude|generic] [--cwd path] [--json]\n  effort run "task" --provider codex|claude --cwd path [--allow-write]\n    [--max-attempts 3] [--timeout 600] [--verify-timeout seconds]\n    [--effort auto|low|medium|high] [--max-effort high] [--model model-id]\n    [--prompt-file path] [--dry-run] [--json]\n    [-- verification command | --verify-arg part ...]\n  effort auto codex|claude [--cwd path] [--effort auto|low|medium|high]\n    [--min-effort low] [--max-effort high] [--model model-id]\n    [--routing-config path] [--dry-run] [--allow-write (Claude only)]\n  effort dashboard [--port 0]\n  effort history [--json]\n  effort mcp\n  effort config codex|claude|opencode\n\nAuto Codex: normal Codex terminal UI through an experimental local router.\nAuto Claude: Effort's text session, resuming Claude Code between prompts.\nAuto selects before each user turn; fixed --effort and --model override routing.\nOpenCode: config opencode prints a native plugin module; see docs/automatic.md.\nManaged runs use your installed, signed-in provider CLI and its billed access.\nRun defaults: read-only, 600 seconds per task including verification, high effort\nceiling. Each check may use the time left; --verify-timeout sets a shorter limit.\nAuto Claude defaults: read-only, 120 seconds per prompt, high effort ceiling.\nAuto Codex preserves the official interface's sandbox and approval settings.\n--allow-write permits provider-constrained edits. Verification is your explicitly\nchosen local command; it is NOT sandboxed by Effort. Review it before running.\nPut it last, after --: effort run "task" --provider codex -- node --test\nIn PowerShell, quote the separator ('--') or give each part with --verify-arg:\n  --verify-arg node --verify-arg=--test. The JSON form\n  --verify '["node","--test"]' works where your shell keeps the inner quotes.\nQuote the task: effort run takes it as one argument (or use --prompt-file).\nWithout a verification command a completed task is UNVERIFIED and never auto-retried.\nDesktop MCP offers advice; it cannot change the host chat's effort.\nPrompts, code, responses and test output are not stored by Effort. Provider CLIs\nhave their own storage policies. EFFORT_DATA_DIR changes the metadata directory.\n`;
 const controller=new AbortController();
 function handleCancellation(){process.once('SIGINT',()=>controller.abort());process.once('SIGTERM',()=>controller.abort());}
 function number(value,fallback){if(value===undefined)return fallback;const n=Number(value);if(!Number.isFinite(n))throw new Error('Numeric option is invalid.');return n;}
 // Seconds on the command line, whole milliseconds inside: 16.1 s is 16100 ms, not 16100.000000000002.
 function milliseconds(value,fallbackSeconds){const n=number(value,fallbackSeconds);return n===undefined?undefined:Math.round(n*1000);}
 function print(data,json){process.stdout.write((json?JSON.stringify(data,null,2):String(data))+'\n');}
-const separatorHint=`In PowerShell, a bare -- can be removed before Effort sees it; quote it as '--'.`;
-// Windows PowerShell 5.1 strips the inner quotes of '["node","--test"]', so the
-// command after -- is the portable form. JSON remains for existing scripts.
-function verification(json,argv){
-  if(json!==undefined&&argv!==undefined)throw new Error('Give the verification command once: after -- or with --verify, not both.');
+const separatorHint=`In PowerShell, a bare -- can be removed before Effort sees it: quote it as '--', or pass each part with --verify-arg.`;
+const OPTIONS={
+  help:{type:'boolean',short:'h'},version:{type:'boolean'},json:{type:'boolean'},provider:{type:'string'},cwd:{type:'string'},model:{type:'string'},effort:{type:'string'},'min-effort':{type:'string'},'max-effort':{type:'string'},'routing-config':{type:'string'},'allow-write':{type:'boolean'},verify:{type:'string'},'verify-arg':{type:'string',multiple:true},'verify-timeout':{type:'string'},'max-attempts':{type:'string'},timeout:{type:'string'},port:{type:'string'},'prompt-file':{type:'string'},'dry-run':{type:'boolean'}
+};
+// One way to give the verification argv per run. Windows PowerShell 5.1 strips the
+// inner quotes of '["node","--test"]' and npm's effort.ps1 drops a bare --, so
+// --verify-arg (one argument per option, no quoting rules) is the form no shell mangles.
+function verification(json,argv,parts){
+  if([json,argv,parts].filter(form=>form!==undefined).length>1)throw new Error('Give the verification command once: after --, with --verify-arg, or with --verify.');
+  if(parts!==undefined)return parts;
   if(argv!==undefined){if(!argv.length)throw new Error('Put the verification command after --, for example: -- node --test');return argv;}
   if(json===undefined)return undefined;
   let parsed;try{parsed=JSON.parse(json);}catch{}
-  if(!Array.isArray(parsed)||!parsed.length||parsed.some(x=>typeof x!=='string'))throw new Error(`--verify expects a JSON array of strings such as ["node","--test"], but received ${JSON.stringify(json.slice(0,80))}. If your shell removed the inner quotes (Windows PowerShell 5.1 does), put the command last, after -- instead: effort run "task" --provider codex -- node --test. ${separatorHint}`);
+  if(!Array.isArray(parsed)||!parsed.length||parsed.some(x=>typeof x!=='string'))throw new Error(`--verify expects a JSON array of strings such as ["node","--test"], but received ${JSON.stringify(json.slice(0,80))}. If your shell removed the inner quotes (Windows PowerShell 5.1 does), put the command last, after -- instead: effort run "task" --provider codex -- node --test, or pass each part with --verify-arg. In PowerShell, quote the separator as '--'.`);
   return parsed;
 }
+function droppedSeparator(args){
+  let tokens;try{({tokens}=parseArgs({args,allowPositionals:true,strict:false,tokens:true,options:OPTIONS}));}catch{return false;}
+  if(tokens.some(token=>token.kind==='option-terminator'))return false;
+  const words=tokens.filter(token=>token.kind==='positional');
+  if(words[0]?.value!=='run')return false;
+  const unknown=tokens.find(token=>token.kind==='option'&&!Object.hasOwn(OPTIONS,token.name));
+  const before=unknown&&tokens[tokens.indexOf(unknown)-1];
+  return before?.kind==='positional'&&words.indexOf(before)>=2;
+}
 async function main(){
-  const {values,tokens}=parseArgs({allowPositionals:true,strict:true,tokens:true,options:{
-    help:{type:'boolean',short:'h'},version:{type:'boolean'},json:{type:'boolean'},provider:{type:'string'},cwd:{type:'string'},model:{type:'string'},effort:{type:'string'},'min-effort':{type:'string'},'max-effort':{type:'string'},'routing-config':{type:'string'},'allow-write':{type:'boolean'},verify:{type:'string'},'verify-timeout':{type:'string'},'max-attempts':{type:'string'},timeout:{type:'string'},port:{type:'string'},'prompt-file':{type:'string'},'dry-run':{type:'boolean'}
-  }});
-  // Everything after -- is the verification argv, passed literally to verification.
+  const {values,tokens}=parseArgs({allowPositionals:true,strict:true,tokens:true,options:OPTIONS});
+  // After --, effort run takes its verification argv, passed literally. For other
+  // commands -- only ends the options, so a task may start with '-'.
   const terminator=tokens.find(token=>token.kind==='option-terminator');
-  const positionals=tokens.filter(token=>token.kind==='positional'&&!(terminator&&token.index>terminator.index)).map(token=>token.value);
-  const verifyArgv=terminator?tokens.filter(token=>token.kind==='positional'&&token.index>terminator.index).map(token=>token.value):undefined;
+  const words=after=>tokens.filter(token=>token.kind==='positional'&&(terminator?(token.index>terminator.index)===after:!after)).map(token=>token.value);
+  const leading=words(false),trailing=terminator?words(true):undefined;
+  const positionals=leading[0]==='run'?leading:[...leading,...(trailing??[])];
+  const verifyArgv=leading[0]==='run'?trailing:undefined;
   const command=positionals[0];
   if(values.version)return print(VERSION);
   if(values.help||!command)return print(help);
-  if(verifyArgv!==undefined&&!['run','auto'].includes(command))throw new Error('Only effort run accepts a verification command after --.');
   if(command==='mcp'){serveMcp();return;}
   if(command==='doctor'){
     // The same shell-free resolution as managed runs: EFFORT_*_BIN, then a Windows .exe or npm shim.
@@ -68,7 +82,7 @@ async function main(){
   if(command==='auto'){
     const provider=positionals[1]??values.provider;
     if(!['codex','claude'].includes(provider))throw new Error('Use effort auto codex or effort auto claude.');
-    if(values.json||values.verify!==undefined||verifyArgv!==undefined||values['verify-timeout']!==undefined||values['max-attempts']||values['prompt-file']||positionals.length>2)throw new Error('Auto is interactive. Use effort run for a single task, JSON output, or verification/retries.');
+    if(values.json||values.verify!==undefined||values['verify-arg']!==undefined||values['verify-timeout']!==undefined||values['max-attempts']||values['prompt-file']||positionals.length>2)throw new Error('Auto is interactive. Use effort run for a single task, JSON output, or verification/retries.');
     if(provider==='codex'&&(values['allow-write']||values.timeout))throw new Error('Auto Codex uses the official terminal UI permissions and cancellation controls. Do not pass --allow-write or --timeout.');
     const cwd=resolve(values.cwd??process.cwd());
     if(!(await stat(cwd)).isDirectory())throw new Error('Workspace is not a directory.');
@@ -127,6 +141,15 @@ async function main(){
   if(command==='recommend'||command==='run'){
     const cwd=resolve(values.cwd??process.cwd());
     if(!(await stat(cwd)).isDirectory())throw new Error('Workspace is not a directory.');
+    if(command==='run'){
+      // A shell that drops a bare -- turns the verification command into extra task words.
+      // Stop instead of running unverified (and maybe with write access).
+      const extra=positionals.slice(values['prompt-file']?1:2).join(' ').slice(0,200);
+      const advice=`If that is a verification command, put it after -- (in PowerShell: '--') or pass each part with --verify-arg.`;
+      if(values['prompt-file']&&extra)throw new Error(`effort run reads the task from --prompt-file, but also received: ${extra}. ${advice}`);
+      if(extra)throw new Error(`effort run takes the task as one quoted argument, but also received: ${extra}. Quote the whole task. ${advice}`);
+      if(!values['prompt-file']&&positionals.length<2)throw new Error("effort run needs the task as one quoted argument before any --, or --prompt-file (for example, for a task that starts with '-').");
+    }
     const prompt=values['prompt-file']?await readFile(resolve(values['prompt-file']),'utf8'):positionals.slice(1).join(' ');
     if(command==='recommend'){
       const result=recommend({prompt,provider:values.provider??'generic',facts:await repositoryFacts(cwd,prompt),maxEffort:values['max-effort']??'high'});
@@ -135,10 +158,8 @@ async function main(){
     if(!values.provider)throw new Error('Choose --provider codex or claude explicitly.');
     handleCancellation();
     const adapter=getAdapter(values.provider);
-    const options={prompt,cwd,model:values.model,effort:values.effort??'auto',maxEffort:values['max-effort']??'high',allowWrite:values['allow-write']??false,maxAttempts:number(values['max-attempts'],3),timeoutMs:milliseconds(values.timeout,600),verifyTimeoutMs:milliseconds(values['verify-timeout']),verify:verification(values.verify,verifyArgv),signal:controller.signal};
-    if(options.verifyTimeoutMs!==undefined&&!options.verify)throw new Error('--verify-timeout needs a verification command after --.');
-    // A shim can drop a bare -- in PowerShell, turning the command into extra task words.
-    if(process.platform==='win32'&&!options.verify&&!values['prompt-file']&&positionals.length>2)process.stderr.write(`[effort] The task arrived as ${positionals.length-1} separate words and no verification command was given. ${separatorHint}\n`);
+    const options={prompt,cwd,model:values.model,effort:values.effort??'auto',maxEffort:values['max-effort']??'high',allowWrite:values['allow-write']??false,maxAttempts:number(values['max-attempts'],3),timeoutMs:milliseconds(values.timeout,600),verifyTimeoutMs:milliseconds(values['verify-timeout']),verify:verification(values.verify,verifyArgv,values['verify-arg']),signal:controller.signal};
+    if(options.verifyTimeoutMs!==undefined&&!options.verify)throw new Error('--verify-timeout needs a verification command after -- or with --verify-arg.');
     if(values['dry-run']){
       checkRunOptions(options,{adapter}); // The same checks the real run makes, including that the verification command can start.
       const recommendation=recommend({prompt,provider:values.provider,facts:await repositoryFacts(cwd,prompt),maxEffort:options.maxEffort});
@@ -165,4 +186,4 @@ async function main(){
   }
   throw new Error(`Unknown command: ${command}. Use effort --help.`);
 }
-main().catch(e=>{process.stderr.write(`effort: ${e.message}${e.code==='ERR_PARSE_ARGS_UNKNOWN_OPTION'&&process.platform==='win32'?` ${separatorHint}`:''}\n`);process.exitCode=1;});
+main().catch(e=>{process.stderr.write(`effort: ${e.message}${e.code==='ERR_PARSE_ARGS_UNKNOWN_OPTION'&&process.platform==='win32'&&droppedSeparator(process.argv.slice(2))?` ${separatorHint}`:''}\n`);process.exitCode=1;});

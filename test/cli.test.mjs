@@ -93,6 +93,8 @@ test('the verification command can follow -- and the JSON form still works', asy
   assert.equal(separated.recommendation.features.promptCharacters, 'Fix the sum test'.length);
   assert.equal(separated.willExecute, false);
   assert.deepEqual(plan(['--verify', '["node","--test"]']).verification, ['node', '--test']);
+  // --verify-arg needs no quoting rules: one argument per option, values starting with - after =.
+  assert.deepEqual(plan(['--verify-arg', 'node', '--verify-arg=--test', '--verify-arg', 'a b.test.mjs']).verification, ['node', '--test', 'a b.test.mjs']);
   const defaults = plan([]);
   assert.equal(defaults.verification, null);
   assert.equal(defaults.timeoutMs, 600_000);
@@ -146,22 +148,47 @@ test('invalid verification input fails with guidance before any provider starts'
   assert.match(mangled.stderr, /after -- instead/);
   failure(run('--verify', '"node --test"'), /JSON array of strings/);
   failure(run('--verify', '[]'), /JSON array of strings/);
-  failure(run('--verify', '["node"]', '--', 'node'), /not both/);
+  failure(run('--verify', '["node"]', '--', 'node'), /Give the verification command once/);
+  failure(run('--verify-arg', 'node', '--', 'node'), /Give the verification command once/);
   failure(run('--'), /after --, for example/);
-  failure(f.invoke(['recommend', 'Fix the sum test', '--', 'node', '--test']), /Only effort run/);
   // No provider was resolved or launched, and nothing was recorded.
   failure(run('--verify', '[node,--test]', '--dry-run'), /JSON array/);
 });
 
-test('Windows explains a separator removed by the PowerShell shim', { skip: process.platform !== 'win32' }, async (t) => {
+test('a verification command that lost its -- separator stops the run instead of dropping verification', async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.cwd, 'task.txt'), 'Fix the sum test');
+  // What PowerShell passes through npm's effort.ps1 for `... -- npm test` and `... -- pytest --timeout 30`.
+  for (const args of [
+    ['Fix the sum test', '--provider', 'codex', '--cwd', f.cwd, '--allow-write', 'npm', 'test'],
+    ['--prompt-file', join(f.cwd, 'task.txt'), '--provider', 'codex', '--cwd', f.cwd, '--allow-write', 'npm', 'test'],
+    ['Fix the sum test', '--provider', 'codex', '--cwd', f.cwd, 'pytest', '--timeout', '30'],
+    // An unquoted multi-word task is refused for the same reason.
+    ['Fix', 'the', 'sum', 'test', '--provider', 'codex', '--cwd', f.cwd],
+  ]) {
+    const result = f.invoke(['run', ...args]);
+    assert.equal(result.status, 1, args.join(' '));
+    assert.equal(result.stdout, '');
+    assert.match(result.stderr, /but also received: .*put it after -- \(in PowerShell: '--'\) or pass each part with --verify-arg/);
+  }
+  const noTask = f.invoke(['run', '--provider', 'codex', '--cwd', f.cwd, '--dry-run', '--', '-v output should list files']);
+  assert.equal(noTask.status, 1);
+  assert.match(noTask.stderr, /needs the task as one quoted argument before any --, or --prompt-file/);
+  // Outside effort run, -- only ends the options, so a task may start with '-'.
+  const dashed = f.invoke(['recommend', '--json', '--', '--force flag is ignored when the cache is warm']);
+  assert.equal(dashed.status, 0, dashed.stderr);
+  assert.equal(JSON.parse(dashed.stdout).features.promptCharacters, '--force flag is ignored when the cache is warm'.length);
+});
+
+test('Windows hints at a removed separator only where one could have been', { skip: process.platform !== 'win32' }, async (t) => {
   const f = await fixture(t);
   // What effort.ps1 delivers for: effort run "task" --provider codex -- node --test
-  const unknown = f.invoke(['run', 'Fix the sum test', '--provider', 'codex', 'node', '--test']);
-  assert.equal(unknown.status, 1);
-  assert.match(unknown.stderr, /Unknown option '--test'.*quote it as '--'/);
-  // ...and for: effort run "task" --provider codex -- npm test
-  const merged = f.invoke(['run', 'Fix the sum test', '--provider', 'codex', '--cwd', f.cwd, '--dry-run', 'npm', 'test']);
-  assert.equal(merged.status, 0, merged.stderr);
-  assert.match(merged.stderr, /3 separate words and no verification command.*quote it as '--'/);
-  assert.equal(JSON.parse(merged.stdout).verification, null);
+  const dropped = f.invoke(['run', 'Fix the sum test', '--provider', 'codex', 'node', '--test']);
+  assert.equal(dropped.status, 1);
+  assert.match(dropped.stderr, /Unknown option '--test'.*quote it as '--', or pass each part with --verify-arg/);
+  // A typo right after the task gets Node's message alone.
+  const typo = f.invoke(['run', 'Fix the sum test', '--provder', 'codex']);
+  assert.equal(typo.status, 1);
+  assert.match(typo.stderr, /Unknown option '--provder'/);
+  assert.doesNotMatch(typo.stderr, /PowerShell/);
 });
