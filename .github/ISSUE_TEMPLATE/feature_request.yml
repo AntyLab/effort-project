@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for the idea. Effort is an experimental local controller, so a concrete problem is more useful than a finished design.
 
-        Please do not paste tokens, prompt transcripts or private code. If you propose support for another agent CLI or host, it needs a real effort control that Effort can set. Please do not propose adapters that merely print an effort label without setting a supported provider parameter. See the [adapter contract](https://github.com/AntyXO/effort-project/blob/main/docs/adapter-contract.md).
+        Please do not paste tokens, prompt transcripts or private code. If you propose support for another agent CLI or host, it needs a real effort control that Effort can set. Please do not propose adapters that merely print an effort label without setting a supported provider parameter. See the [adapter contract](https://github.com/AntyLab/effort-project/blob/main/docs/adapter-contract.md).
   - type: textarea
     id: problem
     attributes:

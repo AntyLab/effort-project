@@ -206,7 +206,7 @@ export async function runBenchmark({
       harness: {
         node: process.version, platform: `${process.platform} ${process.arch}`, effort: effortRevision(), policyVersion: POLICY_VERSION,
         python: python?.version ?? null,
-        notes: ['Claude turns use the adapter default of 12 agentic turns; runTask does not expose --max-turns.'],
+        notes: ['Claude turns use the adapter default of 12 agentic turns; the harness does not set maxTurns.'],
       },
       fake: live ? null : { version: FAKE_VERSION, solveProbability: SOLVE_PROBABILITY, retryBonus: RETRY_BONUS, tokensPerTurn: TOKENS_PER_TURN },
       invocations: [{ startedAt: now, runs: remaining.length, providerVersions }],

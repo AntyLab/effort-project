@@ -18,10 +18,11 @@ export const CATEGORIES = Object.freeze(['typo-rename', 'off-by-one', 'failing-t
 const ID = /^[a-z0-9][a-z0-9-]{1,62}$/;
 // Generated files: never copied into checks and never reported as changes.
 const GENERATED = new Set(['.git', '__pycache__', '.pytest_cache']);
-// Agent-written code runs during checks. It gets no code-injection hooks and no
-// provider or service credentials, even when the provider itself needs them.
+// Agent-written code runs during checks. It gets no code-injection hooks, no
+// provider or service credentials (even when the provider itself needs them) and
+// no SSH agent socket. Files the user account can read are not hidden.
 const INJECTION = /^(?:NODE_OPTIONS|NODE_TEST_CONTEXT|NODE_PATH|PYTHONPATH|PYTHONSTARTUP|PYTHONINSPECT|PYTHONWARNINGS|FORCE_COLOR)$/i;
-const SECRET = /^(?:ANTHROPIC|OPENAI|CODEX|CLAUDE|AWS|AZURE|GOOGLE|GCLOUD|VERTEX|BEDROCK|FOUNDRY|GITHUB|GH|NPM|HF|HUGGINGFACE)_|(?:TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)$/i;
+const SECRET = /^(?:ANTHROPIC|OPENAI|CODEX|CLAUDE|AWS|AZURE|GOOGLE|GCLOUD|VERTEX|BEDROCK|FOUNDRY|GITHUB|GH|NPM|HF|HUGGINGFACE)_|(?:TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_KEY|PRIVATE_KEY|CREDENTIALS?)$|^SSH_AUTH_SOCK$/i;
 
 const isDirectory = async (path) => (await lstat(path).catch(() => null))?.isDirectory() ?? false;
 
