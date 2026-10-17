@@ -1,0 +1,59 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. Effort is an experimental local controller, so a concrete problem is more useful than a finished design.
+
+        Please do not paste tokens, prompt transcripts or private code. If you propose support for another agent CLI or host, it needs a real effort control that Effort can set. Please do not propose adapters that merely print an effort label without setting a supported provider parameter. See the [adapter contract](https://github.com/AntyXO/effort-project/blob/main/docs/adapter-contract.md).
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the situation and what is hard or impossible today. A concrete workflow helps more than a solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Effort to do?
+      description: Describe the behavior you have in mind, including commands or options if you have them.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+      description: Other tools, settings or workarounds, and why they are not enough.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of Effort would change?
+      options:
+        - CLI recommendations
+        - Managed runs and verification
+        - Automatic sessions
+        - OpenCode plugin
+        - MCP server
+        - Dashboard
+        - A new agent CLI or host
+        - Documentation
+        - Packaging or installation
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and sources
+      description: For a provider or host feature, link its documentation for the control to use (a flag, request field or plugin hook) and name the version. A claim about quality or cost savings needs an evaluation protocol with held-out tasks, independent acceptance checks, repeat runs, fixed model versions, all-attempt costs and uncertainty.
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Getting involved
+      options:
+        - label: I would be willing to help implement or test this.
+        - label: This would improve accessibility (keyboard use, screen readers, contrast, zoom or reflow, motion).
