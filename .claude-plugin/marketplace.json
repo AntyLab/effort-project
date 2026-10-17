@@ -1,0 +1,17 @@
+{
+  "name": "effort-project",
+  "description": "The Effort Project's advisory reasoning-effort plugin for Claude Code.",
+  "owner": {
+    "name": "The Effort Project contributors",
+    "url": "https://github.com/AntyLab/effort-project"
+  },
+  "plugins": [
+    {
+      "name": "effort-project",
+      "source": "./",
+      "description": "One-line effort suggestions from Effort's local rules before a prompt runs, plus read-only MCP tools. Advisory only.",
+      "category": "productivity",
+      "tags": ["effort", "advisory", "hooks", "mcp"]
+    }
+  ]
+}
