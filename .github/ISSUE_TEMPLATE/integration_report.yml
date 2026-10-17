@@ -10,7 +10,7 @@ body:
 
         A report is an observation, not a guarantee. Please keep apart what Effort advised, what was requested of the host, what the host accepted, and anything you measured about answer quality.
 
-        **Never paste tokens, API keys, auth files, prompt transcripts, private code, `.env` files or dashboard URLs.** If the behavior is plainly wrong rather than different, a [bug report](https://github.com/AntyXO/effort-project/issues/new?template=bug_report.yml) is the better form.
+        **Never paste tokens, API keys, auth files, prompt transcripts, private code, `.env` files or dashboard URLs.** If the behavior is plainly wrong rather than different, a [bug report](https://github.com/AntyLab/effort-project/issues/new?template=bug_report.yml) is the better form.
   - type: checkboxes
     id: preflight
     attributes:

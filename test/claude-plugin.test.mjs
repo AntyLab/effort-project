@@ -359,7 +359,7 @@ test('the hook adds little to Node startup and never stores, logs or sends the p
 test('npm run check syntax-checks the hook entry in hooks/', async (t) => {
   const tree = await mkdtemp(join(tmpdir(), 'effort-plugin-check-'));
   t.after(() => rm(tree, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
-  for (const dir of ['src', 'bin', 'test', 'web', 'scripts', 'hooks']) await mkdir(join(tree, dir));
+  for (const dir of ['src', 'bin', 'test', 'web', 'scripts', 'hooks', 'bench']) await mkdir(join(tree, dir));
   await writeFile(join(tree, 'hooks', 'broken.mjs'), 'export const = ;\n');
   const result = await runProcess([join(root, 'scripts', 'check.mjs')], { cwd: tree });
   assert.equal(result.code, 1, 'a syntax error under hooks/ fails the check');

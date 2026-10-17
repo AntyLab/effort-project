@@ -10,7 +10,7 @@ body:
 
         **Never paste tokens, API keys, auth files, prompt transcripts, private code or `.env` files.** The dashboard URL is also private: the part after `#` is an access token. Remove paths and task text you would not post publicly. Effort does not store prompts or responses, but provider CLIs and your terminal history may contain them.
 
-        Found a security problem? Do not open a public issue. Read the [security policy](https://github.com/AntyXO/effort-project/blob/main/SECURITY.md) instead.
+        Found a security problem? Do not open a public issue. Read the [security policy](https://github.com/AntyLab/effort-project/blob/main/SECURITY.md) instead.
   - type: checkboxes
     id: preflight
     attributes:

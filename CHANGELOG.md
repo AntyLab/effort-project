@@ -18,9 +18,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Offline tests for the automatic integrations and the dashboard frontend, using fake processes and, for the Codex transport, a mocked WebSocket. `npm run smoke:package` also checks the automatic dry run and the OpenCode plugin import.
 - Documentation of the automatic integrations' security boundaries in [SECURITY.md](SECURITY.md).
 - Contribution tooling: issue forms for bug reports, feature requests and integration reports, a pull request template, a [Code of Conduct](CODE_OF_CONDUCT.md), and this changelog.
+- An advisory [Claude Code plugin](docs/claude-code-plugin.md), installable from this repository's plugin marketplace. A local `UserPromptSubmit` hook shows a one-line suggestion to apply a level with `/effort` when one of Effort's prompt rules fires; it never changes the prompt or the effort level, because Claude Code hooks cannot set effort. The plugin also adds Effort's read-only MCP server and an `explain` skill.
+- An offline-first [benchmark harness](bench/README.md) that compares fixed effort levels with Effort's routing on eleven small Node.js and Python tasks with hidden acceptance checks. By default it runs against fake providers; real turns need `--live` and a `--max-runs` cap. It has not been run against a real model, so it supports no savings claim yet.
+- `effort run` options: `--verify-timeout` to give the check a shorter limit than the task, and the verification command after `--` or as repeated `--verify-arg` parts.
+- `EFFORT_CODEX_BIN` and `EFFORT_CLAUDE_BIN` select a specific provider CLI installation; `effort doctor` reports which one Effort will start.
+- `runTask` accepts `maxTurns` (1–50) for the Claude adapter and passes it to every attempt. Other adapters refuse it.
 
 ### Changed
 
+- The npm package is now named `effort-project` (previously `@antyxo/effort-project`). If you installed the old name globally, remove it with `npm uninstall --global @antyxo/effort-project`.
+- The number of languages in a checkout no longer changes the recommended effort; it describes the repository, not the request. A request that names five or more workspace files raises effort by one level, never past high. The policy version is now `rules-0.2`.
+- `effort run` now allows 600 seconds per task by default (previously 120), verification included. A check may use the time left in the task instead of stopping at 60 seconds. A Claude turn is still limited to 30 minutes.
 - The dashboard was reworked for first use and small screens: a short overview, section navigation, revised wording, and an initial order that shows the recommendation form first while history is empty and run history first once it has entries. The main controls are at least 44px high, the "Generic" provider choice is now labeled "Other tools", and the setup section explains how to run the commands from a source checkout. Layouts from 320px wide to desktop were inspected; full screen-reader and physical-device testing was not performed (see [validation](docs/validation.md)).
 
 ### Fixed
@@ -28,10 +36,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Opening `web/index.html` directly left an unstyled page stuck on "Connecting". It now shows a clearly labeled file preview with startup instructions and working command copying. Recommendations and history still need the running local server.
 - A dashboard tab with a missing or expired session now picks up a newly opened access URL, keeps the task text you had entered, and consumes the token fragment from the address.
 - A Codex adapter test no longer races the fake CLI's startup. This changes test code only; no provider behavior changed.
+- A failing test whose output mentions authorization, permissions or a missing file is now treated as a test failure and retried, instead of stopping the run as an access or setup problem. A suite that could not start still stops the run.
+- Failure fingerprints ignore run-specific details such as temporary paths, ports, process IDs, times and IDs, and keep different failures apart, so a repeated failure is recognized reliably.
+- A check whose process has exited no longer waits for a background child that keeps its output open.
+- On Windows, Effort starts npm-installed provider CLIs (`.cmd` shims) and verification commands such as `npm` without a shell.
+- On macOS, Codex cleanup keeps waiting for the process group while it reports `EPERM`, instead of treating it as gone.
+- The Codex adapter no longer leaves timers that keep the process alive after a turn.
+- `effort run --dry-run` now makes the same option checks as a run, including whether the verification command can start.
+- The CLI, MCP server and dashboard report the version from `package.json` instead of a hard-coded one.
+- Resumed Claude turns report their own token counts when the turn's stream confirms them (`tokenScope: "turn"`); otherwise the counts stay `null`, as before.
 
 ## [0.1.0] - 2026-09-26
 
-First experimental release. It is a transparent rules controller, not a trained predictor, and it has not demonstrated lower cost at equivalent coding quality. The [validation record](https://github.com/AntyXO/effort-project/blob/v0.1.0/docs/validation.md) states what was and was not tested.
+First experimental release. It is a transparent rules controller, not a trained predictor, and it has not demonstrated lower cost at equivalent coding quality. The [validation record](https://github.com/AntyLab/effort-project/blob/v0.1.0/docs/validation.md) states what was and was not tested.
 
 ### Added
 
@@ -46,5 +63,5 @@ First experimental release. It is a transparent rules controller, not a trained 
 - Tests that use fake provider processes and temporary directories, a JavaScript syntax check (`npm run check`), and `npm run smoke:package`, which packs the project, installs it offline into a temporary prefix, and exercises the CLI, MCP tools, dashboard assets and authenticated API.
 - A GitHub Actions workflow that runs these checks on Linux, macOS and Windows with Node.js 22 and 24.
 
-[Unreleased]: https://github.com/AntyXO/effort-project/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/AntyXO/effort-project/releases/tag/v0.1.0
+[Unreleased]: https://github.com/AntyLab/effort-project/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/AntyLab/effort-project/releases/tag/v0.1.0
