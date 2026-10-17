@@ -131,7 +131,9 @@ export function verify(argv, { cwd, timeoutMs = 60_000, signal, env = process.en
     };
     // The check is over when its process exits. A descendant that keeps stdout open
     // (such as a server started with `&`) must not turn a pass into a timeout: allow
-    // a short grace period for remaining output, then stop the tree and settle.
+    // a short grace period for remaining output, then stop the tree and settle. On
+    // POSIX the group kill reaches the descendant; on Windows taskkill /T cannot once
+    // the check has exited, so the descendant keeps running and only the pipes close.
     child.on('exit',code=>{exitTimer=setTimeout(()=>{killTree('SIGKILL');child.stdout.destroy();child.stderr.destroy();finish(code);},EXIT_GRACE_MS);});
     child.on('close',finish);
   });

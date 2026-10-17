@@ -240,6 +240,13 @@ test('a passing check settles when it exits, even if a descendant keeps stdout o
     const result=await verify([process.execPath,'check.cjs'],{cwd,timeoutMs:20_000});
     assert.equal(result.status,'passed');assert.equal(result.exitCode,0);assert.match(result.output,/ok/);
     assert.ok(Date.now()-started<8000,`settled after ${Date.now()-started} ms`);
+    // On POSIX the descendant shares the check's process group and is stopped with it.
+    // On Windows it keeps running (documented in the README); the finally block stops it.
+    if(process.platform!=='win32'){
+      const pid=Number(await readFile(join(cwd,'child.pid'),'utf8'));
+      let gone=false;for(let i=0;i<60&&!gone;i++){try{process.kill(pid,0);await new Promise(done=>setTimeout(done,50));}catch{gone=true;}}
+      assert.ok(gone,'the descendant holding stdout was stopped');
+    }
   } finally {
     try{process.kill(Number(await readFile(join(cwd,'child.pid'),'utf8')),'SIGKILL');}catch{}
   }
