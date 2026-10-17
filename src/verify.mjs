@@ -45,12 +45,13 @@ function normalize(text, roots) {
     .replace(/\b0x[0-9a-f]+\b/gi, '<hex>')
     .replace(/\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{8,}\b/gi, '<hex>')
     .replace(/(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1?\]):\d{1,5}\b/gi, '$1:<port>')
-    .replace(/\bport\s*[:=]?\s*\d+/gi, 'port <port>')
-    .replace(/\bpid\s*[:=]?\s*\d+/gi, 'pid <pid>')
+    // [ \t]*, not \s*: a value is on the same line, and \s* backtracks across blank lines.
+    .replace(/\bport[ \t]*[:=]?[ \t]*\d+/gi, 'port <port>')
+    .replace(/\bpid[ \t]*[:=]?[ \t]*\d+/gi, 'pid <pid>')
     .replace(/(\.[a-z]\w{0,5})(?::\d+){1,2}\b/gi, '$1:<line>')
     .replace(/\bline \d+\b/gi, 'line <n>')
-    .replace(/\bduration(?:_ms)?\s*[:=]?\s*\d+(?:\.\d+)?/gi, 'duration #time')
-    .replace(/\b\d+(?:\.\d+)?\s*(?:ms|s|seconds)\b/g, '#time')
+    .replace(/\bduration(?:_ms)?[ \t]*[:=]?[ \t]*\d+(?:\.\d+)?/gi, 'duration #time')
+    .replace(/\b\d+(?:\.\d+)?[ \t]*(?:ms|s|seconds)\b/g, '#time')
     .replace(/\s+/g, ' ').trim();
 }
 
@@ -125,8 +126,9 @@ export function verify(argv, { cwd, timeoutMs = 60_000, signal, env = process.en
       const kind = aborted ? 'cancelled' : code === 0 && !timedOut ? null : classifyFailure(output, {timedOut});
       const status = code === 0 && !timedOut && !aborted ? 'passed' : kind === 'test' ? 'failed' : 'blocked';
       // Only failures are compared. A truncated tail starts mid-line at a shifting offset
-      // and holds a varying number of lines, so compare its last 200 complete lines.
-      const tail = truncated ? output.split('\n').slice(1).slice(-200).join('\n') : output;
+      // and holds a varying number of lines, so compare its last 50 complete lines (all of
+      // which fit even when lines are about 600 characters long).
+      const tail = truncated ? output.split('\n').slice(1).slice(-50).join('\n') : output;
       resolve({status,kind,exitCode:code,output,fingerprint:status==='passed'?null:failureFingerprint(tail,{cwd})});
     };
     // The check is over when its process exits. A descendant that keeps stdout open

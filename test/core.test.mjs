@@ -121,6 +121,17 @@ test('identical long failures keep one fingerprint when the kept tail starts mid
   await writeFile(join(cwd,'noisy.cjs'),"for(let i=0;i<3000;i++)console.log('step '+i+' took '+Math.floor(Math.random()*100000)+'ms');console.log('AssertionError: totals differ');process.exitCode=1;");
   const first=await verify([process.execPath,'noisy.cjs'],{cwd}),second=await verify([process.execPath,'noisy.cjs'],{cwd});
   assert.equal(first.kind,'test');assert.equal(first.fingerprint,second.fingerprint);
+  // With lines of about 195 characters, fewer than 200 complete lines fit in the tail.
+  await writeFile(join(cwd,'wide.cjs'),"for(let i=0;i<1000;i++)console.log('step '+i+' '+'x'.repeat(170)+' took '+Math.floor(Math.random()*100000)+'ms');console.log('AssertionError: totals differ');process.exitCode=1;");
+  const prints=new Set();
+  for(let run=0;run<4;run++)prints.add((await verify([process.execPath,'wide.cjs'],{cwd})).fingerprint);
+  assert.equal(prints.size,1);
+});
+test('noise patterns do not backtrack across blank lines',()=>{
+  const started=performance.now();
+  failureFingerprint('Error: server never listened on port'+'\n'.repeat(32_000)+'done');
+  failureFingerprint('took 5'+'\n'.repeat(32_000)+'ms pid'+'\n'.repeat(32_000)+'1');
+  assert.ok(performance.now()-started<250);
 });
 test('a missing dependency reported by node:test stops after one provider turn',async()=>{
   const calls=[];const f=await fixture(async o=>{calls.push(o.effort);return completed;});
