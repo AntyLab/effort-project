@@ -269,6 +269,23 @@ test('Codex abort interrupts a running turn and reaps descendants on POSIX', { s
   assert.throws(() => process.kill(childPid, 0), { code: 'ESRCH' });
 });
 
+test('Codex cleanup keeps polling while the process group holds only unreaped zombies', { skip: process.platform === 'win32' }, async (t) => {
+  // macOS answers kill(-pgid, 0) with EPERM, not ESRCH, until the last exited member is reaped.
+  const f = await setup(t);
+  const realKill = process.kill;
+  let remaining = 3;
+  t.mock.method(process, 'kill', (pid, signal) => {
+    if (pid < 0 && signal === 0 && remaining-- > 0) throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' });
+    return realKill.call(process, pid, signal);
+  });
+  const result = await run(f.options);
+  assert.equal(result.status, 'completed');
+  assert.ok(remaining < 0, 'cleanup polled past every EPERM answer');
+  assert.equal(f.events.some((event) => event.code === 'cleanup_timeout'), false);
+  const log = await f.readLog();
+  assert.throws(() => process.kill(log[0].pid, 0), { code: 'ESRCH' });
+});
+
 // macOS answers kill(-pgid, 0) with EPERM while exited group members await
 // reaping (the CI flake: cleanup was reported unconfirmed, so status became
 // 'failed'). Only ESRCH proves that every member, zombies included, is gone.
