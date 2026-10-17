@@ -135,7 +135,7 @@ Each line of `runs.jsonl` is one run:
 
 `summary.md` reports, for each provider and arm:
 
-- pass rate with its Wilson 95% interval, and how often the visible check passed but the hidden one failed
+- pass rate with its Wilson 95% interval, which allows for repeats of a task, and how often the visible check passed but the hidden one failed
 - median tokens with the interquartile range, median output tokens, total tokens, and cost where reported
 - median wall time, mean attempts and escalations
 - per-task pass counts
@@ -160,7 +160,7 @@ Other ways to allow for repeats were tried in a simulation over 11 and 20 tasks 
 
 `newcombePairedByTask` in [lib/stats.mjs](lib/stats.mjs) records the reasoning. Its limits are described below.
 
-The per-arm pass rates keep their Wilson intervals, which treat every run of the arm as independent.
+The per-arm pass rates get the same treatment. An arm's repeats of one task share that task's difficulty, so its Wilson interval is computed on passes ÷ design effect out of runs ÷ design effect. This design effect is the between-task variance of the arm's pass/fail outcomes over their variance if every run were independent. It has the same bounds as the paired one, 1 to runs ÷ tasks, and is runs ÷ tasks when every run of the arm had the same outcome or there is only one task. Unlike the paired difference, a pass rate keeps the variation between easy and hard tasks, so its design effect is usually larger: if every task always passes or always fails, with the same number of runs each, it reaches runs ÷ tasks and the interval is the one-repeat interval. With one repeat it is exactly 1 and nothing changes. A simulation with the same task model, targeting the arm's pass rate over the population of tasks, found that over eleven tasks the unadjusted Wilson interval covered as little as 80% of the time at 3 repeats and 41% at 10. With the design effect it covered 93–98% and 86–95%. The outcomes table shows the design effect and the effective runs when any task has more than one run of an arm. `wilsonByTask` in [lib/stats.mjs](lib/stats.mjs) has the details.
 
 The charts are separate SVG files because GitHub strips inline `<svg>` from Markdown. They paint their own light or dark surface, and every number in them is also in the tables.
 
@@ -168,8 +168,8 @@ The charts are separate SVG files because GitHub strips inline `<svg>` from Mark
 
 - **Unknown usage is not counted as zero.** Medians and totals use only runs whose every attempt reported usage, and the summary shows how many that is. Codex reports no cost. Claude reports no per-turn tokens on resumed turns, so Claude runs that retried have unknown totals. That biases token comparisons toward the arms that retry less.
 - Token fields are what each CLI reports, and the CLIs count input and cached tokens differently. Compare arms within a provider, not across providers. Claude also runs in restricted mode without a shell, so it cannot run tests itself, while Codex can.
-- The paired difference removes the task-to-task variation both arms share and counts the repeats of one task as fewer pairs, but the per-arm Wilson intervals still treat every run as independent, so with more than one repeat they are too narrow. Judge a difference by its paired interval, not by whether two per-arm intervals overlap.
-- **More repeats cannot replace more tasks.** The design effect is itself estimated from eleven tasks. A failure confined to kinds of task the corpus lacks, or too rare to appear among its tasks, cannot show in any interval. In the simulation, 10 repeats of near-deterministic tasks still covered only 80% of the time (41% unadjusted). Repeats narrow the comparison only as far as the arms' disagreements vary within tasks. To make a verdict firmer, add tasks. A pilot cannot establish equal quality.
+- The paired difference removes the task-to-task variation both arms share. The per-arm Wilson intervals keep it, so they are wider than a comparison needs. Both count the repeats of one task as fewer runs. Judge a difference by its paired interval, not by whether two per-arm intervals overlap.
+- **More repeats cannot replace more tasks.** The design effects are themselves estimated from eleven tasks. A failure confined to kinds of task the corpus lacks, or too rare to appear among its tasks, cannot show in any interval. In the simulations, with 10 repeats the paired interval still covered as little as 80% of the time (41% unadjusted), and the per-arm interval 86% (41% unadjusted). Repeats narrow the comparison only as far as the arms' disagreements vary within tasks. To make a verdict firmer, add tasks. A pilot cannot establish equal quality.
 - The hidden check guards against accidental or opportunistic test editing, not a determined adversary: an agent that searched the disk could find this repository. `changedFiles` and `visibleTestsChanged` help spot that.
 - Provider-side prompt caching can make later runs cheaper. The randomized order spreads that effect across arms instead of favoring one.
 
@@ -221,7 +221,7 @@ The Claude adapter allows 12 agentic turns per CLI invocation by default. `runTa
 
 `npm test` runs three offline test files:
 
-- `test/bench-stats.test.mjs` covers the Wilson and paired Newcombe intervals against published and hand-computed values, the design effect for repeats against hand-computed values (including a verdict that clustering changes, and repeats that never vary staying at the one-repeat interval), the pairing of runs with the reference arm (including unpaired runs and a verdict that pairing changes), unknown-usage handling, seeded schedules, the spend guard, and the fake-versus-live launch split.
+- `test/bench-stats.test.mjs` covers the Wilson and paired Newcombe intervals against published and hand-computed values, the design effects for repeats against hand-computed values (including a verdict that clustering changes, repeats that never vary staying at the one-repeat interval, and per-arm intervals unchanged with one repeat), the pairing of runs with the reference arm (including unpaired runs and a verdict that pairing changes), unknown-usage handling, seeded schedules, the spend guard, and the fake-versus-live launch split.
 - `test/bench-corpus.test.mjs` self-tests every task, checks the corpus's coverage and manifest validation, confirms that the hidden check replaces an agent-planted `bench_accept/`, and confirms that checks get no credentials.
 - `test/bench-run.test.mjs` runs end-to-end offline benchmarks through the real adapters (including retries, escalation and unknown Claude usage), a resume after interruption, the CLI with nothing on `PATH`, and the live-run refusals.
 

@@ -1,10 +1,10 @@
 // One SVG card per provider, laid out like a page from a lab ledger: a serif
 // title, monospace figures in aligned columns, and a faint dot-grid paper.
 //
-// Two panels share the arm rows: pass rate with its 95% Wilson interval, and
-// median tokens per run with the interquartile range. Each estimate is a dot
-// and its uncertainty a band, forest-plot style, so the uncertainty is never
-// hidden behind a bar. Effort's routing arms (rules or escalation) are the
+// Two panels share the arm rows: pass rate with its 95% Wilson interval (which
+// counts a task's repeats as fewer runs), and median tokens per run with the
+// interquartile range. Each estimate is a dot and its uncertainty a band,
+// forest-plot style, so the uncertainty is never hidden behind a bar. Effort's routing arms (rules or escalation) are the
 // subject and carry the accent as filled dots; fixed-effort baselines are
 // hollow gray markers, so shape still separates them in grayscale.
 //
@@ -134,7 +134,9 @@ export function renderChart(summary, { fake = false } = {}) {
     const routing = isRoutingArm(arm.arm);
     const rate = arm.passRate;
     const tokens = arm.tokens;
-    const passTip = `${arm.arm}: ${arm.passed}/${arm.runs} passed, ${pct(rate.estimate)} (95% CI ${pct(rate.lower)}–${pct(rate.upper)})`;
+    const repeats = rate.runs > rate.tasks
+      ? `; design effect ${rate.designEffect.toFixed(2)}${rate.basis === 'upper bound' ? ', upper bound' : ''}, ${rate.effectiveRuns.toFixed(1)} effective runs` : '';
+    const passTip = `${arm.arm}: ${arm.passed}/${arm.runs} passed${repeats ? ` from ${rate.tasks} tasks` : ''}, ${pct(rate.estimate)} (95% CI ${pct(rate.lower)}–${pct(rate.upper)}${repeats})`;
     const tokenTip = tokens.n
       ? `${arm.arm}: median ${Math.round(tokens.median).toLocaleString('en-US')} tokens per run (IQR ${Math.round(tokens.p25).toLocaleString('en-US')}–${Math.round(tokens.p75).toLocaleString('en-US')}), usage known for ${tokens.n}/${arm.runs} runs`
       : `${arm.arm}: usage unknown for all ${arm.runs} runs`;
