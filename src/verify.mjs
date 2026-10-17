@@ -6,6 +6,7 @@ import { classifyFailure } from './policy.mjs';
 import { plainReport, failingTestNames } from './test-reports.mjs';
 
 const OUTPUT_LIMIT = 32_000;
+const EXIT_GRACE_MS = 1000;
 const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // The working and temporary directories, with either separator and as realpaths.
@@ -81,7 +82,7 @@ export function verify(argv, { cwd, timeoutMs = 60_000, signal, env = process.en
     const child = spawn(argv[0], argv.slice(1), { cwd, env:childEnv, shell:false, stdio:['ignore','pipe','pipe'], windowsHide:true, detached:process.platform!=='win32' });
     const collect = data => { output += data.toString(); if (output.length > OUTPUT_LIMIT) { output = output.slice(-OUTPUT_LIMIT); truncated = true; } };
     child.stdout.on('data', collect); child.stderr.on('data', collect);
-    let hardKill,reapTimer,settled=false;
+    let hardKill,reapTimer,exitTimer,settled=false;
     const killTree = signalName => {
       if(!child.pid)return;
       if(process.platform==='win32'){
@@ -100,7 +101,7 @@ export function verify(argv, { cwd, timeoutMs = 60_000, signal, env = process.en
     child.on('error', e => { launchError = e.code || 'launch error'; });
     const finish = code => {
       if(settled)return;settled=true;
-      clearTimeout(timer); clearTimeout(hardKill);clearTimeout(reapTimer); signal?.removeEventListener('abort', abort);
+      clearTimeout(timer); clearTimeout(hardKill);clearTimeout(reapTimer);clearTimeout(exitTimer); signal?.removeEventListener('abort', abort);
       killTree('SIGKILL');
       if (launchError) output = launchError;
       const kind = aborted ? 'cancelled' : code === 0 && !timedOut ? null : classifyFailure(output, {timedOut});
@@ -110,6 +111,10 @@ export function verify(argv, { cwd, timeoutMs = 60_000, signal, env = process.en
       const tail = truncated ? output.split('\n').slice(1).slice(-200).join('\n') : output;
       resolve({status,kind,exitCode:code,output,fingerprint:status==='passed'?null:failureFingerprint(tail,{cwd})});
     };
+    // The check is over when its process exits. A descendant that keeps stdout open
+    // (such as a server started with `&`) must not turn a pass into a timeout: allow
+    // a short grace period for remaining output, then stop the tree and settle.
+    child.on('exit',code=>{exitTimer=setTimeout(()=>{killTree('SIGKILL');child.stdout.destroy();child.stderr.destroy();finish(code);},EXIT_GRACE_MS);});
     child.on('close',finish);
   });
 }

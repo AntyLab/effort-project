@@ -202,6 +202,20 @@ test('repeated noisy failures escalate instead of looking new every attempt',asy
   assert.deepEqual(calls,['low','low','medium']);
   assert.equal(result.task.status,'failed');
 });
+test('a passing check settles when it exits, even if a descendant keeps stdout open',async()=>{
+  const cwd=await mkdtemp(join(tmpdir(),'effort-exit-'));
+  // Like `server &` in a pretest: the check exits 0 while its child still holds the pipe.
+  // On Windows the child must leave the check's job object, which would otherwise kill it.
+  await writeFile(join(cwd,'check.cjs'),"const c=require('node:child_process').spawn(process.execPath,['-e','setTimeout(()=>{},30000)'],{stdio:['ignore','inherit','inherit'],detached:process.platform==='win32'});require('node:fs').writeFileSync('child.pid',String(c.pid));c.unref();console.log('ok');");
+  const started=Date.now();
+  try {
+    const result=await verify([process.execPath,'check.cjs'],{cwd,timeoutMs:20_000});
+    assert.equal(result.status,'passed');assert.equal(result.exitCode,0);assert.match(result.output,/ok/);
+    assert.ok(Date.now()-started<8000,`settled after ${Date.now()-started} ms`);
+  } finally {
+    try{process.kill(Number(await readFile(join(cwd,'child.pid'),'utf8')),'SIGKILL');}catch{}
+  }
+});
 test('verification timeout reaps descendants holding stdout open',{skip:process.platform==='win32'},async()=>{
   const cwd=await mkdtemp(join(tmpdir(),'effort-tree-'));
   const script=`const {spawn}=require('node:child_process'); const fs=require('node:fs'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:['ignore','inherit','inherit']}); fs.writeFileSync('pid',String(c.pid));setInterval(()=>{},1000);`;
