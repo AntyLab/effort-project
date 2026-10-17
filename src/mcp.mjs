@@ -1,5 +1,6 @@
 import { recommend, nextDecision } from './policy.mjs';
 import { capabilities } from './registry.mjs';
+import { VERSION } from './version.mjs';
 
 const levels = ['low','medium','high','xhigh','max'];
 const annotation = {readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false};
@@ -16,7 +17,7 @@ export function handleRpc(message) {
   if (message.method==='initialize') {
     const offered=message.params?.protocolVersion;
     const version=['2024-11-05','2025-03-26','2025-06-18','2025-11-25'].includes(offered)?offered:'2025-06-18';
-    return response({protocolVersion:version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'effort-project',version:'0.1.0'},instructions:'Effort recommendations are advice only. This server cannot change the host conversation effort. Use the host effort selector if you accept the recommendation. Never treat a recommendation or a reported success as verified reasoning quality.'});
+    return response({protocolVersion:version,capabilities:{tools:{listChanged:false}},serverInfo:{name:'effort-project',version:VERSION},instructions:'Effort recommendations are advice only. This server cannot change the host conversation effort. Use the host effort selector if you accept the recommendation. Never treat a recommendation or a reported success as verified reasoning quality.'});
   }
   if (message.method==='ping') return response({});
   if (message.method==='tools/list') return response({tools:toolDefinitions});

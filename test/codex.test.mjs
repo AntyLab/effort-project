@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { run, capabilities } from '../src/adapters/codex.mjs';
+import { spawn } from 'node:child_process';
+import { run, capabilities, waitForProcessGroupExit } from '../src/adapters/codex.mjs';
 
 // This fixture is an independent JSONL server, not a mock of the adapter internals.
 const fixtureSource = String.raw`
@@ -110,6 +111,8 @@ test('Codex sends effort per turn over stdin, discovers support, and defaults to
   const log = await f.readLog();
   assert.deepEqual(log[0].argv, ['app-server', '--listen', 'stdio://']);
   assert.equal(log[0].argv.includes(f.options.prompt), false);
+  const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(log.find((message) => message.method === 'initialize').params.clientInfo.version, version);
   const request = log.find((message) => message.method === 'turn/start');
   assert.equal(request.params.effort, 'low');
   assert.equal(request.params.input[0].text, f.options.prompt);
@@ -267,6 +270,68 @@ test('Codex abort interrupts a running turn and reaps descendants on POSIX', { s
   assert.throws(() => process.kill(childPid, 0), { code: 'ESRCH' });
 });
 
+test('Codex cleanup keeps polling while the process group holds only unreaped zombies', { skip: process.platform === 'win32' }, async (t) => {
+  // macOS answers kill(-pgid, 0) with EPERM, not ESRCH, until the last exited member is reaped.
+  const f = await setup(t);
+  const realKill = process.kill;
+  let remaining = 3;
+  t.mock.method(process, 'kill', (pid, signal) => {
+    if (pid < 0 && signal === 0 && remaining-- > 0) throw Object.assign(new Error('kill EPERM'), { code: 'EPERM' });
+    return realKill.call(process, pid, signal);
+  });
+  const result = await run(f.options);
+  assert.equal(result.status, 'completed');
+  assert.ok(remaining < 0, 'cleanup polled past every EPERM answer');
+  assert.equal(f.events.some((event) => event.code === 'cleanup_timeout'), false);
+  const log = await f.readLog();
+  assert.throws(() => process.kill(log[0].pid, 0), { code: 'ESRCH' });
+});
+
+// macOS answers kill(-pgid, 0) with EPERM while exited group members await
+// reaping (the CI flake: cleanup was reported unconfirmed, so status became
+// 'failed'). Only ESRCH proves that every member, zombies included, is gone.
+test('process-group cleanup waits through EPERM until ESRCH and stays bounded', async () => {
+  const probe = (...codes) => {
+    const calls = [];
+    const kill = (target, signal) => {
+      calls.push([target, signal]);
+      const code = codes[Math.min(calls.length - 1, codes.length - 1)];
+      if (code) throw Object.assign(new Error(code), { code });
+    };
+    return { calls, kill };
+  };
+  // Every ordering of live members (no error) and unreaped members (EPERM) before ESRCH.
+  for (let live = 0; live <= 2; live++) for (let unreaped = 0; unreaped <= 2; unreaped++) {
+    const group = probe(...Array(live).fill(null), ...Array(unreaped).fill('EPERM'), 'ESRCH');
+    assert.equal(await waitForProcessGroupExit(4242, 5000, group.kill), true, `${live} live, ${unreaped} unreaped`);
+    assert.equal(group.calls.length, live + unreaped + 1);
+    assert.ok(group.calls.every(([target, signal]) => target === -4242 && signal === 0));
+  }
+  for (const code of [null, 'EPERM']) {
+    const started = performance.now();
+    assert.equal(await waitForProcessGroupExit(4242, 80, probe(code).kill), false);
+    assert.ok(performance.now() - started >= 75);
+  }
+  assert.equal(await waitForProcessGroupExit(4242, 5000, probe('EINVAL').kill), false);
+});
+
+test('a finished Codex turn leaves no timers that keep the process alive', async (t) => {
+  const f = await setup(t);
+  // Run one turn in a fresh process and time how long it lingers after run() resolves.
+  const script = join(f.options.cwd, 'one-turn.mjs');
+  await writeFile(script, `import { run } from ${JSON.stringify(new URL('../src/adapters/codex.mjs', import.meta.url).href)};
+const result = await run(JSON.parse(process.argv[2]));
+process.stdout.write(JSON.stringify({ status: result.status, resolvedAt: Date.now() }));`);
+  const { onEvent, ...options } = f.options;
+  const child = spawn(process.execPath, [script, JSON.stringify(options)], { stdio: ['ignore', 'pipe', 'inherit'] });
+  let stdout = '';
+  child.stdout.on('data', (chunk) => { stdout += chunk; });
+  const exitedAt = await new Promise((done) => child.once('exit', () => done(Date.now())));
+  const { status, resolvedAt } = JSON.parse(stdout);
+  assert.equal(status, 'completed');
+  assert.ok(exitedAt - resolvedAt < 1000, `process exited ${exitedAt - resolvedAt} ms after the turn returned`);
+});
+
 test('already-aborted calls never launch the CLI; invalid effort is rejected', async (t) => {
   const f = await setup(t);
   const controller = new AbortController(); controller.abort();
@@ -281,6 +346,31 @@ test('missing CLI produces a useful bounded failure', async (t) => {
   const result = await run({ ...f.options, executable: join(f.options.cwd, 'not-installed') });
   assert.equal(result.status, 'blocked');
   assert.ok(f.events.some((event) => event.code === 'cli_not_found'));
+});
+
+test('Codex finds an npm-installed CLI on Windows without a shell', { skip: process.platform !== 'win32' }, async (t) => {
+  const f = await setup(t);
+  // npm writes codex.cmd; Node cannot spawn it directly, so the adapter runs its script.
+  await writeFile(join(f.options.cwd, 'codex.cmd'), `@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\mock codex.mjs" %*\r\n`);
+  const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, PATH: f.options.cwd } });
+  assert.equal(result.status, 'completed');
+  assert.deepEqual((await f.readLog())[0].argv, ['app-server', '--listen', 'stdio://']);
+});
+
+test('a broken EFFORT_CODEX_BIN is a blocked turn that explains itself, not an exception', async (t) => {
+  const f = await setup(t);
+  const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, EFFORT_CODEX_BIN: join(f.options.cwd, 'missing.mjs') } });
+  assert.equal(result.status, 'blocked');
+  assert.match(result.text, /EFFORT_CODEX_BIN points to .*missing\.mjs, which does not exist/);
+  assert.ok(f.events.some((event) => event.code === 'cli_unavailable'));
+  await assert.rejects(readFile(f.log), { code: 'ENOENT' });
+});
+
+test('EFFORT_CODEX_BIN selects the Codex CLI when no executable is given', async (t) => {
+  const f = await setup(t);
+  const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, EFFORT_CODEX_BIN: f.options.executableArgs[0] } });
+  assert.equal(result.status, 'completed');
+  assert.equal(result.text, 'final answer');
 });
 
 test('executableArgs rejects nonarrays, nonstrings, NUL, and excessive arguments before launch', async (t) => {

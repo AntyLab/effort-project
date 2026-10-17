@@ -1,12 +1,14 @@
 import { spawn } from 'node:child_process';
 import { realpath, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
+import { providerCommand } from '../provider-cli.mjs';
 
 export const capabilities = Object.freeze({
   id: 'claude',
   name: 'Claude Code',
   levels: Object.freeze(['low', 'medium', 'high']),
   control: 'managed-turns',
+  maxTurnTimeoutMs: 1_800_000,
   notes: 'Launches isolated CLI turns with --effort; resumes by session ID. Applied effort is not reported by the CLI and policy caps can apply.',
 });
 
@@ -47,7 +49,7 @@ function validate(options) {
   }
   const { prompt, cwd, effort, model, sessionId, allowWrite = false,
     timeoutMs = 120_000, signal, onEvent = () => {}, env = process.env,
-    executable = 'claude', executableArgs = [], maxTurns = 12, maxBudgetUsd } = options;
+    executable, executableArgs = [], maxTurns = 12, maxBudgetUsd } = options;
   if (typeof prompt !== 'string' || !prompt.trim() || prompt.includes('\0')) {
     throw new TypeError('prompt must be a nonempty string without NUL bytes.');
   }
@@ -64,7 +66,7 @@ function validate(options) {
     throw new TypeError('sessionId must be a UUID, not a session name or transcript path.');
   }
   if (typeof allowWrite !== 'boolean') throw new TypeError('allowWrite must be a boolean.');
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 1_800_000) {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > capabilities.maxTurnTimeoutMs) {
     throw new RangeError('timeoutMs must be an integer between 1 and 1800000.');
   }
   if (!Number.isSafeInteger(maxTurns) || maxTurns < 1 || maxTurns > 50) {
@@ -76,7 +78,7 @@ function validate(options) {
   if (signal !== undefined && !(signal instanceof AbortSignal)) throw new TypeError('signal must be an AbortSignal.');
   if (typeof onEvent !== 'function') throw new TypeError('onEvent must be a function.');
   if (!env || typeof env !== 'object' || Array.isArray(env)) throw new TypeError('env must be an object.');
-  if (typeof executable !== 'string' || !executable || executable.length > 4096 || /[\0\r\n]/.test(executable)) {
+  if (executable !== undefined && (typeof executable !== 'string' || !executable || executable.length > 4096 || /[\0\r\n]/.test(executable))) {
     throw new TypeError('executable must be one executable path or name.');
   }
   if (!Array.isArray(executableArgs) || executableArgs.length > 16 || executableArgs.some((arg) => typeof arg !== 'string' || arg.length > 4096 || /[\0\r\n]/.test(arg))) {
@@ -267,7 +269,8 @@ const ERRORS = {
   model_unavailable: ['blocked', 'The requested Claude model is unavailable. No replacement model was selected by this adapter.'],
   unsupported_effort_model: ['blocked', 'This Claude model does not support the adapter’s effort control. Select an effort-capable model.'],
   unsupported_cli: ['blocked', 'Claude CLI lacks required managed-mode flags. Update the CLI; the adapter will not weaken isolation.'],
-  missing_cli: ['blocked', 'Claude CLI executable was not found. Install Claude Code or provide its executable path.'],
+  missing_cli: ['blocked', 'Claude CLI executable was not found. Install Claude Code, or set EFFORT_CLAUDE_BIN to its executable path.'],
+  cli_unavailable: ['blocked', 'The configured Claude CLI cannot be started. Run effort doctor for details.'],
   invalid_cwd: ['blocked', 'The working directory does not exist or is not accessible.'],
   isolation_mismatch: ['blocked', 'Claude reported tools, customizations, or permissions outside the managed configuration. The process was stopped.'],
   model_mismatch: ['blocked', 'Claude reported an unexpected model or a model switch. The process was stopped.'],
@@ -309,19 +312,24 @@ export async function run(inputOptions) {
     try { options.onEvent({ provider: 'claude', ...event }); return true; }
     catch { callbackFailed = true; return false; }
   };
-  const outcome = (status, failure) => {
+  // `detail` is Effort's own explanation, never provider output.
+  const outcome = (status, failure, detail) => {
     if (failure) {
       const info = ERRORS[failure] ?? ERRORS.cli_error;
       status = info[0];
       // Never include raw stderr or provider error bodies in diagnostics.
-      text = info[1];
-      emit({ type: 'error', code: failure, message: info[1], ...(isolationDiagnostic && failure === 'isolation_mismatch' ? { details: isolationDiagnostic } : {}) });
+      text = detail ?? info[1];
+      emit({ type: 'error', code: failure, message: text, ...(isolationDiagnostic && failure === 'isolation_mismatch' ? { details: isolationDiagnostic } : {}) });
     }
     evidence.launchAccepted = initialized;
     evidence.observedModel = observedModel;
     return { provider: 'claude', sessionId, requestedEffort: options.effort, effortEvidence: evidence, text, usage, status };
   };
   if (options.signal?.aborted) return outcome(null, 'aborted');
+  // Without an explicit executable, find the installed CLI (including npm's Windows shim).
+  // A bad EFFORT_CLAUDE_BIN is then a blocked turn that says what is wrong.
+  try { Object.assign(options, providerCommand('claude', { executable: options.executable, executableArgs: options.executableArgs, env: options.env })); }
+  catch (error) { return outcome(null, 'cli_unavailable', error.message); }
   if (knownUnsupportedModel(options.model)) return outcome(null, 'unsupported_effort_model');
   try {
     options.cwd = await realpath(options.cwd);

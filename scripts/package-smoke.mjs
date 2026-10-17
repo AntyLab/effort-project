@@ -33,11 +33,12 @@ try {
   execute([npmCli, 'install', '--prefix', prefix, '--offline', '--ignore-scripts',
     '--no-audit', '--no-fund', '--no-save', '--package-lock=false', '--cache', cache,
     join(scratch, packed[0].filename)]);
-  const installed = join(prefix, 'node_modules', '@antyxo', 'effort-project');
+  const installed = join(prefix, 'node_modules', 'effort-project');
   const manifest = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
   assert.equal(Object.keys(manifest.dependencies ?? {}).length, 0);
   const entry = join(installed, manifest.bin.effort);
   assert.match(execute([entry, '--help']), /The Effort Project/);
+  assert.equal(execute([entry, '--version']).trim(), manifest.version);
   const recommendation = JSON.parse(execute([entry, 'recommend', 'Rename a local variable', '--json']));
   assert.equal(recommendation.effort, 'low');
   const automatic = JSON.parse(execute([entry, 'auto', 'claude', '--dry-run']));

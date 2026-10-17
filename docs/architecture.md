@@ -3,10 +3,10 @@
 The first release has five small components: a deterministic policy, provider adapters, a verification-driven runner, a local metadata store, and two interfaces (CLI/dashboard and advisory MCP). No model is trained. There is no background watcher or global effort override.
 
 1. Collect bounded metadata from the selected workspace without reading file contents or following symlinks. Prompt features stay local until a managed run sends the prompt to the chosen provider.
-2. Recommend low/medium/high using visible rules. Unknown tasks start at medium. Respect explicit bounds and provider capabilities.
+2. Recommend low/medium/high using visible rules. Unknown tasks start at medium. A request naming five or more distinct workspace files (by relative path, or by bare name counted once) is a broad edit and is raised one level, never past high. The checkout's language count is informational only. Respect explicit bounds and provider capabilities.
 3. Start a provider turn with a real effort parameter. Capture completion and supported usage fields.
 4. Run the user's explicit verification command, if any. Without one, label completion unverified.
-5. Stop on access, permission, environment, timeout, or unknown failures. Recognized failed tests can prompt a focused retry. Repeated matching failures can increase effort on a resumed turn, within total-time and attempt limits.
+5. Stop on access, permission, environment, timeout, or unknown failures. Recognized failed tests can prompt a focused retry. Test-runner failure reports are recognized before access/environment wording, so a failing test named "rejects unauthorized users" is still a test failure. Signs that the suite could not run (a missing module, a refused connection, EACCES, a missing command) are checked first and stop the run. `src/test-reports.mjs` holds the runner formats that classification and fingerprints share. Repeated matching failures can increase effort on a resumed turn, within total-time and attempt limits.
 6. Save decisions and coarse outcomes, never task text. A stopped turn is not automatically a successful task.
 
 Retries are sequential and operate on the same workspace. Effort does not reset, clean, stash, commit, push or revert changes. A user should inspect the final diff, including after failed runs. The initial heuristic is English-oriented; uncertain or unsupported language/task phrasing falls back conservatively and is not a validated multilingual classifier.

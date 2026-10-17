@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import { realpath, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { providerCommand } from '../provider-cli.mjs';
+import { VERSION } from '../version.mjs';
 
 export const capabilities = Object.freeze({
   id: 'codex',
@@ -15,13 +17,33 @@ const MAX_STREAM_BYTES = 32 * 1024 * 1024;
 const MAX_TEXT_BYTES = 256 * 1024;
 const TOKEN_KEYS = ['inputTokens', 'outputTokens', 'cachedInputTokens'];
 const sleep = (ms) => new Promise((resolveSleep) => setTimeout(resolveSleep, ms));
+// Wait for a promise for at most ms. The timer is always cleared, so a bounded wait
+// never keeps the process alive after a turn has returned.
+async function within(promise, ms, fallback) {
+  let timer;
+  try { return await Promise.race([promise, new Promise((done) => { timer = setTimeout(done, ms, fallback); })]); }
+  finally { clearTimeout(timer); }
+}
 const emptyUsage = () => ({ inputTokens: null, outputTokens: null, cachedInputTokens: null, costUsd: null });
 const activeSessions = new Set();
+// Shutdown bounds. Each wait ends as soon as the process group is gone; the
+// limits only matter for a stuck process or a slow, heavily loaded machine.
+const TERM_GRACE_MS = 500;
+const KILL_REAP_MS = 5000;
+const CLOSE_WAIT_MS = 2000;
 
-async function waitForProcessGroupExit(pid, timeoutMs) {
+/**
+ * Wait until no member of a POSIX process group remains. Only ESRCH proves that:
+ * macOS reports EPERM while exited members still await reaping, and EPERM also
+ * covers a live member that cannot be signalled, so EPERM means keep waiting.
+ */
+export async function waitForProcessGroupExit(pid, timeoutMs, kill = (target, signal) => process.kill(target, signal)) {
   const deadline = performance.now() + timeoutMs;
   while (true) {
-    try { process.kill(-pid, 0); } catch (error) { return error.code === 'ESRCH'; }
+    try { kill(-pid, 0); } catch (error) {
+      if (error.code === 'ESRCH') return true;
+      if (error.code !== 'EPERM') return false;
+    }
     if (performance.now() >= deadline) return false;
     await sleep(10);
   }
@@ -62,7 +84,7 @@ class AppServer {
     });
     this.child.on('error', (error) => this.fail(new AdapterError(
       error.code === 'ENOENT' ? 'cli_not_found' : 'process_error',
-      error.code === 'ENOENT' ? 'Codex CLI was not found. Install it and sign in before running this adapter.' : 'Codex CLI could not be started.',
+      error.code === 'ENOENT' ? 'Codex CLI was not found. Install it and sign in, or set EFFORT_CODEX_BIN to its executable.' : 'Codex CLI could not be started.',
       'blocked',
     ), onFailure));
     this.child.stdin.on('error', () => {
@@ -133,28 +155,28 @@ class AppServer {
     this.rejectPending(new AdapterError('closed', 'The managed Codex connection closed.'));
     if (interrupt && threadId && turnId && !this.closed) {
       try { this.write({ id: this.nextId++, method: 'turn/interrupt', params: { threadId, turnId } }); } catch {}
-      await Promise.race([this.closedPromise, sleep(150)]);
+      await within(this.closedPromise, 150);
     }
     this.child.stdin.end();
-    await Promise.race([this.closedPromise, sleep(150)]);
+    await within(this.closedPromise, 150);
     const pid = this.child.pid;
     let cleanupConfirmed = true;
     if (pid && process.platform !== 'win32') {
       // Terminate the process group even if its leader exited but tool descendants remain.
       try { process.kill(-pid, 'SIGTERM'); } catch {}
-      if (!await waitForProcessGroupExit(pid, 150)) {
+      if (!await waitForProcessGroupExit(pid, TERM_GRACE_MS)) {
         try { process.kill(-pid, 'SIGKILL'); } catch {}
         // The parent's close event does not establish that children are gone.
-        // Wait for the entire group, including children awaiting OS reaping.
-        cleanupConfirmed = await waitForProcessGroupExit(pid, 1000);
+        // Wait for the entire group, including orphans that launchd or init must reap.
+        cleanupConfirmed = await waitForProcessGroupExit(pid, KILL_REAP_MS);
       }
     } else if (pid && !this.closed) {
       const killer = spawn('taskkill.exe', ['/pid', String(pid), '/T', '/F'], { shell: false, stdio: 'ignore', windowsHide: true });
-      await Promise.race([new Promise((done) => { killer.once('error', done); killer.once('close', done); }), sleep(1000)]);
+      await within(new Promise((done) => { killer.once('error', done); killer.once('close', done); }), 1000);
       killer.kill();
       this.child.kill();
     }
-    await Promise.race([this.closedPromise, sleep(250)]);
+    await within(this.closedPromise, CLOSE_WAIT_MS);
     this.child.stdout.destroy();
     this.child.stderr.destroy();
     this.child.stdin.destroy();
@@ -164,13 +186,13 @@ class AppServer {
 }
 
 /** Execute exactly one Codex turn; sessionId is the resumable Codex thread ID. */
-export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = false, timeoutMs = 120000, signal, onEvent = () => {}, env = process.env, executable = 'codex', executableArgs = [] } = {}) {
+export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = false, timeoutMs = 120000, signal, onEvent = () => {}, env = process.env, executable, executableArgs = [] } = {}) {
   if (typeof prompt !== 'string' || !prompt.trim() || Buffer.byteLength(prompt) > MAX_TEXT_BYTES) throw new TypeError('prompt must be nonempty text of at most 256 KiB.');
   if (!capabilities.levels.includes(effort)) throw new TypeError('Codex adapter effort must be low, medium, or high.');
   if (typeof cwd !== 'string' || !cwd || cwd.includes('\0')) throw new TypeError('cwd must identify an existing directory.');
   if (typeof allowWrite !== 'boolean') throw new TypeError('allowWrite must be a boolean.');
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 2147483647) throw new TypeError('timeoutMs must be a positive, supported timer duration.');
-  if (typeof executable !== 'string' || !executable || executable.includes('\0')) throw new TypeError('executable must be a CLI path or command name.');
+  if (executable !== undefined && (typeof executable !== 'string' || !executable || executable.includes('\0'))) throw new TypeError('executable must be a CLI path or command name.');
   if (!Array.isArray(executableArgs) || executableArgs.length > 100 || executableArgs.some((argument) => typeof argument !== 'string' || argument.includes('\0') || argument.length > 20_000)) throw new TypeError('executableArgs must be an array of at most 100 bounded strings without NUL characters.');
   for (const [key, value] of [['model', model], ['sessionId', sessionId]]) {
     if (value !== undefined && (typeof value !== 'string' || !value.trim() || value.length > 256 || /[\0\r\n]/.test(value))) throw new TypeError(`${key} must be a nonempty identifier.`);
@@ -192,6 +214,13 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
     text: '', usage: emptyUsage(), status: 'failed',
   };
   if (signal?.aborted) return { ...result, status: 'cancelled' };
+  // Without an explicit executable, find the installed CLI (including npm's Windows shim).
+  // A bad EFFORT_CODEX_BIN is then a blocked turn that says what is wrong.
+  let command;
+  try { command = providerCommand('codex', { executable, executableArgs, env }); } catch (error) {
+    emit({ type: 'diagnostic', code: 'cli_unavailable', message: String(error.message).slice(0, 2000) });
+    return { ...result, text: String(error.message).slice(0, 2000), status: 'blocked' };
+  }
   if (sessionId && activeSessions.has(sessionId)) {
     emit({ type: 'diagnostic', code: 'session_busy', message: 'This adapter already has a turn running for that session.' });
     return { ...result, status: 'blocked' };
@@ -262,7 +291,7 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
   if (signal?.aborted) abort();
   try {
     if (failureReason) throw failureReason;
-    server = new AppServer({ executable, executableArgs, cwd: directory, env, onFailure: fail, onMessage: (message) => {
+    server = new AppServer({ ...command, cwd: directory, env, onFailure: fail, onMessage: (message) => {
       if (Object.hasOwn(message, 'id')) {
         // No UI approval callback is in the adapter contract. Deny rather than approve implicitly.
         if (['item/commandExecution/requestApproval', 'item/fileChange/requestApproval'].includes(message.method)) {
@@ -277,7 +306,7 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
     } });
     emit({ type: 'status', status: 'starting', sandbox: allowWrite ? 'workspace-write' : 'read-only' });
     const execute = async () => {
-      await server.request('initialize', { clientInfo: { name: 'effort_project', title: 'Effort Project', version: '0.1.0' } });
+      await server.request('initialize', { clientInfo: { name: 'effort_project', title: 'Effort Project', version: VERSION } });
       server.write({ method: 'initialized', params: {} });
       const threadParams = {
         cwd: directory, sandbox: allowWrite ? 'workspace-write' : 'read-only',
@@ -332,10 +361,7 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
       const status = await completion.promise;
       result.status = status === 'interrupted' ? 'cancelled' : status;
       if (result.status === 'completed') {
-        const metadata = await Promise.race([
-          server.request('thread/read', { threadId: id, includeTurns: false }).catch(() => null),
-          sleep(1000).then(() => null),
-        ]);
+        const metadata = await within(server.request('thread/read', { threadId: id, includeTurns: false }).catch(() => null), 1000, null);
         const configured = metadata?.thread?.reasoningEffort;
         if (typeof configured === 'string') {
           result.effortEvidence.configuredEffort = configured;

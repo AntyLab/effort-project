@@ -99,8 +99,9 @@ async function fixture(t, options = {}) {
     await proxy?.close();
     await rm(cwd, { recursive: true, force: true });
   });
-  proxy = await startCodexRemote({ cwd, executable: process.execPath, executableArgs: [script],
-    env: { EFFORT_FIXTURE_LOG: log, EFFORT_FIXTURE_MODE: options.mode ?? 'normal', ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
+  // viaOverride launches the backend the way an installed CLI is found: through EFFORT_CODEX_BIN.
+  proxy = await startCodexRemote({ cwd, ...(options.viaOverride ? {} : { executable: process.execPath, executableArgs: [script] }),
+    env: { EFFORT_FIXTURE_LOG: log, EFFORT_FIXTURE_MODE: options.mode ?? 'normal', ...(options.viaOverride ? { EFFORT_CODEX_BIN: script } : {}), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
     WebSocketServerClass: fake.Class, onDecision: decision => decisions.push(decision),
     repositoryFactsFn: options.repositoryFactsFn ?? (async () => ({ languages: ['javascript'] })), signal: options.signal,
   });
@@ -204,6 +205,13 @@ test('Codex remote rewrites the child request and hides its private model discov
   assert.equal(ws.sent.some(value => value.result?.data?.[0]?.supportedReasoningEfforts), false);
   assert.equal(f.decisions[0].evidence, 'turn-request-rewrite');
   assert.equal(JSON.stringify(f.decisions).includes('spelling typo'), false);
+});
+
+test('Codex remote resolves EFFORT_CODEX_BIN when no executable is given', { timeout: 10_000 }, async t => {
+  const f = await fixture(t, { viaOverride: true });
+  const { ws } = await f.upgrade();
+  await initialize(ws);
+  assert.deepEqual((await f.readLog())[0].argv, ['app-server', '--listen', 'stdio://']);
 });
 
 test('Codex remote passes provider approvals, user responses, and cancellation without alteration', { timeout: 10_000 }, async t => {

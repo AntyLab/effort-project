@@ -155,6 +155,30 @@ test('missing executable and working directory return useful blocked results', a
   assert.match((await run({ ...f.options, cwd: join(f.cwd, 'missing-cwd') })).text, /working directory/);
 });
 
+test('finds an npm-installed Claude CLI on Windows without a shell', { skip: process.platform !== 'win32' }, async (t) => {
+  const f = await fixture(t);
+  // npm writes claude.cmd; Node cannot spawn it directly, so the adapter runs its script.
+  await writeFile(join(f.cwd, 'claude.cmd'), `@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\fake-claude.cjs" %*\r\n`);
+  const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { PATH: f.cwd, HOME: f.cwd } });
+  assert.equal(result.status, 'completed');
+  assert.equal(argValue(JSON.parse(await readFile(f.log, 'utf8')).argv, '--effort'), 'medium');
+});
+
+test('a broken EFFORT_CLAUDE_BIN is a blocked turn that explains itself, not an exception', async (t) => {
+  const f = await fixture(t);
+  const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, EFFORT_CLAUDE_BIN: join(f.cwd, 'missing.cjs') } });
+  assert.equal(result.status, 'blocked');
+  assert.match(result.text, /EFFORT_CLAUDE_BIN points to .*missing\.cjs, which does not exist/);
+  assert.equal(await exists(f.log), false);
+});
+
+test('EFFORT_CLAUDE_BIN selects the Claude CLI when no executable is given', async (t) => {
+  const f = await fixture(t);
+  const result = await run({ ...f.options, executable: undefined, executableArgs: undefined, env: { ...f.options.env, EFFORT_CLAUDE_BIN: f.scriptPath } });
+  assert.equal(result.status, 'completed');
+  assert.equal(result.text, 'Done.');
+});
+
 test('known unsupported effort models block before invoking the CLI', async (t) => {
   const f = await fixture(t);
   for (const model of ['haiku', 'claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-opus-4-1', 'opusplan']) {

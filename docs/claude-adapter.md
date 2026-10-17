@@ -2,7 +2,7 @@
 
 `src/adapters/claude.mjs` exports `capabilities` and `run(options)` from the [adapter contract](adapter-contract.md). It uses the installed Claude Code CLI, Node.js 22 or newer, and no runtime dependencies. The implementation was checked against local Claude Code **2.1.282** help on **2026-09-26**. Its automated tests use temporary fake executables and never call a model.
 
-Trusted programmatic callers can supply `executable` plus `executableArgs` (an optional validated array, default `[]`). Prefix arguments precede the adapter's CLI arguments. For a Node shim, use `executable: process.execPath` and `executableArgs: ['/absolute/path/to/shim.cjs']`; this works without a shebang or shell. Batch-file wrappers are not executed through a shell.
+Trusted programmatic callers can supply `executable` plus `executableArgs` (an optional validated array, default `[]`). Prefix arguments precede the adapter's CLI arguments. For a Node shim, use `executable: process.execPath` and `executableArgs: ['/absolute/path/to/shim.cjs']`; this works without a shebang or shell. Batch-file wrappers are not executed through a shell. Without an explicit `executable`, the adapter uses `EFFORT_CLAUDE_BIN` when set; otherwise, on Windows, it looks for `claude.exe` anywhere on `PATH` (the native installer), then reads npm's `claude.cmd` shim and runs the script it names with the current Node. The lookup uses the caller's `env` before the child environment is filtered.
 
 ## What effort control means
 
@@ -38,7 +38,7 @@ The built-in bounds are:
 | Retained answer | 512 KiB |
 | Retained stderr for classification | 32 KiB |
 | Parsed events | 20,000 |
-| Timeout | 120 seconds by default; caller range 1 ms–30 minutes |
+| Timeout | 120 seconds by default; caller range 1 ms–30 minutes (`capabilities.maxTurnTimeoutMs`). `effort run` gives each turn at most 30 minutes of a longer task budget |
 | CLI help preflight | Up to 5 seconds, within the total timeout |
 | Internal agent turns | 12 by default; optional `maxTurns` range 1–50 |
 | Optional estimated spend cap | `maxBudgetUsd`, greater than 0 and at most 100 |

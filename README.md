@@ -35,6 +35,8 @@ node bin/effort.mjs recommend "Investigate an intermittent race condition" --pro
 node bin/effort.mjs dashboard
 ```
 
+`doctor` reports which provider CLIs Effort can start. On Windows, Effort looks for `codex.exe` or `claude.exe` on `PATH`, then for npm's `codex.cmd` or `claude.cmd` shim, whose JavaScript entry it runs with the current Node; it never starts a shell. To choose a specific installation on any platform, set `EFFORT_CODEX_BIN` or `EFFORT_CLAUDE_BIN` to an executable, a JavaScript entry point, or (on Windows) an npm `.cmd` shim.
+
 Open the local URL printed by `dashboard` and keep that terminal running. You can also start it with `npm start` from the project folder. Its fragment contains an access token. Opening `web/index.html` directly shows a preview with startup instructions; recommendations and history require the running local server and its printed URL.
 
 The dashboard only recommends effort and reads local run metadata; it cannot launch commands. Empty history is intentional until you run a task.
@@ -46,7 +48,7 @@ npm install --global .
 effort --help
 ```
 
-Uninstall with `npm uninstall --global @antyxo/effort-project`. Local metadata stays in `~/.effort-project` unless `EFFORT_DATA_DIR` changes it. Remove that directory yourself if you want to delete your history. Remove any MCP entry you added separately.
+Uninstall with `npm uninstall --global effort-project`. Local metadata stays in `~/.effort-project` unless `EFFORT_DATA_DIR` changes it. Remove that directory yourself if you want to delete your history. Remove any MCP entry you added separately.
 
 ## Run a task
 
@@ -62,16 +64,30 @@ To permit constrained code edits and check a Node project:
 
 ```sh
 effort run "Fix the failing sum test" --provider codex --cwd /path/to/project \
-  --allow-write --verify '["node","--test"]' --max-attempts 3 --timeout 180
+  --allow-write --max-attempts 3 --timeout 180 -- node --test
 ```
+
+Everything after `--` is the verification command. Put it last. In PowerShell, quote the separator, because PowerShell removes a bare `--` when `effort` runs through npm's `effort.ps1` shim:
+
+```powershell
+effort run "Fix the failing sum test" --provider codex --cwd . --allow-write '--' node --test
+```
+
+Or give each part with `--verify-arg`, which no shell can mangle (write a part that starts with `-` as `--verify-arg=--test`):
+
+```powershell
+effort run "Fix the failing sum test" --provider codex --cwd . --allow-write --verify-arg node --verify-arg=--test
+```
+
+Quote the task: `effort run` takes it as one argument and refuses extra words, so a dropped separator stops the run instead of running it unverified. Use `--prompt-file` for long tasks or one that starts with `-`.
 
 Use `--provider claude` for Claude Code. Its adapter allows restricted file edits; it does not give the model a general shell. The verification command runs separately.
 
-**Verification is a local executable and argument array, not a shell string. It runs with your normal user privileges, outside the provider sandbox. Only supply commands you trust.** On shells with different quoting rules, pass the JSON array with that shell's standard quoting. `--prompt-file path` avoids long prompt arguments. `--dry-run` prints a plan without starting a provider.
+**Verification is a local executable and argument array, not a shell string. It runs with your normal user privileges, outside the provider sandbox. Only supply commands you trust.** Effort passes the arguments after `--` literally, without a shell. On Windows, `npm`, `npx`, `pnpm` and `yarn` work: Effort runs the JavaScript entry their `.cmd` wrapper names, and Node's own `npm.cmd` resolves to the same npm it would pick. Other batch files cannot run without a shell. A command that cannot start (not found, or an unsupported batch file) stops the run before the first provider turn. The older JSON form, `--verify '["node","--test"]'`, still works in shells that keep the inner quotes; Windows PowerShell 5.1 removes them, so use `'--'` or `--verify-arg` there. Give the command in only one of these forms. `--prompt-file path` avoids long prompt arguments. `--dry-run` prints a plan without starting a provider.
 
-The defaults are three attempts, 120 seconds total, and a `high` ceiling. Use `--effort low` to override the initial recommendation, `--max-effort medium` to set a lower ceiling, or `--model` to choose a model explicitly. Supported levels are checked by adapters; an unsupported model/effort is not silently replaced. There is no universal dollar cap: timeout, attempt, and effort bounds limit activity, but do not guarantee a final bill.
+The defaults are three attempts, 600 seconds (10 minutes) total, and a `high` ceiling. The total covers provider turns and verification. Each verification run may use the time left in the task; `--verify-timeout 300` limits each check to five minutes, and it can never exceed `--timeout`. A check ends when its process exits, plus up to a second for remaining output. On Linux and macOS, a background process it started in its process group is then stopped. On Windows that process keeps running, because Effort cannot reach it once the check has exited, so stop it in the check itself. Earlier builds defaulted to 120 seconds total and stopped any check after 60 seconds, so slower test suites ended as timeouts. Use `--effort low` to override the initial recommendation, `--max-effort medium` to set a lower ceiling, or `--model` to choose a model explicitly. Supported levels are checked by adapters; an unsupported model/effort is not silently replaced. There is no universal dollar cap: timeout, attempt, and effort bounds limit activity, but do not guarantee a final bill.
 
-The first recognized test failure can trigger another attempt at the same effort. Repeated matching failures can raise effort for the next managed turn. Access, permission, missing dependency, timeout, and unclassified failures stop instead. Passing the selected check means **that check passed**, not that all requirements are satisfied. Exit status is 0 for completed verified/unverified tasks, 2 for blocked/failed/cancelled tasks, and 1 for invalid CLI input.
+The first recognized test failure can trigger another attempt at the same effort. Repeated matching failures can raise effort for the next managed turn. Failures match when the same named tests fail again, or, for unrecognized output, when it differs only in timings, temporary paths, ports, PIDs, timestamps, hex IDs or line numbers. Access, permission, missing dependency, timeout, and unclassified failures stop instead. A failure report from node:test, Jest, Vitest, pytest, unittest, `go test`, `cargo test`, mocha or another TAP producer counts as a test failure even when a failing test mentions authorization, permissions or missing files. A suite that could not run still stops, even when a runner reports it as failing: a module that cannot be loaded, a refused connection (`connect ECONNREFUSED host:port`), an operating-system permission error (`EACCES: permission denied, open '…'`) or a missing command. Effort looks for these errors in the form they are thrown, not for the words in test names or assertion messages. Passing the selected check means **that check passed**, not that all requirements are satisfied. Exit status is 0 for completed verified/unverified tasks, 2 for blocked/failed/cancelled tasks, and 1 for invalid CLI input.
 
 ## Automatic sessions
 

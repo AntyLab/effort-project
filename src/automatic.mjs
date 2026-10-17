@@ -23,12 +23,9 @@ export function createAutomaticRouter({ minEffort = 'low', maxEffort = 'high', p
     decide({ sessionId, model, prompt, facts = {}, supportedEfforts = [], preview = false } = {}) {
       if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 512) throw new Error('A bounded conversation ID is required.');
       const supported = LEVELS.filter((level) => supportedEfforts.includes(level) && rank(level) >= rank(minEffort) && rank(level) <= rank(maxEffort));
-      const base = recommend({ prompt, provider, minEffort, maxEffort });
-      // A multilingual checkout does not make a spelling correction complicated.
-      // A broad edit still uses the repository scope signal from the existing policy.
-      const scopedFacts = base.features.mechanical && !base.features.critical && !base.features.complex
-        ? { ...facts, languages: [] } : facts;
-      const recommendation = recommend({ prompt, provider, facts: scopedFacts, minEffort, maxEffort });
+      // The shared policy keeps a multilingual checkout from inflating a narrow
+      // mechanical request, while a request naming many files still counts as broad.
+      const recommendation = recommend({ prompt, provider, facts, minEffort, maxEffort });
       const reasons = [...recommendation.reasons];
       const previous = sessions.get(sessionId);
       let desired = effort === 'auto' ? recommendation.effort : effort;
@@ -36,7 +33,7 @@ export function createAutomaticRouter({ minEffort = 'low', maxEffort = 'high', p
       if (effort !== 'auto') reasons.push('Using the fixed effort selected for this automatic session.');
       else if (previous && rank(desired) < rank(previous.effort)) {
         // Bare assent and short references are continuations, not fresh easy tasks.
-        const ambiguous = !base.features.mechanical && (prompt.trim().length < 160 || /^(?:yes|ok(?:ay)?|continue|go ahead|do (?:it|that)|try again|same\b|fix (?:it|that)|what about\b)/i.test(prompt.trim()));
+        const ambiguous = !recommendation.features.mechanical && (prompt.trim().length < 160 || /^(?:yes|ok(?:ay)?|continue|go ahead|do (?:it|that)|try again|same\b|fix (?:it|that)|what about\b)/i.test(prompt.trim()));
         lowerCount = ambiguous ? 0 : previous.lowerCount + 1;
         if (ambiguous || lowerCount < 2) {
           desired = previous.effort;
