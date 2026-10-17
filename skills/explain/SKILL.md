@@ -12,5 +12,5 @@ Explain what The Effort Project recommends and why. Effort is advisory: neither 
    - The suggested level and each of the returned `reasons`, in plain words.
    - The returned `caveat`: these are transparent keyword and length rules with low confidence, not a measurement of how hard the task is.
    - How to apply it: `/effort <level>`. On some models Claude Code asks for confirmation first, because changing effort mid-session re-reads the conversation without the prompt cache.
-   - If the prompt hook showed a higher level than the tool returns now: the hook also counts the programming languages and the files named in the prompt in the working directory, which this tool does not see.
+   - Only if the user says the prompt hook suggested a different level than the tool returns now: the hook also counts the programming languages and the files named in the prompt in the working directory, which this tool does not see. Otherwise leave the hook out of your answer.
 4. Don't change how you work on the task, redo earlier work, or run commands because of the recommendation unless the user asks.

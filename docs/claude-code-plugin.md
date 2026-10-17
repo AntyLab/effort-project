@@ -1,10 +1,12 @@
 # Claude Code plugin
 
-The Effort Project ships an advisory plugin for Claude Code. When you submit a prompt, a local hook runs Effort's rules on it and compares the result with your session's current effort level. If the two differ, Claude Code shows you one line:
+The Effort Project ships an advisory plugin for Claude Code. When you submit a prompt, a local hook runs Effort's rules on it. When a rule fired, Claude Code shows you one line:
 
 ```text
-Effort suggests high for this prompt (you're on low). Apply with /effort high
+Effort suggests high for this prompt. If you're on a lower level, apply it with /effort high
 ```
+
+Claude Code does not tell a `UserPromptSubmit` hook your current effort level (see [How the hook decides](#how-the-hook-decides)), so the line does not say what level you are on, and it can appear when you are already on the suggested one.
 
 **This is advice, not control.** Claude Code hooks cannot set the effort level or the model for a turn. A `UserPromptSubmit` hook can add context for Claude, show you a message, name the session or block the prompt. This plugin never blocks or changes your prompt and never changes your effort level. If you agree with a suggestion, you apply it yourself with `/effort <level>`. These limits were checked against the Claude Code [hooks reference](https://code.claude.com/docs/en/hooks) and [effort documentation](https://code.claude.com/docs/en/model-config#adjust-effort-level) on October 17, 2026.
 
@@ -14,7 +16,7 @@ For effort that changes automatically before each prompt, use Effort's own manag
 
 | Component | What it does | Context cost |
 | --- | --- | --- |
-| `UserPromptSubmit` hook | Runs Effort's rules on each prompt and shows one line when the suggested level differs from `$CLAUDE_EFFORT` | None. The line is shown to you; nothing is added to Claude's context |
+| `UserPromptSubmit` hook | Runs Effort's rules on each prompt and shows one line when a rule fired, or when the suggestion differs from a level the hook can see | None. The line is shown to you; nothing is added to Claude's context |
 | `effort` MCP server | Effort's existing stdio server (`bin/effort.mjs mcp`) with the read-only `effort_recommend`, `effort_observe` and `effort_capabilities` tools | Tool definitions, which Claude Code defers through MCP tool search on supported models |
 | `explain` skill | Run `/effort-project:explain [task text]`, or ask why Effort suggested a level. Claude calls `effort_recommend` and explains the level and its reasons | About 70 tokens per session for the skill listing, per `claude plugin details` |
 
@@ -41,14 +43,15 @@ The marketplace is a third-party marketplace. Like any plugin, the hook and the 
 
 ## How the hook decides
 
-1. Claude Code passes the submitted prompt and the working directory to the hook as JSON on stdin. The hook reads your current level from the `CLAUDE_EFFORT` environment variable, which Claude Code sets for hooks.
-2. The hook runs the same rules as `effort recommend`, including the same bounded repository metadata: languages from file extensions and how many files the prompt names. The scan reads directory listings only, not file contents. It skips dot-directories, dependencies and symlinks, and stops after 500 files, two directory levels or 50 ms.
-3. If the suggested level equals yours, the hook prints nothing. Effort's rules never suggest more than high, so a suggestion of high means "high or more": on xhigh or max the hook stays quiet too.
-4. Otherwise it prints `{"systemMessage": "..."}` with the line shown above, and exits 0.
+1. Claude Code passes the submitted prompt and the working directory to the hook as JSON on stdin.
+2. The hook looks for your current level in the event's `effort.level` and in `$CLAUDE_EFFORT`. Claude Code documents both only for events inside a tool-use context (`PreToolUse`, `PostToolUse`, `Stop` and similar). Version 2.1.299 sends neither to `UserPromptSubmit` hooks, so the level is normally unknown.
+3. The hook runs the same rules as `effort recommend`, including the same bounded repository metadata: languages from file extensions and how many files the prompt names. The scan reads directory listings only, not file contents. It skips dot-directories, dependencies and symlinks, and stops after 500 files, two directory levels or 50 ms.
+4. **Level known:** if the suggested level equals yours, the hook prints nothing. Effort's rules never suggest more than high, so a suggestion of high means "high or more": on xhigh or max the hook stays quiet too. Otherwise it prints `Effort suggests high for this prompt (you're on low). Apply with /effort high`.
+5. **Level unknown (the usual case):** the hook prints a line only when a rule fired, that is, for a suggestion of high or low, and it never states a level: `Effort suggests high for this prompt. If you're on a lower level, apply it with /effort high`, or `Effort suggests low for this prompt. If you're on a higher level, apply it with /effort low`. Medium is Effort's uncertain default, so it prints nothing. The line can therefore appear when you are already on that level, or on a model without effort levels.
 
-The hook prints nothing and exits 0 in these cases:
+Either line is a single `{"systemMessage": "..."}` object on stdout, and the hook exits 0. It prints nothing and exits 0 in these cases:
 
-- `CLAUDE_EFFORT` is unset or not a level, for example on a model without effort levels.
+- The level is unknown and the suggestion is the medium default.
 - The prompt starts with `/` or `!`. Commands and skills reach the hook as typed (`/name arguments`), and `!` lines run a shell. Neither describes the task.
 - The prompt is empty or longer than 100,000 characters, the limit of Effort's rules.
 - The hook input is malformed, larger than 1 MiB, or has not arrived within 3 seconds.
@@ -76,7 +79,7 @@ The rules are a transparent keyword and length heuristic with low confidence. Th
 
 ## Performance
 
-On the Windows 11 development machine with Node 24.19, a complete hook run took a median of 65 ms over 20 runs (90th percentile 71 ms), and starting Node with an empty script took 52 ms. The advice itself, including the repository scan, took about 1 ms in process. Node's startup time dominates and is usually shorter on macOS and Linux. The repository scan stops after 50 ms. The hook waits up to 1 second for it, the same limit Effort's OpenCode plugin uses. A slow disk or a busy machine delays the line; past 1 second the hook stays silent rather than guess.
+On the Windows 11 development machine with Node 24.19, a complete hook run took a median of 65 ms over 20 runs (90th percentile 71 ms), and starting Node with an empty script took 52 ms. The advice itself, including the repository scan, took about 1 ms in process. Inside Claude Code 2.1.299 on the same machine, the hook finished in 73 to 79 ms after a cold first run of 358 ms. Node's startup time dominates and is usually shorter on macOS and Linux. The repository scan stops after 50 ms. The hook waits up to 1 second for it, the same limit Effort's OpenCode plugin uses. A slow disk or a busy machine delays the line; past 1 second the hook stays silent rather than guess.
 
 ## Packaging: the plugin root is the repository root
 
@@ -104,20 +107,37 @@ Checked without model calls, using the Claude Code 2.1.299 CLI bundled with the 
 
 `npm test` runs `test/claude-plugin.test.mjs`. It feeds the hook realistic `UserPromptSubmit` JSON and checks the output format, silence on matching levels, fail-open behavior and timing. It also checks the manifests against the documented formats, starts the MCP server from the plugin configuration, and runs the hook and server from a copied plugin root, as Claude Code does after an install.
 
-### Manual acceptance (not yet performed)
+### Live acceptance (October 17, 2026)
 
-A live session has not been run. These steps send a few short prompts to the model, so use an inexpensive model and a disposable project.
+Run on Windows 11 with Claude Code 2.1.299 (the CLI bundled with the Claude desktop app), Node 24.19 and Haiku 5.5. The working directory was a disposable project outside this repository, and `CLAUDE_CONFIG_DIR` pointed at a separate, throwaway folder with the inherited `CLAUDE_*` and `ANTHROPIC_*` variables removed, so nothing was installed into the real Claude Code configuration. Every run was non-interactive:
 
-1. Start `claude --plugin-dir /path/to/effort-project` in the disposable project.
-2. Run `/effort low`, then submit `Investigate the intermittent race condition in the token refresh`. Expect the line `Effort suggests high for this prompt (you're on low). Apply with /effort high`. The prompt goes through unchanged, and the session header still shows low effort.
-3. Run `/effort high` and submit the same prompt. Expect no line.
-4. Submit `Fix a typo in the README` while on high. Expect `Effort suggests low for this prompt (you're on high). Apply with /effort low`.
-5. Run `/effort max` and repeat step 2's prompt. Expect no line.
-6. Run `/effort-project:explain`. Claude should call `effort_recommend` without a permission prompt, explain the level and its reasons, and leave your effort level unchanged.
-7. Run `/mcp`. Expect `plugin:effort-project:effort` connected with three tools. Run `/plugin` and check that the **Errors** tab has no entry for the plugin.
-8. Start once with `claude --debug --plugin-dir /path/to/effort-project`, submit a prompt, and check the debug log: the hook exits 0 and its output does not contain your prompt.
-9. On Windows, repeat step 2 on a machine without Git Bash. The hook uses exec form (`command` plus `args`), which starts `node` without a shell.
-10. After the plugin is on the default branch, install it from GitHub as described under [Install](#install). Check that `~/.claude/plugins/cache/effort-project/effort-project/<version>/` contains `bin/` and `src/`, then repeat step 2.
+```sh
+claude -p --plugin-dir <repo> --effort <level> --model haiku --output-format stream-json --verbose --include-hook-events "<prompt>"
+```
+
+Three runs called the model: three short prompts, with `--permission-mode default --max-turns N --max-budget-usd 0.10`, about $0.011 in total by Claude Code's own estimate. The other runs used a configuration that was not signed in. The model call then fails with "Not logged in" after the hooks have run, so those runs cost nothing. A hook's `systemMessage` appears in the stream as a `system` message with subtype `informational`, for example `UserPromptSubmit says: Effort suggests high ...`.
+
+**Bug found and fixed.** On the first runs the hook printed nothing, whatever `--effort` and model were used. A throwaway observer hook, kept outside this repository, recorded what Claude Code passes to hooks:
+
+| Event | `CLAUDE_EFFORT` | stdin `effort` |
+| --- | --- | --- |
+| `SessionStart`, `UserPromptSubmit` | not set | absent |
+| `PreToolUse`, `PostToolUse`, `Stop` | `low` | `{"level":"low"}` |
+
+The table is from signed-in runs with `--effort low` on Haiku 5.5. Signed out, `UserPromptSubmit` also had no variable with `--effort low`, `high`, `max` and no flag, and with the Haiku, Sonnet, Opus and Fable aliases and the default model. This matches the hooks reference, which lists `effort` only for events in a tool-use context. Before the fix, putting `CLAUDE_EFFORT=low` into the environment of the `claude` process, which passes it on, made the hook print the original line and Claude Code show it, so the hook and the display path were sound. The hook now uses the fallback described under [How the hook decides](#how-the-hook-decides).
+
+Outcome per step. The interactive screens cannot be driven from a script, so those parts were not performed.
+
+1. **Start with the plugin.** Done with `claude -p --plugin-dir`. The init message lists `effort-project@inline` with no plugin errors, and the skill `effort-project:explain`. An interactive start was not performed.
+2. **Race prompt on low.** With `--effort low` and `Investigate the intermittent race condition in the token refresh`, the line `Effort suggests high for this prompt. If you're on a lower level, apply it with /effort high` was shown. The transcript's user message equals the typed prompt exactly. The line is recorded without any text for the model, and the model went on to use tools until the 3-turn cap that was set. Tool events afterwards still reported `low`. The session header was not viewed.
+3. **Same prompt on high.** With `--effort high` the same line is shown, because the hook cannot see the level. The planned outcome, no line, does not apply.
+4. **Typo prompt on high.** `Fix a typo in the README` with `--effort high` gave `Effort suggests low for this prompt. If you're on a higher level, apply it with /effort low`. `Add a settings page with a dark mode toggle` printed nothing.
+5. **Race prompt on max.** With `--effort max` the high line is shown again, for the same reason.
+6. **Explain skill.** `/effort-project:explain Investigate the intermittent race condition in the token refresh` in the default permission mode: the model loaded the tool with ToolSearch and called `mcp__plugin_effort-project_effort__effort_recommend` with the prompt unchanged. The call returned the level, reasons and caveat, there was no permission denial, and the answer followed the skill. As a control, `effort_capabilities`, which the skill does not pre-approve, was denied in the same mode. The hook printed nothing for the slash command, as designed. The run passed the task text as an argument, because a single `-p` run has no earlier request for the bare command to use.
+7. **MCP server and plugin errors.** The init message lists `plugin:effort-project:effort` as `connected` with the three tools `effort_capabilities`, `effort_observe` and `effort_recommend`, and the debug log shows the stdio connection in 466 ms. The `/mcp` and `/plugin` screens were not opened.
+8. **Debug log.** With `--debug-file`, the hook finished with status 0 in 79 ms (358 ms on a cold first run). Its output was only the `systemMessage` line, and no line of the debug log contained the prompt text.
+9. **Windows without Git Bash.** The hook's parent process was `claude.exe`, so no shell starts, and the hook also ran with the Git folders removed from `PATH`. A machine without Git Bash was not available.
+10. **Install from the marketplace.** Not done from GitHub, because the plugin is not on the default branch yet. In an isolated configuration, `claude plugin marketplace add <repository folder>` and `claude plugin install effort-project@effort-project` installed a cache copy of 56 files (about 450 KB, versioned by commit) that includes `bin/`, `src/`, `hooks/` and `skills/`. Claude Code loaded a directory marketplace from its source folder rather than from the cache copy, so loading from the cache is still untested.
 
 ## Turn it off
 
@@ -125,8 +145,8 @@ Disable the plugin in `/plugin`, or run `claude plugin disable effort-project@ef
 
 ## Limits
 
-- Advisory only. The plugin cannot set or confirm the effort Claude Code uses for a turn. It sees only the level in `CLAUDE_EFFORT`.
+- Advisory only. The plugin cannot set or confirm the effort Claude Code uses for a turn. In Claude Code 2.1.299 it cannot even see the session's level, because the level is not passed to `UserPromptSubmit` hooks.
 - The rules are the same heuristic as `effort recommend`, with the same limits.
 - Prompts that start with `/` are skipped, including a prompt that starts with an absolute path.
-- Without effort levels on the current model, the hook stays silent.
+- The hook cannot tell a model without effort levels from one with them, so it can suggest a level that does not apply.
 - `node` must be on the `PATH` that Claude Code uses to start hooks and MCP servers.

@@ -1,7 +1,7 @@
 {
   "name": "effort-project",
   "displayName": "The Effort Project",
-  "description": "Shows one line when Effort's local, rule-based effort recommendation differs from your current /effort level, and adds Effort's read-only MCP tools. Advisory: hooks cannot set effort, so you apply a level with /effort.",
+  "description": "Shows a one-line effort suggestion from Effort's local, rule-based recommendation before a prompt runs, and adds Effort's read-only MCP tools. Advisory: hooks cannot set effort, so you apply a level with /effort.",
   "author": {
     "name": "The Effort Project contributors",
     "url": "https://github.com/AntyLab/effort-project"

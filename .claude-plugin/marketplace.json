@@ -9,7 +9,7 @@
     {
       "name": "effort-project",
       "source": "./",
-      "description": "One-line effort suggestions from Effort's local rules when they differ from your /effort level, plus read-only MCP tools. Advisory only.",
+      "description": "One-line effort suggestions from Effort's local rules before a prompt runs, plus read-only MCP tools. Advisory only.",
       "category": "productivity",
       "tags": ["effort", "advisory", "hooks", "mcp"]
     }
