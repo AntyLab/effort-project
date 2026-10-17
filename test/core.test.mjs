@@ -70,9 +70,40 @@ test('a suite that could not run stops even inside a test-runner report',()=>{
     ["not ok 1 - retries after ECONNREFUSED\n# fail 1",'test'],
   ])assert.equal(classifyFailure(text),expected,text);
 });
-test('classification stays linear on long runs of blank lines',()=>{
+test('classification and fingerprints stay linear on long runs of blank lines',async()=>{
   const blank='\n'.repeat(32_000)+'FAIL: test_x (t.T.test_x)\n';
-  const started=performance.now();classifyFailure(blank);assert.ok(performance.now()-started<250);
+  let started=performance.now();classifyFailure(blank);assert.ok(performance.now()-started<250,'classifyFailure');
+  started=performance.now();failureFingerprint(blank);assert.ok(performance.now()-started<250,'failureFingerprint');
+  // A passing check is never fingerprinted.
+  const cwd=await mkdtemp(join(tmpdir(),'effort-blank-'));
+  assert.equal((await verify([process.execPath,'-e',"process.stdout.write('\\n'.repeat(32000))"],{cwd})).fingerprint,null);
+});
+test('the temporary root matches only whole path segments',()=>{
+  const at=(path)=>failureFingerprint(`AssertionError: cannot render ${path}`,{cwd:'/srv/app',tmp:'/tmp'});
+  for(const [a,b] of [['/srv/app/tmpl/header.html','/srv/app/tmpl/footer.html'],['/data/tmp_uploads/a.csv','/data/tmp_uploads/b.json'],
+    ['/srv/app/tmp/cache/users.json','/srv/app/tmp/cache/orders.json'],['/opt/tmpfs/x.log','/opt/tmpfs/y.log']])assert.notEqual(at(a),at(b),`${a} vs ${b}`);
+  assert.equal(at('/tmp/effort-run-a1B2c3/state.json'),at('/tmp/effort-run-Zz9Yy8/state.json'));
+});
+test('failing test names keep their numbers, ports and line references',()=>{
+  const spec=(name)=>`✖ ${name} (3.2ms)\n  AssertionError [ERR_ASSERTION]: boom\nℹ fail 1`;
+  for(const [a,b] of [['retries after 5s','retries after 30s'],['handles port 80','handles port 443'],['loads a.ts:12','loads a.ts:99'],
+    ['times out after 100ms','times out after 2 seconds'],['parses 09:30:00','parses 17:45:10']])assert.notEqual(failureFingerprint(spec(a)),failureFingerprint(spec(b)),`${a} vs ${b}`);
+});
+test('unittest and Jest suite-load failures fingerprint by name, ignoring line numbers',()=>{
+  const unittest=(line)=>`F\n======\nFAIL: test_sum (test_sum.TestSum.test_sum)\n------\nTraceback (most recent call last):\n  File "/repo/test_sum.py", line ${line}, in test_sum\n    self.assertEqual(add(1, 2), 3)\nAssertionError: -1 != 3\n\nFAILED (failures=1)`;
+  assert.equal(failureFingerprint(unittest(7)),failureFingerprint(unittest(9)));
+  const jest=(line)=>`FAIL src/sum.test.js\n  ● Test suite failed to run\n\n    SyntaxError: /repo/src/sum.js: Unexpected token (${line}:4)`;
+  assert.equal(failureFingerprint(jest(3)),failureFingerprint(jest(8)));
+  assert.notEqual(failureFingerprint(jest(3)),failureFingerprint(jest(3).replace('sum.test.js','add.test.js')));
+  // Unrecognized output ignores Python line references too.
+  assert.equal(failureFingerprint('Traceback:\n  File "/repo/app.py", line 12\nValueError: bad'),failureFingerprint('Traceback:\n  File "/repo/app.py", line 40\nValueError: bad'));
+});
+test('identical long failures keep one fingerprint when the kept tail starts mid-line',async()=>{
+  const cwd=await mkdtemp(join(tmpdir(),'effort-tail-'));
+  // Lines of varying length shift where the kept 32,000-character tail begins.
+  await writeFile(join(cwd,'noisy.cjs'),"for(let i=0;i<3000;i++)console.log('step '+i+' took '+Math.floor(Math.random()*100000)+'ms');console.log('AssertionError: totals differ');process.exit(1);");
+  const first=await verify([process.execPath,'noisy.cjs'],{cwd}),second=await verify([process.execPath,'noisy.cjs'],{cwd});
+  assert.equal(first.kind,'test');assert.equal(first.fingerprint,second.fingerprint);
 });
 test('a missing dependency reported by node:test stops after one provider turn',async()=>{
   const calls=[];const f=await fixture(async o=>{calls.push(o.effort);return completed;});

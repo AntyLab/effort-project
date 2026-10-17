@@ -3,42 +3,39 @@ import { createHash } from 'node:crypto';
 import { realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { classifyFailure } from './policy.mjs';
+import { plainReport, failingTestNames } from './test-reports.mjs';
 
-const ANSI = /\x1b\[[0-?]*[ -/]*[@-~]/g;
-// Failing test names from common runner reports. They stay the same when timings,
-// temporary paths or line numbers change between otherwise identical failures.
-const FAILING_TESTS = [
-  /^\s*✖ (.+?) \(\d+(?:\.\d+)?m?s\)$/gm, // node:test spec
-  /^\s*not ok \d+ - (.+)$/gm, // TAP, including node:test
-  /^\s*● (.+ › .+)$/gm, // jest
-  /^\s*FAIL\s+(\S+ > .+)$/gm, // vitest
-  /^FAILED (\S+::\S+)/gm, // pytest
-  /^\s*--- FAIL: (\S+)/gm, // go test
-  /^test (\S+) \.\.\. FAILED$/gm, // cargo test
-];
+const OUTPUT_LIMIT = 32_000;
 const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // The working and temporary directories, with either separator and as realpaths.
-function directories(cwd) {
+// A match starts and ends at a path boundary: the temporary root '/tmp' is not
+// part of '/tmpl', '/tmp_uploads' or a project's own 'src/tmp' (nor '<cwd>/tmp').
+function directories(cwd, tmp) {
   const found = [];
-  for (const [path, label] of [[cwd, '<cwd>'], [tmpdir(), '<tmp>']]) {
+  for (const [path, label] of [[cwd, '<cwd>'], [tmp, '<tmp>']]) {
     if (typeof path !== 'string') continue;
     const variants = new Set([path]);
     try { variants.add(realpathSync(path)); } catch {}
     for (const variant of variants) {
       const parts = variant.replace(/[\\/]+$/, '').split(/[\\/]+/);
-      if (parts.join('').length > 2) found.push({ length: variant.length, label, pattern: new RegExp(parts.map(literal).join('[\\\\/]+'), process.platform === 'win32' ? 'gi' : 'g') });
+      if (parts.join('').length > 2) found.push({ length: variant.length, label,
+        pattern: new RegExp(`(?<![\\w.>-])${parts.map(literal).join('[\\\\/]+')}(?![\\w.-])`, process.platform === 'win32' ? 'gi' : 'g') });
     }
   }
   // Replace the longer path first: a test's working directory is often inside the temporary one.
   return found.sort((a, b) => b.length - a.length);
 }
 
-function normalize(text, roots) {
+// Temporary paths are collapsed whole: their directory names are random.
+function replaceRoots(text, roots) {
   let value = text;
   for (const { pattern, label } of roots) value = value.replace(pattern, label);
-  return value
-    .replace(/<tmp>[^\s'"`<>|]*/g, '<tmp>')
+  return value.replace(/<tmp>[^\s'"`<>|]*/g, '<tmp>');
+}
+
+function normalize(text, roots) {
+  return replaceRoots(text, roots)
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, '<id>')
     .replace(/\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?/g, '<time>')
     .replace(/\b\d{1,2}:\d{2}:\d{2}(?:[.,]\d+)?\b/g, '<time>')
@@ -49,17 +46,21 @@ function normalize(text, roots) {
     .replace(/\bport\s*[:=]?\s*\d+/gi, 'port <port>')
     .replace(/\bpid\s*[:=]?\s*\d+/gi, 'pid <pid>')
     .replace(/(\.[a-z]\w{0,5})(?::\d+){1,2}\b/gi, '$1:<line>')
+    .replace(/\bline \d+\b/gi, 'line <n>')
     .replace(/\bduration(?:_ms)?\s*[:=]?\s*\d+(?:\.\d+)?/gi, 'duration #time')
     .replace(/\b\d+(?:\.\d+)?\s*(?:ms|s|seconds)\b/g, '#time')
     .replace(/\s+/g, ' ').trim();
 }
 
-/** Identical failures share a fingerprint: failing test names when recognizable, otherwise output without run-specific noise. */
-export function failureFingerprint(output, { cwd } = {}) {
-  const plain = String(output).replace(ANSI, '').replace(/\r\n?/g, '\n');
-  const roots = directories(cwd);
-  const names = new Set();
-  for (const pattern of FAILING_TESTS) for (const match of plain.matchAll(pattern)) names.add(normalize(match[1], roots));
+/**
+ * Identical failures share a fingerprint: the failing test names when a runner reports
+ * them, otherwise the output without run-specific noise. Names keep their numbers:
+ * 'retries after 5s' and 'retries after 30s' are different tests.
+ */
+export function failureFingerprint(output, { cwd, tmp = tmpdir() } = {}) {
+  const plain = plainReport(output);
+  const roots = directories(cwd, tmp);
+  const names = new Set([...failingTestNames(plain)].map((name) => replaceRoots(name, roots)));
   const basis = names.size ? `failing tests\n${[...names].sort().join('\n')}` : normalize(plain, roots);
   return createHash('sha256').update(basis).digest('hex').slice(0, 16);
 }
@@ -73,12 +74,12 @@ export function verify(argv, { cwd, timeoutMs = 60_000, signal, env = process.en
   validateCommand(argv);
   return new Promise(resolve => {
     if (signal?.aborted) return resolve({ status:'blocked', kind:'cancelled', output:'', exitCode:null });
-    let output = '', timedOut = false, aborted = false, launchError = null;
+    let output = '', truncated = false, timedOut = false, aborted = false, launchError = null;
     // A fresh verification process must not inherit node:test's nested-run marker:
     // Node can otherwise skip the requested tests and exit successfully.
     const childEnv={...env};delete childEnv.NODE_TEST_CONTEXT;
     const child = spawn(argv[0], argv.slice(1), { cwd, env:childEnv, shell:false, stdio:['ignore','pipe','pipe'], windowsHide:true, detached:process.platform!=='win32' });
-    const collect = data => { output = (output + data.toString()).slice(-32_000); };
+    const collect = data => { output += data.toString(); if (output.length > OUTPUT_LIMIT) { output = output.slice(-OUTPUT_LIMIT); truncated = true; } };
     child.stdout.on('data', collect); child.stderr.on('data', collect);
     let hardKill,reapTimer,settled=false;
     const killTree = signalName => {
@@ -104,7 +105,10 @@ export function verify(argv, { cwd, timeoutMs = 60_000, signal, env = process.en
       if (launchError) output = launchError;
       const kind = aborted ? 'cancelled' : code === 0 && !timedOut ? null : classifyFailure(output, {timedOut});
       const status = code === 0 && !timedOut && !aborted ? 'passed' : kind === 'test' ? 'failed' : 'blocked';
-      resolve({status,kind,exitCode:code,output,fingerprint:failureFingerprint(output,{cwd})});
+      // Only failures are compared. A truncated tail starts mid-line at a shifting offset
+      // and holds a varying number of lines, so compare its last 200 complete lines.
+      const tail = truncated ? output.split('\n').slice(1).slice(-200).join('\n') : output;
+      resolve({status,kind,exitCode:code,output,fingerprint:status==='passed'?null:failureFingerprint(tail,{cwd})});
     };
     child.on('close',finish);
   });
