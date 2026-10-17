@@ -48,7 +48,7 @@ npm install --global .
 effort --help
 ```
 
-Uninstall with `npm uninstall --global @antyxo/effort-project`. Local metadata stays in `~/.effort-project` unless `EFFORT_DATA_DIR` changes it. Remove that directory yourself if you want to delete your history. Remove any MCP entry you added separately.
+Uninstall with `npm uninstall --global effort-project`. Local metadata stays in `~/.effort-project` unless `EFFORT_DATA_DIR` changes it. Remove that directory yourself if you want to delete your history. Remove any MCP entry you added separately.
 
 ## Run a task
 

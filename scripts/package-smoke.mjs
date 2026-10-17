@@ -33,7 +33,7 @@ try {
   execute([npmCli, 'install', '--prefix', prefix, '--offline', '--ignore-scripts',
     '--no-audit', '--no-fund', '--no-save', '--package-lock=false', '--cache', cache,
     join(scratch, packed[0].filename)]);
-  const installed = join(prefix, 'node_modules', '@antyxo', 'effort-project');
+  const installed = join(prefix, 'node_modules', 'effort-project');
   const manifest = JSON.parse(await readFile(join(installed, 'package.json'), 'utf8'));
   assert.equal(Object.keys(manifest.dependencies ?? {}).length, 0);
   const entry = join(installed, manifest.bin.effort);

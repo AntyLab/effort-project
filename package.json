@@ -1,5 +1,5 @@
 {
-  "name": "@antyxo/effort-project",
+  "name": "effort-project",
   "version": "0.1.0",
   "description": "A local, transparent effort controller for coding agents.",
   "type": "module",
