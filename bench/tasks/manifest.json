@@ -1,0 +1,106 @@
+{
+  "schema": "effort-bench-corpus/1",
+  "description": "Seed corpus for the Effort benchmark. Each task has a starting repository (repo/), a reference solution overlay (solution/) and hidden acceptance tests (accept/) that are copied in only after the agent finishes. Do not tune src/policy.mjs against these tasks; add new held-out tasks instead.",
+  "tasks": [
+    {
+      "id": "node-rename-export",
+      "language": "node",
+      "difficulty": "easy",
+      "category": "typo-rename",
+      "prompt": "Rename the misspelled function `calcualteTotal` to `calculateTotal`. The tests in test/ already use the new name. Update its definition in src/cart.mjs and every import and re-export, and don't keep an alias with the old spelling.",
+      "verify": ["{node}", "--test", "test/*.test.mjs"],
+      "accept": ["{node}", "--test", "bench_accept/*.test.mjs"]
+    },
+    {
+      "id": "node-paginate",
+      "language": "node",
+      "difficulty": "easy",
+      "category": "off-by-one",
+      "prompt": "`paginate()` in src/paginate.mjs is off by one: page 1 skips the first items, and `totalPages` leaves out a final partial page. Pages are 1-based. Fix it.",
+      "verify": ["{node}", "--test", "test/*.test.mjs"],
+      "accept": ["{node}", "--test", "bench_accept/*.test.mjs"]
+    },
+    {
+      "id": "node-duration",
+      "language": "node",
+      "difficulty": "medium",
+      "category": "failing-test",
+      "prompt": "The test `parseDuration handles compound values` in test/duration.test.mjs is failing. Fix `parseDuration` in src/duration.mjs so it follows its doc comment. Do not change the tests.",
+      "verify": ["{node}", "--test", "test/*.test.mjs"],
+      "accept": ["{node}", "--test", "bench_accept/*.test.mjs"]
+    },
+    {
+      "id": "node-money-refactor",
+      "language": "node",
+      "difficulty": "medium",
+      "category": "refactor",
+      "prompt": "src/invoice.mjs, src/report.mjs and src/refund.mjs each have their own copy of the same money-formatting helper. Refactor: add src/money.mjs exporting `formatMoney(cents, currency = 'USD')` with exactly that behavior, and change all three modules to import it instead of keeping local copies. Their output must not change.",
+      "verify": ["{node}", "--test", "test/*.test.mjs"],
+      "accept": ["{node}", "--test", "bench_accept/*.test.mjs"],
+      "visibleFailsAtStart": false
+    },
+    {
+      "id": "node-map-limit",
+      "language": "node",
+      "difficulty": "hard",
+      "category": "async",
+      "prompt": "`mapLimit(items, limit, fn)` in src/map-limit.mjs doesn't honour its documented contract: results can come back in completion order instead of input order, and after a call rejects it keeps starting new calls. Fix it without adding dependencies or changing the signature.",
+      "verify": ["{node}", "--test", "test/*.test.mjs"],
+      "accept": ["{node}", "--test", "bench_accept/*.test.mjs"]
+    },
+    {
+      "id": "node-csv-quotes",
+      "language": "node",
+      "difficulty": "hard",
+      "category": "feature",
+      "prompt": "parseCsv() in src/csv.mjs only handles the simplest input. Make it follow the rules in its doc comment: quoted fields (which may contain commas, line breaks and doubled quotes), CRLF line endings, and a SyntaxError for an unterminated quoted field. Keep it dependency-free.",
+      "verify": ["{node}", "--test", "test/*.test.mjs"],
+      "accept": ["{node}", "--test", "bench_accept/*.test.mjs"]
+    },
+    {
+      "id": "py-config-typo",
+      "language": "python",
+      "difficulty": "easy",
+      "category": "typo-rename",
+      "prompt": "`retry_delays()` in client.py crashes with a KeyError: it reads the setting name with a typo. Fix the typo so it uses `retry_backoff` from settings.py; overrides must still take precedence.",
+      "verify": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+      "accept": ["{python}", "-m", "unittest", "discover", "-s", "bench_accept", "-t", "."]
+    },
+    {
+      "id": "py-moving-average",
+      "language": "python",
+      "difficulty": "easy",
+      "category": "off-by-one",
+      "prompt": "moving_average() in stats.py drops the last window: moving_average([1, 2, 3, 4], 2) returns [1.5, 2.5] instead of [1.5, 2.5, 3.5]. Fix it.",
+      "verify": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+      "accept": ["{python}", "-m", "unittest", "discover", "-s", "bench_accept", "-t", "."]
+    },
+    {
+      "id": "py-signup-validation",
+      "language": "python",
+      "difficulty": "medium",
+      "category": "validation",
+      "prompt": "create_user() in signup.py accepts any input. Implement the validation rules from its docstring: raise ValidationError with the right `field` for the first invalid field, and return the cleaned record.",
+      "verify": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+      "accept": ["{python}", "-m", "unittest", "discover", "-s", "bench_accept", "-t", "."]
+    },
+    {
+      "id": "py-inventory-reservations",
+      "language": "python",
+      "difficulty": "medium",
+      "category": "feature",
+      "prompt": "Add stock reservations to `Inventory` in inventory.py:\n- `reserve(order_id, sku, quantity)` holds units for an order. Raise `OutOfStock` if fewer than `quantity` units are available, and `ValueError` if `quantity` is not positive or `order_id` already has a reservation.\n- `available(sku)` returns units on hand that are not reserved; `count(sku)` still returns all units on hand.\n- `remove()` and `reserve()` can only use available units.\n- `release(order_id)` cancels a reservation and `commit(order_id)` ships it (its units leave the inventory). Both raise `KeyError` for an unknown or already finished order.",
+      "verify": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+      "accept": ["{python}", "-m", "unittest", "discover", "-s", "bench_accept", "-t", "."]
+    },
+    {
+      "id": "py-async-cache",
+      "language": "python",
+      "difficulty": "hard",
+      "category": "async",
+      "prompt": "AsyncCache in cache.py lets concurrent get() calls for the same key each call the loader. Make it follow its docstring: concurrent callers share one load, failures reach every waiting caller and are not cached, and cancelling one caller must not cancel the load for the others.",
+      "verify": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+      "accept": ["{python}", "-m", "unittest", "discover", "-s", "bench_accept", "-t", "."]
+    }
+  ]
+}
