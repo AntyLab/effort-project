@@ -97,7 +97,8 @@ async function fixture(t, options = {}) {
   t.after(async () => {
     for (const socket of sockets) socket.destroy();
     await proxy?.close();
-    await rm(cwd, { recursive: true, force: true });
+    // close() bounds taskkill at one second, and Windows will not remove the working directory of a child that is still exiting.
+    await rm(cwd, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   // viaOverride launches the backend the way an installed CLI is found: through EFFORT_CODEX_BIN.
   proxy = await startCodexRemote({ cwd, ...(options.viaOverride ? {} : { executable: process.execPath, executableArgs: [script] }),
