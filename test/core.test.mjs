@@ -58,6 +58,30 @@ test('test-runner failures win over access, permission and environment words in 
     ['EACCES: permission denied, open \'/etc/effort\'','permission'],
   ])assert.equal(classifyFailure(text),expected,text);
 });
+test('a suite that could not run stops even inside a test-runner report',()=>{
+  for(const [text,expected] of [
+    ["✖ test/app.test.mjs (54ms)\n  Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'left-pad' imported from /repo/test/app.test.mjs\nℹ fail 1",'environment'],
+    ["FAIL src/a.test.js\n  ● Test suite failed to run\n\n    Cannot find module 'lodash' from 'src/a.js'",'environment'],
+    ["FAIL db: connect ECONNREFUSED 127.0.0.1:5432\n# fail 1",'environment'],
+    ["FAIL\texample.com/acl [setup failed]",'environment'],
+    [" FAIL  src/io.test.ts > io > writes\nError: EACCES: permission denied, open '/var/data/x'\n Test Files  1 failed (1)",'permission'],
+    // Names of failing tests are not blockers.
+    ["✖ shows Permission denied to guests (2ms)\n  AssertionError [ERR_ASSERTION]: expected a banner\nℹ fail 1",'test'],
+    ["not ok 1 - retries after ECONNREFUSED\n# fail 1",'test'],
+  ])assert.equal(classifyFailure(text),expected,text);
+});
+test('classification stays linear on long runs of blank lines',()=>{
+  const blank='\n'.repeat(32_000)+'FAIL: test_x (t.T.test_x)\n';
+  const started=performance.now();classifyFailure(blank);assert.ok(performance.now()-started<250);
+});
+test('a missing dependency reported by node:test stops after one provider turn',async()=>{
+  const calls=[];const f=await fixture(async o=>{calls.push(o.effort);return completed;});
+  await writeFile(join(f.cwd,'app.test.mjs'),"import pad from 'effort-missing-package-for-test';import test from 'node:test';test('pads',()=>{});");
+  const check=await verify([process.execPath,'--test','app.test.mjs'],{cwd:f.cwd});
+  assert.equal(check.kind,'environment');assert.equal(check.status,'blocked');
+  const result=await runTask({prompt:'Fix the padding',cwd:f.cwd,effort:'low',verify:[process.execPath,'--test','app.test.mjs'],maxAttempts:3},{...f});
+  assert.deepEqual(calls,['low']);assert.equal(result.task.status,'blocked');
+});
 test('a real failing node test about authorization is a retryable test failure',async()=>{
   const cwd=await mkdtemp(join(tmpdir(),'effort-classify-'));
   await writeFile(join(cwd,'acl.test.cjs'),"const {test}=require('node:test');const assert=require('node:assert/strict');test('rejects unauthorized users with permission denied',()=>assert.equal(401,200));");

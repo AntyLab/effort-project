@@ -1,3 +1,5 @@
+import { plainReport, reportsTestFailure, suiteBlocker } from './test-reports.mjs';
+
 export const POLICY_VERSION = 'rules-0.2';
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -42,24 +44,16 @@ export function recommend({ prompt, provider = 'generic', facts = {}, maxEffort 
     caveat: 'A transparent heuristic, not a trained difficulty model or a measured quality guarantee.' };
 }
 
-// Failure reports printed by test runners. A failing test may itself mention
-// authorization, permissions or missing files, so these markers are checked first.
-const TEST_RUNNER_FAILURES = [
-  /^\s*✖ \S.*\(\d+(?:\.\d+)?m?s\)$/m, /^ℹ fail [1-9]/m, // node:test spec reporter
-  /^\s*not ok \d+\b/m, /^# fail [1-9]/m, // TAP, including node:test
-  /^\s*FAIL\s+\S/m, /^\s*● (?:.+ › .+|Test suite failed to run)$/m, /^\s*Tests?\b.*\b[1-9]\d* failed\b/m, // jest, vitest
-  /^FAILED \S+::\S+/m, /^=+ .*\b[1-9]\d* failed\b.* =+$/m, // pytest
-  /^\s*--- FAIL: \S+/m, // go test; package lines are matched as FAIL above
-  /^test \S+ \.\.\. FAILED$/m, /^test result: FAILED\b/m, // cargo test
-  /^\s*[1-9]\d* failing$/m, /^FAIL: \S+/m, // mocha, unittest
-  /\bAssertionError\b|\bERR_ASSERTION\b/,
-];
-
 export function classifyFailure(text = '', { timedOut = false } = {}) {
   if (timedOut) return 'timeout';
   const value = String(text).slice(0, 50_000);
-  const plain = value.replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '').replace(/\r\n?/g, '\n');
-  if (TEST_RUNNER_FAILURES.some((marker) => marker.test(plain))) return 'test';
+  const plain = plainReport(value);
+  // A suite that could not run stops, even inside a runner report. Otherwise a
+  // runner's failure report wins, because a failing test may itself mention
+  // authorization, permissions or missing files.
+  const blocker = suiteBlocker(plain);
+  if (blocker) return blocker;
+  if (reportsTestFailure(plain)) return 'test';
   if (/unauthorized|authentication|invalid.api.key|not.logged.in|login.required|rate.limit|quota|insufficient.credit|usage.limit|out.of.extra.usage/i.test(value)) return 'access';
   if (/permission.denied|operation.not.permitted|EACCES|EPERM|approval.required|permission.request/i.test(value)) return 'permission';
   if (/command.not.found|MODULE_NOT_FOUND|cannot.find.module|ModuleNotFoundError|No module named|ENOENT|ECONNREFUSED|ENOTFOUND|network.unreachable|connection.refused/i.test(value)) return 'environment';
