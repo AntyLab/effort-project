@@ -3,7 +3,7 @@
   "description": "The Effort Project's advisory reasoning-effort plugin for Claude Code.",
   "owner": {
     "name": "The Effort Project contributors",
-    "url": "https://github.com/AntyXO/effort-project"
+    "url": "https://github.com/AntyLab/effort-project"
   },
   "plugins": [
     {
