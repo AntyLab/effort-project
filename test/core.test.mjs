@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { recommend, nextDecision, classifyFailure } from '../src/policy.mjs';
 import { repositoryFacts } from '../src/repository.mjs';
 import { Store } from '../src/store.mjs';
-import { verify } from '../src/verify.mjs';
+import { verify, failureFingerprint } from '../src/verify.mjs';
 import { runTask } from '../src/runner.mjs';
 
 test('unknown tasks remain uncertain and mechanical requests can start low',()=>{
@@ -112,6 +112,29 @@ test('identical failing node checks keep the same fingerprint despite timings',a
   const first=await verify([process.execPath,'--test','fail.test.cjs'],{cwd});
   const second=await verify([process.execPath,'--test','fail.test.cjs'],{cwd});
   assert.equal(first.kind,'test');assert.equal(first.fingerprint,second.fingerprint);
+});
+test('fingerprints ignore temporary paths, ports, PIDs, timestamps and hex IDs',()=>{
+  const cwd=join(tmpdir(),'effort-project-fixture');
+  const report=({dir,port,pid,time,id,address,line})=>`Error: request to http://127.0.0.1:${port}/health failed (pid ${pid}) at ${time}\n  job ${id} object 0x${address} commit 9f3c2a17b4\n  in ${join(tmpdir(),dir,'state.json')} from ${join(cwd,'src','server.js')}:${line}:7`;
+  const first=report({dir:'effort-run-a1B2c3',port:54321,pid:4242,time:'2026-10-17T15:24:00.123Z',id:'3f2a9c1e-0b7d-4e8a-9c3f-2d1e0a9b8c7d',address:'7ffd1234',line:12});
+  const second=report({dir:'effort-run-Zz9Yy8',port:61002,pid:977,time:'2026-10-17T16:01:59.004Z',id:'aa11bb22-cc33-4d44-8e55-ff6677889900',address:'5555beef',line:14});
+  assert.equal(failureFingerprint(first,{cwd}),failureFingerprint(second,{cwd}));
+  assert.notEqual(failureFingerprint(first,{cwd}),failureFingerprint(first.replace('/health','/ready'),{cwd}));
+});
+test('recognized failing test names identify a repeated failure',()=>{
+  const spec=(name,line,detail)=>`✖ ${name} (${line}.25ms)\n  AssertionError [ERR_ASSERTION]: ${detail}\n      at TestContext.<anonymous> (file:///repo/sum.test.js:${line}:9)\nℹ fail 1`;
+  assert.equal(failureFingerprint(spec('adds negatives',3,'-1 !== 1')),failureFingerprint(spec('adds negatives',7,'-2 !== 1')));
+  assert.notEqual(failureFingerprint(spec('adds negatives',3,'-1 !== 1')),failureFingerprint(spec('adds zero',3,'-1 !== 1')));
+  const pytest=(seconds)=>`FAILED tests/test_sum.py::test_negative - assert -1 == 1\n=== 1 failed, 4 passed in ${seconds}s ===`;
+  assert.equal(failureFingerprint(pytest('0.12')),failureFingerprint(pytest('3.40')));
+});
+test('repeated noisy failures escalate instead of looking new every attempt',async()=>{
+  const calls=[];const f=await fixture(async o=>{calls.push(o.effort);return completed;});
+  // Not a recognized test report: each attempt prints a fresh temp path, port, PID and time.
+  await writeFile(join(f.cwd,'check.cjs'),"const fs=require('node:fs'),os=require('node:os'),path=require('node:path');const dir=fs.mkdtempSync(path.join(os.tmpdir(),'effort-noise-'));console.error('AssertionError: server on 127.0.0.1:'+(40000+Math.floor(Math.random()*20000))+' (pid '+process.pid+') at '+new Date().toISOString()+' wrote '+path.join(dir,'state.json'));fs.rmSync(dir,{recursive:true});process.exit(1);");
+  const result=await runTask({prompt:'Fix the server check',cwd:f.cwd,effort:'low',verify:[process.execPath,'check.cjs'],maxAttempts:3},{...f});
+  assert.deepEqual(calls,['low','low','medium']);
+  assert.equal(result.task.status,'failed');
 });
 test('verification timeout reaps descendants holding stdout open',{skip:process.platform==='win32'},async()=>{
   const cwd=await mkdtemp(join(tmpdir(),'effort-tree-'));
