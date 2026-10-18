@@ -20,9 +20,11 @@ const MAX_STDERR_BYTES = 32 * 1024;
 const MAX_EVENTS = 20_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const READ_TOOLS = ['Read', 'Grep', 'Glob'];
-// Claude Code 2.1.282 reports this built-in even in safe mode. Do not accept
-// arbitrary plugins or a filesystem plugin with the same name.
-const isKnownBuiltinPlugin = (plugin) => plugin?.name === 'agents-md' && plugin?.path === 'builtin';
+// Built-ins Claude Code reports even in safe mode: agents-md in 2.1.282, and
+// cc-plugin-agents-md and cc-plugin-plugin-authoring in 2.1.299. Do not accept
+// arbitrary plugins, other built-ins, or a filesystem plugin with the same name.
+const KNOWN_BUILTIN_PLUGINS = new Set(['agents-md', 'cc-plugin-agents-md', 'cc-plugin-plugin-authoring']);
+const isKnownBuiltinPlugin = (plugin) => KNOWN_BUILTIN_PLUGINS.has(plugin?.name) && plugin?.path === 'builtin';
 const REQUIRED_FLAGS = [
   '--print', '--output-format', '--verbose', '--effort', '--resume',
   '--restricted', '--safe-mode', '--permission-mode', '--permission-prompts',
@@ -302,6 +304,7 @@ const ERRORS = {
   cli_unavailable: ['blocked', 'The configured Claude CLI cannot be started. Run effort doctor for details.'],
   invalid_cwd: ['blocked', 'The working directory does not exist or is not accessible.'],
   isolation_mismatch: ['blocked', 'Claude reported tools, customizations, or permissions outside the managed configuration. The process was stopped.'],
+  tool_not_allowed: ['blocked', 'Claude asked for a tool outside the managed configuration. The CLI does not offer it; the process was stopped.'],
   model_mismatch: ['blocked', 'Claude reported an unexpected model or a model switch. The process was stopped.'],
   session_mismatch: ['failed', 'Claude reported a different session ID while resuming.'],
   output_limit: ['failed', 'Claude exceeded the adapter’s output bound and was stopped.'],
@@ -439,7 +442,8 @@ export async function run(inputOptions) {
       const blocks = event.message?.content;
       if (Array.isArray(blocks)) {
         for (const block of blocks) {
-          if (block.type === 'tool_use' && !allowed.has(block.name)) { stop('isolation_mismatch'); return; }
+          // The model's own request, unlike a configuration the CLI reported; it is still stopped.
+          if (block.type === 'tool_use' && !allowed.has(block.name)) { stop('tool_not_allowed'); return; }
           if (block.type === 'tool_use' && !emit({ type: 'tool', name: block.name })) { stop('callback_error'); return; }
         }
         const assistantText = blocks.filter((b) => b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n');
@@ -459,7 +463,9 @@ export async function run(inputOptions) {
       }
       if (event.is_error || event.subtype !== 'success') {
         const errorText = [event.result, ...(Array.isArray(event.errors) ? event.errors.filter((x) => typeof x === 'string') : [])].join('\n');
-        streamFailure = failureFromText(errorText) ?? (event.subtype === 'error_max_turns' ? 'max_turns' : event.subtype === 'error_max_budget_usd' ? 'budget_limit' : 'cli_error');
+        // Result wording the adapter does not recognize keeps a cause an assistant event's
+        // error field already gave, such as 'rate_limit' (a 429 against the account's quota).
+        streamFailure = failureFromText(errorText) ?? (event.subtype === 'error_max_turns' ? 'max_turns' : event.subtype === 'error_max_budget_usd' ? 'budget_limit' : streamFailure ?? 'cli_error');
       }
     }
   };

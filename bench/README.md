@@ -7,7 +7,7 @@ This harness measures whether Effort's routing reaches the same pass rate as fix
 - the cost of failures and retries counted
 - a non-inferiority margin fixed before the run, and uncertainty reported
 
-Nothing here has been run against a real model yet. The repository makes no savings claim, and an offline run cannot support one.
+The first live pilot, Claude Sonnet 5.5 on the eleven seed tasks, is described in [PILOT.md](PILOT.md). Every arm passed every task, so it could not show an equal pass rate. The repository makes no savings claim, and an offline run cannot support one.
 
 Requirements: Node.js 22 or later; Python 3.8 or later for the Python tasks. There are no npm dependencies.
 
@@ -46,6 +46,8 @@ node bench/run.mjs
 The visible and hidden checks run agent-written code. Both run without credential environment variables (provider and service keys and tokens, and the `SSH_AUTH_SOCK` agent socket) and without `NODE_OPTIONS`, `PYTHONPATH` or similar injection variables. They still run as your user account, so files it can read, such as `~/.codex`, `~/.claude` or `~/.ssh`, are not hidden from them. Run live benchmarks under a disposable account or in a container.
 
 Runs execute one at a time. Ctrl+C cancels the current run and writes the summary of the finished runs. Continue later with `--out <dir> --resume` and the original options. Finished runs are skipped, and an interrupted run is redone. Resuming refuses changed options or changed tasks.
+
+A run that ends with a provider-side failure is not a result of its arm: the CLI is not signed in, a usage or rate limit refused the request, the model is unavailable or changed, the CLI lacks a required flag, or it reported tools outside the managed configuration. The adapter codes are listed in `PROVIDER_FAILURES` in [lib/plan.mjs](lib/plan.mjs). Such a run is recorded with `providerError`, left out of scoring like a harness error, and redone on `--resume`. The benchmark stops after it with exit code 3, because the next runs would most likely fail the same way. What an arm does with its turn still counts against it: running out of agentic turns, time or output, a denied tool permission, or asking for a tool the session does not offer (`tool_not_allowed`), which the adapter stops even though the CLI refuses the call itself. `meta.json` records the commit of every invocation, and the summary names any later commit a resumed benchmark ran on.
 
 ## Arms
 
@@ -128,10 +130,10 @@ Each line of `runs.jsonl` is one run:
 | `runStatus`, `stopReason` | `runTask`'s verdict (`verified`, `failed`, `blocked`, …). This is *not* the pass/fail used for scoring |
 | `accepted`, `acceptance` | **Pass/fail from the hidden check**, with its exit code and duration |
 | `visibleCheckPassed` | Whether the last visible check passed. It can disagree with `accepted` |
-| `usage` | Run totals of `inputTokens`, `outputTokens`, `cachedInputTokens`, `costUsd` and `totalTokens`, or **null when any attempt did not report them** |
+| `usage` | Run totals of `inputTokens`, `outputTokens`, `cachedInputTokens`, `costUsd` and `totalTokens`, or **null when any attempt did not report them**. A retried Claude run's `costUsd` is the conversation total its last attempt reported (`costSource: "conversation"`) |
 | `wallMs` | Wall time of the managed run (provider turns and visible checks; hidden check excluded) |
 | `changedFiles`, `visibleTestsChanged` | Paths the agent added, modified or deleted (names only), and whether it touched visible tests |
-| `interrupted`, `harnessError` | Runs stopped with Ctrl+C or failed inside the harness. They are excluded from scoring and redone on `--resume` |
+| `interrupted`, `harnessError`, `providerError` | Runs stopped with Ctrl+C, failed inside the harness, or ended by a provider-side failure (the adapter's code). They are excluded from scoring and redone on `--resume` |
 
 `summary.md` reports, for each provider and arm:
 
@@ -147,7 +149,7 @@ It then gives a verdict against the non-inferiority margin (`--margin`, default 
 
 Every arm runs the same tasks and repeats, so the comparison with the reference arm is paired. Within a provider, each run is matched with the reference arm's run of the same task and repeat. Each pair is one of four kinds: both passed, only the arm passed, only the reference passed, or neither passed. The difference is (only the arm passed − only the reference passed) ÷ pairs. Its 95% interval is Newcombe's method 10 for paired proportions (Newcombe 1998, *Statistics in Medicine* 17:2635–2650): a Wilson interval for each arm's pass rate over the pairs, combined using the correlation between the two arms' outcomes. When the arms pass and fail on the same runs, the interval is narrower than two independent samples would give. When they fail on different runs, it is wider.
 
-A run without a partner is left out of the difference and shown in the "Paired runs" column. That happens when its counterpart hit a harness error, was interrupted, or has not run yet. The run still counts in its own arm's pass rate. So the difference can differ from the gap between the two pass rates in the outcomes table.
+A run without a partner is left out of the difference and shown in the "Paired runs" column. That happens when its counterpart hit a harness error or a provider failure, was interrupted, or has not run yet. The run still counts in its own arm's pass rate. So the difference can differ from the gap between the two pass rates in the outcomes table.
 
 With more than one repeat, the pairs of one task are not independent: whatever makes a task hard for one arm and not the other, such as the rules picking too low an effort for it, shows up in every repeat. So the interval counts them as fewer, *effective* pairs. Following Rao and Scott (1992, *Biometrics* 48:577–585), the four pair counts are divided by a design effect before Newcombe's interval is computed. The design effect compares two variances of the difference: one computed between tasks (the clustered variance Obuchowski used for matched pairs: Obuchowski 1998, *Statistics in Medicine* 17:1495–1507), the other as if every pair were independent. It is kept between 1 and pairs ÷ tasks, so the interval never counts more pairs than were run or fewer than one per task. An estimate below 1 is treated as noise, not as a reason to narrow the interval. When there is nothing to estimate it from, because every pair had the same result (usually, every pair agreed) or there is only one task, each task counts once. Repeating tasks whose outcomes never vary therefore cannot produce a non-inferior verdict. A single disagreement, by contrast, looks like independent noise and gives a design effect of 1, so it can yield a narrower interval than no disagreement at all. With one repeat every task has one pair, the design effect is exactly 1, and nothing changes. The summary shows the design effect and the effective pairs when any task has more than one pair.
 
@@ -166,7 +168,7 @@ The charts are separate SVG files because GitHub strips inline `<svg>` from Mark
 
 ### Reading the numbers honestly
 
-- **Unknown usage is not counted as zero.** Medians and totals use only runs whose every attempt reported usage, and the summary shows how many that is. Codex reports no cost. Claude reports no per-turn tokens on resumed turns, so Claude runs that retried have unknown totals. That biases token comparisons toward the arms that retry less.
+- **Unknown usage is not counted as zero.** Medians and totals use only runs whose every attempt reported usage, and the summary shows how many that is. Codex reports no cost. Claude reports a resumed turn's tokens only when the turn's own stream confirms them (see [the Claude adapter notes](../docs/claude-adapter.md)), and the fake Claude CLI never does, so some Claude runs that retried have unknown token totals. That biases token comparisons toward the arms that retry less. Their cost is known: Claude Code 2.1.277 and later report the conversation's whole cost on every resumed turn, and every attempt of a run continues one conversation, so the run's cost is the last attempt's total. The harness uses that only when the probed CLI is 2.1.277 or later, and never adds totals together.
 - Token fields are what each CLI reports, and the CLIs count input and cached tokens differently. Compare arms within a provider, not across providers. Claude also runs in restricted mode without a shell, so it cannot run tests itself, while Codex can.
 - The paired difference removes the task-to-task variation both arms share. The per-arm Wilson intervals keep it, so they are wider than a comparison needs. Both count the repeats of one task as fewer runs. Judge a difference by its paired interval, not by whether two per-arm intervals overlap.
 - **More repeats cannot replace more tasks.** The design effects are themselves estimated from eleven tasks. A failure confined to kinds of task the corpus lacks, or too rare to appear among its tasks, cannot show in any interval. In the simulations, with 10 repeats the paired interval still covered as little as 80% of the time (41% unadjusted), and the per-arm interval 86% (41% unadjusted). Repeats narrow the comparison only as far as the arms' disagreements vary within tasks. To make a verdict firmer, add tasks. A pilot cannot establish equal quality.
@@ -186,7 +188,7 @@ Each simulated turn either copies the reference solution into the workspace or c
 
 Real runs use your installed, signed-in Codex and Claude Code CLIs and count against your account: billed per token with an API key, or against your plan's usage limits on a subscription.
 
-1. Install and sign in to each CLI, and confirm it with `node bin/effort.mjs doctor`. On Windows, pass `--codex-bin` or `--claude-bin` with the CLI's native executable or JavaScript entry point. npm's `.cmd` shims cannot be started without a shell.
+1. Install and sign in to each CLI, and confirm it with `node bin/effort.mjs doctor`. The harness starts the same CLI that `doctor` finds: `EFFORT_CODEX_BIN` or `EFFORT_CLAUDE_BIN` first, then on Windows a native `.exe` or an npm shim on `PATH`. `--codex-bin` and `--claude-bin` override that with a native executable or JavaScript entry point. They take no npm `.cmd` shim, because one cannot be started without a shell; name a shim with the environment variable instead. [PILOT.md](PILOT.md) has the plan for the first live run, with its cost estimate.
 2. Pin the models with `--codex-model` and `--claude-model`. Otherwise the provider default is used and may change mid-benchmark. The summary flags a provider whose runs reported more than one model.
 3. Check the plan:
 
@@ -204,7 +206,7 @@ Real runs use your installed, signed-in Codex and Claude Code CLIs and count aga
 
 ### What it may cost
 
-No real run has been made with this harness, so there is no measured cost per turn for these fixtures yet. The pilot gives you one. The plan bounds the size:
+The first pilot measured a median of $0.015–0.028 per Claude Sonnet 5.5 turn on these fixtures, by Claude Code's list-price estimate. [PILOT.md](PILOT.md) has the details. Other models, CLIs and harder tasks cost more, so run a pilot of your own. The plan bounds the size:
 
 | Plan | Runs | Most provider turns | Worst-case time at 600 s per run |
 | --- | --- | --- | --- |
@@ -221,9 +223,9 @@ The Claude adapter allows 12 agentic turns per CLI invocation by default. `runTa
 
 `npm test` runs three offline test files:
 
-- `test/bench-stats.test.mjs` covers the Wilson and paired Newcombe intervals against published and hand-computed values, the design effects for repeats against hand-computed values (including a verdict that clustering changes, repeats that never vary staying at the one-repeat interval, and per-arm intervals unchanged with one repeat), the pairing of runs with the reference arm (including unpaired runs and a verdict that pairing changes), unknown-usage handling, seeded schedules, the spend guard, and the fake-versus-live launch split.
+- `test/bench-stats.test.mjs` covers the Wilson and paired Newcombe intervals against published and hand-computed values, the design effects for repeats against hand-computed values (including a verdict that clustering changes, repeats that never vary staying at the one-repeat interval, and per-arm intervals unchanged with one repeat), the pairing of runs with the reference arm (including unpaired runs and a verdict that pairing changes), unknown-usage handling, the cost of retried Claude runs, provider failures left out of scoring, seeded schedules, the spend guard, and the fake-versus-live launch split.
 - `test/bench-corpus.test.mjs` self-tests every task, checks the corpus's coverage and manifest validation, confirms that the hidden check replaces an agent-planted `bench_accept/`, and confirms that checks get no credentials.
-- `test/bench-run.test.mjs` runs end-to-end offline benchmarks through the real adapters (including retries, escalation and unknown Claude usage), a resume after interruption, the CLI with nothing on `PATH`, and the live-run refusals.
+- `test/bench-run.test.mjs` runs end-to-end offline benchmarks through the real adapters (including retries, escalation and unknown Claude usage), a resume after interruption, the CLI with nothing on `PATH`, the live-run refusals, and a live-mode run against a stub CLI named by `EFFORT_CLAUDE_BIN` that reports a usage limit, stops, and is redone on `--resume`.
 
 Python tasks are skipped when Python 3.8 or later is not installed. No test can start a real provider.
 
@@ -233,4 +235,4 @@ The harness uses only `runTask` and the adapters as they are. `src/` has since g
 
 1. **Per-turn usage for resumed Claude turns.** The Claude adapter now reports a resumed turn's tokens when the turn's own stream confirms them (`tokenScope: "turn"`, see [the Claude adapter notes](../docs/claude-adapter.md)). The fake Claude CLI does not emit per-message usage, so offline runs still show unknown usage for retried Claude runs.
 2. **`maxTurns`.** `runTask` passes it to the Claude adapter. A harness option could set it and record it in `meta.json`.
-3. **A shared executable resolver.** [src/provider-cli.mjs](../src/provider-cli.mjs) resolves `EFFORT_CODEX_BIN` / `EFFORT_CLAUDE_BIN` and npm `.cmd` shims on Windows. `--codex-bin` and `--claude-bin` could reuse it.
+3. **A shared executable resolver for the flags.** Without `--codex-bin` or `--claude-bin`, the harness already resolves the CLI through [src/provider-cli.mjs](../src/provider-cli.mjs), as `doctor` does. The flags still take their path literally, so they cannot name an npm `.cmd` shim.

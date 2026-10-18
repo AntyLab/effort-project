@@ -42,8 +42,8 @@ Real providers (billed or plan-limited usage)
   --max-runs N                Required with --live: refuse plans with more than N runs
   --codex-model ID            Pin the Codex model (recommended)
   --claude-model ID           Pin the Claude model (recommended)
-  --codex-bin PATH            Codex executable or JavaScript entry point (default: codex)
-  --claude-bin PATH           Claude executable or JavaScript entry point (default: claude)
+  --codex-bin PATH            Codex executable or JavaScript entry point (default: EFFORT_CODEX_BIN, else codex)
+  --claude-bin PATH           Claude executable or JavaScript entry point (default: EFFORT_CLAUDE_BIN, else claude)
 
 Without --live, both providers are replaced by local fake CLIs (bench/fake/) that
 need no credentials and produce synthetic results. See bench/README.md.
@@ -216,6 +216,11 @@ export async function main(argv, { stdout = process.stdout, stderr = process.std
     if (result.interrupted) {
       stderr.write(`Interrupted. To continue, rerun with the same options plus --out "${where}" --resume\n`);
       return 130;
+    }
+    if (result.providerFailure) {
+      const { provider, code, key } = result.providerFailure;
+      stderr.write(`Stopped: ${provider} reported ${code} in ${key}. That is a provider-side failure (sign-in, usage or rate limit, model or CLI), not a result of the arm, so the run is excluded and the benchmark stopped. Fix the cause or wait for the limit to reset, then rerun with the same options plus --out "${where}" --resume\n`);
+      return 3;
     }
     return 0;
   } catch (error) {

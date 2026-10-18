@@ -256,6 +256,22 @@ test('provider errors and stderr do not leak credential values', async (t) => {
   assert.ok(!JSON.stringify({ result, events }).includes(secret));
 });
 
+test('an assistant error such as a usage limit outlives result text the adapter does not recognize', async (t) => {
+  // When the account's quota refuses a request, Claude Code marks a synthetic assistant message with
+  // error 'rate_limit' and ends the turn with an is_error result in its own words.
+  const limit = 'You have hit your limit · resets 5pm';
+  const f = await fixture(t, `emit({ type: 'assistant', session_id: ${JSON.stringify(SESSION)}, error: 'rate_limit', message: { model: '<synthetic>', content: [{ type: 'text', text: '${limit}' }] } }); emit({ ...success, is_error: true, result: '${limit}' }); process.exitCode = 1;`);
+  const events = [];
+  const result = await run({ ...f.options, onEvent: (event) => events.push(event) });
+  assert.equal(result.status, 'blocked');
+  assert.deepEqual(events.filter((event) => event.type === 'error').map((event) => event.code), ['rate_limited']);
+  // Without an assistant error, unrecognized result text is still a generic CLI failure.
+  const plain = await fixture(t, `emit({ ...success, is_error: true, result: '${limit}' }); process.exitCode = 1;`);
+  const codes = [];
+  assert.equal((await run({ ...plain.options, onEvent: (event) => { if (event.type === 'error') codes.push(event.code); } })).status, 'failed');
+  assert.deepEqual(codes, ['cli_error']);
+});
+
 test('success output with a nonzero exit is still a failure', async (t) => {
   const f = await fixture(t, 'emit(success); process.stderr.write("private environment secret"); process.exitCode = 2;');
   const result = await run(f.options);
@@ -285,9 +301,12 @@ test('accepts a terminal JSON line without a trailing newline', async (t) => {
   assert.equal((await run(f.options)).text, 'café 🧪');
 });
 
-test('accepts only the observed native agents-md built-in descriptor', async (t) => {
+test('accepts only the observed native built-in plugin descriptors', async (t) => {
   const f = await fixture(t, 'emit({ ...initial, plugins: [{ name: "agents-md", path: "builtin" }] }); emit(success);', { startup: false });
   assert.equal((await run(f.options)).status, 'completed');
+  // Claude Code 2.1.299 in safe mode, captured from a live initialization.
+  const current = await fixture(t, 'emit({ ...initial, plugins: [{ name: "cc-plugin-agents-md", path: "builtin" }, { name: "cc-plugin-plugin-authoring", path: "builtin" }] }); emit(success);', { startup: false });
+  assert.equal((await run(current.options)).status, 'completed');
 });
 
 test('matches one model across CLI context-window and API model spellings', async (t) => {
@@ -320,12 +339,15 @@ test('checks session, model, tools, plugins, hooks and permission evidence', asy
     [`emit({ ...initial, plugins: [{ name: 'unexpected' }] });`, 'isolation_mismatch'],
     [`emit({ ...initial, plugins: [{ name: 'agents-md', path: '/tmp/arbitrary-plugin' }] });`, 'isolation_mismatch'],
     [`emit({ ...initial, plugins: [{ name: 'unexpected', path: 'builtin' }] });`, 'isolation_mismatch'],
+    [`emit({ ...initial, plugins: [{ name: 'cc-plugin-telemetry', path: 'builtin' }] });`, 'isolation_mismatch'],
+    [`emit({ ...initial, plugins: [{ name: 'cc-plugin-plugin-authoring', path: '/tmp/arbitrary-plugin' }] });`, 'isolation_mismatch'],
     [`emit({ type: 'system', subtype: 'hook_started' });`, 'isolation_mismatch'],
     [`emit({ ...initial, permissionMode: 'bypassPermissions' });`, 'isolation_mismatch'],
     [`emit({ ...initial, session_id: ${JSON.stringify(OTHER_SESSION)} });`, 'session_mismatch'],
     [`emit({ ...initial, model: 'claude-opus-4-6' });`, 'model_mismatch'],
     [`emit(initial); emit({ type: 'assistant', message: { model: 'claude-opus-4-6', content: [] } });`, 'model_mismatch'],
-    [`emit(initial); emit({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'secret' } }] } });`, 'isolation_mismatch'],
+    // The model asking for a tool the session does not offer is its own request, reported apart from configuration mismatches.
+    [`emit(initial); emit({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'secret' } }] } });`, 'tool_not_allowed'],
   ];
   for (const [body, code] of cases) {
     const f = await fixture(t, body, { startup: false });
