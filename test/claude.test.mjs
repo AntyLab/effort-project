@@ -301,9 +301,12 @@ test('accepts a terminal JSON line without a trailing newline', async (t) => {
   assert.equal((await run(f.options)).text, 'café 🧪');
 });
 
-test('accepts only the observed native agents-md built-in descriptor', async (t) => {
+test('accepts only the observed native built-in plugin descriptors', async (t) => {
   const f = await fixture(t, 'emit({ ...initial, plugins: [{ name: "agents-md", path: "builtin" }] }); emit(success);', { startup: false });
   assert.equal((await run(f.options)).status, 'completed');
+  // Claude Code 2.1.299 in safe mode, captured from a live initialization.
+  const current = await fixture(t, 'emit({ ...initial, plugins: [{ name: "cc-plugin-agents-md", path: "builtin" }, { name: "cc-plugin-plugin-authoring", path: "builtin" }] }); emit(success);', { startup: false });
+  assert.equal((await run(current.options)).status, 'completed');
 });
 
 test('matches one model across CLI context-window and API model spellings', async (t) => {
@@ -336,6 +339,8 @@ test('checks session, model, tools, plugins, hooks and permission evidence', asy
     [`emit({ ...initial, plugins: [{ name: 'unexpected' }] });`, 'isolation_mismatch'],
     [`emit({ ...initial, plugins: [{ name: 'agents-md', path: '/tmp/arbitrary-plugin' }] });`, 'isolation_mismatch'],
     [`emit({ ...initial, plugins: [{ name: 'unexpected', path: 'builtin' }] });`, 'isolation_mismatch'],
+    [`emit({ ...initial, plugins: [{ name: 'cc-plugin-telemetry', path: 'builtin' }] });`, 'isolation_mismatch'],
+    [`emit({ ...initial, plugins: [{ name: 'cc-plugin-plugin-authoring', path: '/tmp/arbitrary-plugin' }] });`, 'isolation_mismatch'],
     [`emit({ type: 'system', subtype: 'hook_started' });`, 'isolation_mismatch'],
     [`emit({ ...initial, permissionMode: 'bypassPermissions' });`, 'isolation_mismatch'],
     [`emit({ ...initial, session_id: ${JSON.stringify(OTHER_SESSION)} });`, 'session_mismatch'],

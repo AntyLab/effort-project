@@ -20,9 +20,11 @@ const MAX_STDERR_BYTES = 32 * 1024;
 const MAX_EVENTS = 20_000;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const READ_TOOLS = ['Read', 'Grep', 'Glob'];
-// Claude Code 2.1.282 reports this built-in even in safe mode. Do not accept
-// arbitrary plugins or a filesystem plugin with the same name.
-const isKnownBuiltinPlugin = (plugin) => plugin?.name === 'agents-md' && plugin?.path === 'builtin';
+// Built-ins Claude Code reports even in safe mode: agents-md in 2.1.282, and
+// cc-plugin-agents-md and cc-plugin-plugin-authoring in 2.1.299. Do not accept
+// arbitrary plugins, other built-ins, or a filesystem plugin with the same name.
+const KNOWN_BUILTIN_PLUGINS = new Set(['agents-md', 'cc-plugin-agents-md', 'cc-plugin-plugin-authoring']);
+const isKnownBuiltinPlugin = (plugin) => KNOWN_BUILTIN_PLUGINS.has(plugin?.name) && plugin?.path === 'builtin';
 const REQUIRED_FLAGS = [
   '--print', '--output-format', '--verbose', '--effort', '--resume',
   '--restricted', '--safe-mode', '--permission-mode', '--permission-prompts',
