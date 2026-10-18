@@ -304,6 +304,7 @@ const ERRORS = {
   cli_unavailable: ['blocked', 'The configured Claude CLI cannot be started. Run effort doctor for details.'],
   invalid_cwd: ['blocked', 'The working directory does not exist or is not accessible.'],
   isolation_mismatch: ['blocked', 'Claude reported tools, customizations, or permissions outside the managed configuration. The process was stopped.'],
+  tool_not_allowed: ['blocked', 'Claude asked for a tool outside the managed configuration. The CLI does not offer it; the process was stopped.'],
   model_mismatch: ['blocked', 'Claude reported an unexpected model or a model switch. The process was stopped.'],
   session_mismatch: ['failed', 'Claude reported a different session ID while resuming.'],
   output_limit: ['failed', 'Claude exceeded the adapter’s output bound and was stopped.'],
@@ -441,7 +442,8 @@ export async function run(inputOptions) {
       const blocks = event.message?.content;
       if (Array.isArray(blocks)) {
         for (const block of blocks) {
-          if (block.type === 'tool_use' && !allowed.has(block.name)) { stop('isolation_mismatch'); return; }
+          // The model's own request, unlike a configuration the CLI reported; it is still stopped.
+          if (block.type === 'tool_use' && !allowed.has(block.name)) { stop('tool_not_allowed'); return; }
           if (block.type === 'tool_use' && !emit({ type: 'tool', name: block.name })) { stop('callback_error'); return; }
         }
         const assistantText = blocks.filter((b) => b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n');

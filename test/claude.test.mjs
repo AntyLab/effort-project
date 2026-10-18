@@ -346,7 +346,8 @@ test('checks session, model, tools, plugins, hooks and permission evidence', asy
     [`emit({ ...initial, session_id: ${JSON.stringify(OTHER_SESSION)} });`, 'session_mismatch'],
     [`emit({ ...initial, model: 'claude-opus-4-6' });`, 'model_mismatch'],
     [`emit(initial); emit({ type: 'assistant', message: { model: 'claude-opus-4-6', content: [] } });`, 'model_mismatch'],
-    [`emit(initial); emit({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'secret' } }] } });`, 'isolation_mismatch'],
+    // The model asking for a tool the session does not offer is its own request, reported apart from configuration mismatches.
+    [`emit(initial); emit({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Bash', input: { command: 'secret' } }] } });`, 'tool_not_allowed'],
   ];
   for (const [body, code] of cases) {
     const f = await fixture(t, body, { startup: false });
