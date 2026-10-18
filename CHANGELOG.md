@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-18
+
+Second experimental release: automatic effort routing, an advisory Claude Code plugin, an offline benchmark harness, and the fixes from the October 2026 review. Effort still has not demonstrated lower cost at equivalent coding quality.
+
 ### Added
 
 - Experimental automatic effort routing. Effort chooses an effort level locally before each user prompt, using the prompt wording, bounded repository metadata, the previous decision, and the controls the host supports. It makes no classifier API call and keeps no prompt history. A fixed `--effort` or `--model`, and the `--min-effort` and `--max-effort` bounds, take precedence over the rules. See [automatic effort routing](docs/automatic.md).
@@ -29,6 +33,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The npm package is now named `effort-project` (previously `@antyxo/effort-project`). If you installed the old name globally, remove it with `npm uninstall --global @antyxo/effort-project`.
 - The number of languages in a checkout no longer changes the recommended effort; it describes the repository, not the request. A request that names five or more workspace files raises effort by one level, never past high. The policy version is now `rules-0.2`.
 - `effort run` now allows 600 seconds per task by default (previously 120), verification included. A check may use the time left in the task instead of stopping at 60 seconds. A Claude turn is still limited to 30 minutes.
+- The README now leads with one-time setup for each tool and treats the dashboard as optional. The full `effort run` reference moved to [managed runs](docs/managed-runs.md).
 - The dashboard was reworked for first use and small screens: a short overview, section navigation, revised wording, and an initial order that shows the recommendation form first while history is empty and run history first once it has entries. The main controls are at least 44px high, the "Generic" provider choice is now labeled "Other tools", and the setup section explains how to run the commands from a source checkout. Layouts from 320px wide to desktop were inspected; full screen-reader and physical-device testing was not performed (see [validation](docs/validation.md)).
 
 ### Fixed
@@ -63,5 +68,6 @@ First experimental release. It is a transparent rules controller, not a trained 
 - Tests that use fake provider processes and temporary directories, a JavaScript syntax check (`npm run check`), and `npm run smoke:package`, which packs the project, installs it offline into a temporary prefix, and exercises the CLI, MCP tools, dashboard assets and authenticated API.
 - A GitHub Actions workflow that runs these checks on Linux, macOS and Windows with Node.js 22 and 24.
 
-[Unreleased]: https://github.com/AntyLab/effort-project/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/AntyLab/effort-project/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/AntyLab/effort-project/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AntyLab/effort-project/releases/tag/v0.1.0

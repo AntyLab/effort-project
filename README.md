@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/effort-banner.png" alt="effort. Spend reasoning where it helps: a local CLI that picks the reasoning effort for each coding-agent prompt, checks the result, and shows its work. Works with Claude Code, Codex, OpenCode and MCP." width="880">
+  <img src=".github/assets/effort-banner.png" alt="effort. Spend reasoning where it helps: a local CLI that picks the reasoning effort for each coding-agent prompt, checks the result, and shows its work. Works with Claude Code, Codex, OpenCode and MCP." width="880">
 </p>
 
 # The Effort Project
@@ -10,7 +10,7 @@
 
 **Spend reasoning where it helps.** Effort picks a reasoning effort (low, medium or high) for each prompt you give a coding agent, checks the result with your own tests, and tells you why it chose that level. It runs entirely on your machine, has no runtime dependencies, and works with Claude Code, Codex, OpenCode and any app that supports local MCP servers.
 
-> **Status: experimental (0.1).** Effort's decisions come from transparent rules, not a trained model, and it has not yet shown lower cost at equal quality. See [Limits](#limits).
+> **Status: experimental (0.2).** Effort's decisions come from transparent rules, not a trained model, and it has not yet shown lower cost at equal quality. See [Limits](#limits).
 
 ## Why
 
