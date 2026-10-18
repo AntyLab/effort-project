@@ -1,8 +1,10 @@
 import { readdir, lstat } from 'node:fs/promises';
 import { resolve, extname, relative, basename, sep } from 'node:path';
-import { performance } from 'node:perf_hooks';
 
 const skip = new Set(['.git', 'node_modules', '.venv', 'venv', 'vendor', 'build', 'dist', '.next', 'target', '.effort']);
+// The scan is bounded by work, not elapsed time: a time budget ran out early on a busy
+// machine, missed files the prompt names and lowered the recommendation.
+const MAX_FILES = 500, MAX_DIRECTORIES = 500;
 
 const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // A mention starts at the beginning of the prompt or after a character that cannot be part
@@ -32,12 +34,12 @@ function countMentioned(prompt, paths, root) {
 export async function repositoryFacts(cwd, prompt = '') {
   const root = resolve(cwd);
   if (!(await lstat(root)).isDirectory()) throw new Error('Workspace must be a directory.');
-  const start = performance.now();
-  const languages = new Set(), paths = []; let files = 0, hasTests = false, truncated = false;
+  const languages = new Set(), paths = []; let files = 0, directories = 0, hasTests = false, truncated = false;
   async function walk(dir, depth) {
-    if (files >= 500 || performance.now() - start > 50) { truncated = true; return; }
+    if (files >= MAX_FILES || directories >= MAX_DIRECTORIES) { truncated = true; return; }
+    directories++;
     for (const e of await readdir(dir, { withFileTypes: true })) {
-      if (files >= 500 || performance.now() - start > 50) { truncated = true; break; }
+      if (files >= MAX_FILES) { truncated = true; break; }
       if (e.name.startsWith('.') || skip.has(e.name) || e.isSymbolicLink()) continue;
       const path = resolve(dir, e.name);
       if (e.isDirectory() && depth < 2) { await walk(path, depth + 1); continue; }
