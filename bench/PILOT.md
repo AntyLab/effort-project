@@ -157,7 +157,7 @@ These are the owners' decisions:
 
 1. Publish the pilot summary as a calibration result, labeled as such.
 2. Stage 2: 3 repeats with the opt-in `medium-escalate` and `medium-retry` arms, 231 runs at about 4–5 times the pilot's measured cost. It shows how much outcomes vary within tasks.
-3. For the claim itself, a held-out corpus of 60–100 tasks written without looking at the rules (see "Keep the corpus held out" in [README.md](README.md)). A private one has been started outside this repository: round 1 has 20 tasks, 10 Node.js and 10 Python, covering all seven categories. Each hidden check rejects one to three plausible wrong fixes. The prompts were frozen in commit `9fbff27b9381c603e319a173a49da318004317de` of that corpus, before any run applied the rules to them. The corpus stays private until the claim's results are published with it.
+3. For the claim itself, a held-out corpus of 60–100 tasks written without looking at the rules (see "Keep the corpus held out" in [README.md](README.md)). A private one is being built outside this repository. Its first two rounds have 40 tasks, 20 Node.js and 20 Python, covering all seven categories, and each hidden check rejects one to three plausible wrong fixes. Each round's prompts were frozen in a commit of that corpus before any run applied the rules to them: round 1 in `9fbff27b9381c603e319a173a49da318004317de`, round 2 in `8e8713b3bcb97b96c6b547bebb69e14655940b1b`. The corpus stays private until the claim's results are published with it.
 
 ## Known gaps
 
