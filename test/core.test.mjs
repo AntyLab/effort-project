@@ -193,6 +193,24 @@ test('a mentioned path must start at a path boundary',async()=>{
   assert.equal((await repositoryFacts(dir,`Compare ${join(dir,'packages','a','index.ts')} with "index.ts"`)).mentionedFiles,2);
   assert.equal((await repositoryFacts(dir,'Rename index.tsx to app.tsx')).mentionedFiles,0);
 });
+test('a slow scan finds the same files: the scan is bounded by work, not elapsed time',async t=>{
+  const dir=await mkdtemp(join(tmpdir(),'effort-slow-'));
+  for(const name of ['a','b','c','d','e']){await mkdir(join(dir,'packages',name),{recursive:true});await writeFile(join(dir,'packages',name,'index.ts'),'x');}
+  const prompt='Export the new helper from packages/a/index.ts, packages/b/index.ts, packages/c/index.ts, packages/d/index.ts and packages/e/index.ts';
+  // A machine busier than any real one: each clock reading is a second after the last, so a time budget is always spent.
+  let now=0;t.mock.method(performance,'now',()=>now+=1000);t.mock.method(Date,'now',()=>now+=1000);
+  const facts=await repositoryFacts(dir,prompt);
+  assert.deepEqual(facts,{languages:['typescript'],scannedFiles:5,mentionedFiles:5,hasTests:false,truncated:false});
+  assert.equal(recommend({prompt,facts}).effort,'high');
+});
+test('the scan stops after listing 500 directories',async()=>{
+  const dir=await mkdtemp(join(tmpdir(),'effort-folders-'));
+  // The workspace and 499 empty folders are 500 directories: all are listed.
+  await Promise.all(Array.from({length:499},(_,i)=>mkdir(join(dir,`f${i}`))));
+  assert.equal((await repositoryFacts(dir,'Fix it')).truncated,false);
+  await mkdir(join(dir,'f499'));
+  assert.equal((await repositoryFacts(dir,'Fix it')).truncated,true);
+});
 test('store rejects traversal, symlink records and malformed files',async()=>{
   const dir=await mkdtemp(join(tmpdir(),'effort-store-'));const store=await new Store(dir).initialize();
   await assert.rejects(store.get('../../private'));

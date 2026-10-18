@@ -52,6 +52,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Benchmark harness: a run ended by a provider-side failure (not signed in, a usage or rate limit, an unavailable or changed model, an incompatible CLI) is no longer scored as a failed task. It is excluded, the benchmark stops, and `--resume` redoes it.
 - Benchmark harness: a run stopped because the model asked for a tool the session does not offer counts against its arm, instead of stopping the benchmark as a provider failure. `meta.json` records the commit of each invocation, and the summary names any later commit a resumed benchmark ran on.
 - Benchmark harness: a retried Claude run's cost is the conversation total its last attempt reported (Claude Code 2.1.277 or later), so cost comparisons no longer leave out exactly the runs that retried.
+- The workspace scan behind `effort recommend`, `effort run` and automatic routing stopped after 50 ms. On a busy machine it could stop before reaching the files a request names, so a request naming five files could be recommended medium instead of high. The scan now stops after a fixed amount of work, 500 files or 500 directories, and gives the same result however busy the machine is. A very large workspace can take longer than 50 ms to scan: listing 500 directories took 0.05–0.4 seconds on a Windows 11 laptop, depending on other load.
 
 ## [0.1.0] - 2026-09-26
 

@@ -2,7 +2,7 @@
 
 The first release has five small components: a deterministic policy, provider adapters, a verification-driven runner, a local metadata store, and two interfaces (CLI/dashboard and advisory MCP). No model is trained. There is no background watcher or global effort override.
 
-1. Collect bounded metadata from the selected workspace without reading file contents or following symlinks. Prompt features stay local until a managed run sends the prompt to the chosen provider.
+1. Collect bounded metadata from the selected workspace without reading file contents or following symlinks. The scan covers the workspace and two folder levels below it, and stops after 500 files or 500 directories. It is bounded by work, not time, so a busy machine gets the same metadata as an idle one. Prompt features stay local until a managed run sends the prompt to the chosen provider.
 2. Recommend low/medium/high using visible rules. Unknown tasks start at medium. A request naming five or more distinct workspace files (by relative path, or by bare name counted once) is a broad edit and is raised one level, never past high. The checkout's language count is informational only. Respect explicit bounds and provider capabilities.
 3. Start a provider turn with a real effort parameter. Capture completion and supported usage fields.
 4. Run the user's explicit verification command, if any. Without one, label completion unverified.
