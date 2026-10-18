@@ -45,6 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `effort run --dry-run` now makes the same option checks as a run, including whether the verification command can start.
 - The CLI, MCP server and dashboard report the version from `package.json` instead of a hard-coded one.
 - Resumed Claude turns report their own token counts when the turn's stream confirms them (`tokenScope: "turn"`); otherwise the counts stay `null`, as before.
+- A Claude turn whose stream marks an assistant message with an error, such as `rate_limit` for a request the account's quota refused, keeps that cause when the final result's wording is not one the adapter recognizes. Previously it became a generic CLI failure.
 
 ## [0.1.0] - 2026-09-26
 

@@ -459,7 +459,9 @@ export async function run(inputOptions) {
       }
       if (event.is_error || event.subtype !== 'success') {
         const errorText = [event.result, ...(Array.isArray(event.errors) ? event.errors.filter((x) => typeof x === 'string') : [])].join('\n');
-        streamFailure = failureFromText(errorText) ?? (event.subtype === 'error_max_turns' ? 'max_turns' : event.subtype === 'error_max_budget_usd' ? 'budget_limit' : 'cli_error');
+        // Result wording the adapter does not recognize keeps a cause an assistant event's
+        // error field already gave, such as 'rate_limit' (a 429 against the account's quota).
+        streamFailure = failureFromText(errorText) ?? (event.subtype === 'error_max_turns' ? 'max_turns' : event.subtype === 'error_max_budget_usd' ? 'budget_limit' : streamFailure ?? 'cli_error');
       }
     }
   };
