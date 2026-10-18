@@ -231,7 +231,12 @@ export function renderSummary(meta, records) {
   const result = aggregate(records, meta);
   const fake = meta.mode !== 'live';
   const harness = meta.harness ?? {};
-  const revision = harness.effort?.commit ? `\`${harness.effort.commit.slice(0, 12)}\`${harness.effort.dirty ? ' (uncommitted changes)' : ''}` : 'unknown';
+  const commitText = (effort) => `\`${effort.commit.slice(0, 12)}\`${effort.dirty ? ' (uncommitted changes)' : ''}`;
+  // A resumed benchmark can run later invocations on other commits; name them.
+  const resumedOn = [...new Set((meta.invocations ?? []).slice(1).map((invocation) => invocation.effort)
+    .filter((effort) => effort?.commit && (effort.commit !== harness.effort?.commit || effort.dirty !== harness.effort?.dirty))
+    .map(commitText))];
+  const revision = (harness.effort?.commit ? commitText(harness.effort) : 'unknown') + (resumedOn.length ? `, resumed on ${resumedOn.join(', ')}` : '');
   const lines = ['# Effort benchmark summary', ''];
   if (fake) {
     lines.push('> [!WARNING]', '> **Offline fake-provider run.** Outcomes, tokens and costs come from the scripted stand-ins in `bench/fake/`, not from a model. They exercise the harness end to end and say nothing about Codex, Claude or whether Effort saves anything.', '');

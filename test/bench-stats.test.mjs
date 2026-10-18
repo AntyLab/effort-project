@@ -398,7 +398,7 @@ test('a retried Claude run costs its last conversation total, never a sum of tot
 test('provider failures are set aside like harness errors and listed with their cause', () => {
   // Sign-in, limits, model and CLI problems are provider failures; what an arm does with its turn is not.
   for (const code of ['authentication_required', 'rate_limited', 'account_blocked', 'model_mismatch', 'missing_cli']) assert.ok(PROVIDER_FAILURES.claude.includes(code), code);
-  for (const code of ['max_turns', 'timeout', 'permission_denied', 'output_limit', 'cli_error', 'aborted']) assert.ok(!PROVIDER_FAILURES.claude.includes(code), code);
+  for (const code of ['max_turns', 'timeout', 'permission_denied', 'tool_not_allowed', 'output_limit', 'cli_error', 'aborted']) assert.ok(!PROVIDER_FAILURES.claude.includes(code), code);
   for (const code of ['cli_not_found', 'provider_error', 'model_rerouted']) assert.ok(PROVIDER_FAILURES.codex.includes(code), code);
   assert.ok(!PROVIDER_FAILURES.codex.includes('interaction_required'));
 
@@ -416,6 +416,11 @@ test('provider failures are set aside like harness errors and listed with their 
   const { markdown } = renderSummary(meta, records);
   assert.match(markdown, /\| Scored \| 3 run\(s\); 1 excluded \(harness errors, provider failures or interruptions, listed below\) \|/);
   assert.match(markdown, /\| claude\/t2\/auto-rules\/1 \| provider failure: rate_limited \(redone on --resume\) \|/);
+  // A resumed benchmark names the later commits it ran on.
+  const commit = (letter) => ({ commit: letter.repeat(40), dirty: false });
+  const resumedMeta = { ...meta, harness: { effort: commit('a') }, invocations: [{ effort: commit('a') }, { effort: commit('b') }, { effort: commit('b') }] };
+  assert.match(renderSummary(resumedMeta, records).markdown, /\| Harness \| Effort `aaaaaaaaaaaa`, resumed on `bbbbbbbbbbbb`, policy/);
+  assert.match(renderSummary({ ...resumedMeta, invocations: [{ effort: commit('a') }, {}] }, records).markdown, /\| Harness \| Effort `aaaaaaaaaaaa`, policy/);
   // Once --resume redoes the run, its latest record is scored and nothing is excluded.
   const redone = analyzableRecords([...records, record('t2', 'auto-rules', true)]);
   assert.deepEqual([redone.included.length, redone.excluded.length], [4, 0]);

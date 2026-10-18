@@ -209,8 +209,10 @@ export async function runBenchmark({
   // The fake Claude CLI reports conversation totals on resume the way current Claude Code does.
   const conversationTotals = { codex: false, claude: providers.includes('claude') && (!live || reportsConversationTotals(providerVersions.claude)) };
   const now = new Date().toISOString();
+  // Each invocation records the code it ran, since a resumed benchmark may run on a later commit.
+  const revision = effortRevision();
   if (meta) {
-    meta.invocations = [...(meta.invocations ?? []), { startedAt: now, runs: remaining.length, providerVersions }];
+    meta.invocations = [...(meta.invocations ?? []), { startedAt: now, runs: remaining.length, providerVersions, effort: revision }];
   } else {
     meta = {
       schema: META_SCHEMA, benchId: randomUUID(), benchVersion: BENCH_VERSION, createdAt: now, plan,
@@ -221,7 +223,7 @@ export async function runBenchmark({
       corpus: { manifest: corpus?.path ?? null, description: corpus?.description ?? '' },
       models: plan.models, providerVersions,
       harness: {
-        node: process.version, platform: `${process.platform} ${process.arch}`, effort: effortRevision(), policyVersion: POLICY_VERSION,
+        node: process.version, platform: `${process.platform} ${process.arch}`, effort: revision, policyVersion: POLICY_VERSION,
         python: python?.version ?? null,
         notes: [
           'Claude turns use the adapter default of 12 agentic turns; the harness does not set maxTurns.',
@@ -229,7 +231,7 @@ export async function runBenchmark({
         ],
       },
       fake: live ? null : { version: FAKE_VERSION, solveProbability: SOLVE_PROBABILITY, retryBonus: RETRY_BONUS, tokensPerTurn: TOKENS_PER_TURN },
-      invocations: [{ startedAt: now, runs: remaining.length, providerVersions }],
+      invocations: [{ startedAt: now, runs: remaining.length, providerVersions, effort: revision }],
     };
   }
   await mkdir(outDir, { recursive: true });
