@@ -188,7 +188,7 @@ Each simulated turn either copies the reference solution into the workspace or c
 
 Real runs use your installed, signed-in Codex and Claude Code CLIs and count against your account: billed per token with an API key, or against your plan's usage limits on a subscription.
 
-1. Install and sign in to each CLI, and confirm it with `node bin/effort.mjs doctor`. The harness starts the same CLI that `doctor` finds: `EFFORT_CODEX_BIN` or `EFFORT_CLAUDE_BIN` first, then on Windows a native `.exe` or an npm shim on `PATH`. `--codex-bin` and `--claude-bin` override that with a native executable or JavaScript entry point. They take no npm `.cmd` shim, because one cannot be started without a shell; name a shim with the environment variable instead.
+1. Install and sign in to each CLI, and confirm it with `node bin/effort.mjs doctor`. The harness starts the same CLI that `doctor` finds: `EFFORT_CODEX_BIN` or `EFFORT_CLAUDE_BIN` first, then on Windows a native `.exe` or an npm shim on `PATH`. `--codex-bin` and `--claude-bin` override that with a native executable or JavaScript entry point. They take no npm `.cmd` shim, because one cannot be started without a shell; name a shim with the environment variable instead. [PILOT.md](PILOT.md) has the plan for the first live run, with its cost estimate.
 2. Pin the models with `--codex-model` and `--claude-model`. Otherwise the provider default is used and may change mid-benchmark. The summary flags a provider whose runs reported more than one model.
 3. Check the plan:
 
@@ -206,7 +206,7 @@ Real runs use your installed, signed-in Codex and Claude Code CLIs and count aga
 
 ### What it may cost
 
-No real run has been made with this harness, so there is no measured cost per turn for these fixtures yet. The pilot gives you one. The plan bounds the size:
+No real run has been made with this harness, so there is no measured cost per turn for these fixtures yet. The pilot gives you one, and [PILOT.md](PILOT.md) estimates it for Claude from the fixture sizes and current list prices. The plan bounds the size:
 
 | Plan | Runs | Most provider turns | Worst-case time at 600 s per run |
 | --- | --- | --- | --- |
