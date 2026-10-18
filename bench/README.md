@@ -7,7 +7,7 @@ This harness measures whether Effort's routing reaches the same pass rate as fix
 - the cost of failures and retries counted
 - a non-inferiority margin fixed before the run, and uncertainty reported
 
-Nothing here has been run against a real model yet. The repository makes no savings claim, and an offline run cannot support one.
+The first live pilot, Claude Sonnet 5.5 on the eleven seed tasks, is described in [PILOT.md](PILOT.md). Every arm passed every task, so it could not show an equal pass rate. The repository makes no savings claim, and an offline run cannot support one.
 
 Requirements: Node.js 22 or later; Python 3.8 or later for the Python tasks. There are no npm dependencies.
 
@@ -206,7 +206,7 @@ Real runs use your installed, signed-in Codex and Claude Code CLIs and count aga
 
 ### What it may cost
 
-No real run has been made with this harness, so there is no measured cost per turn for these fixtures yet. The pilot gives you one, and [PILOT.md](PILOT.md) estimates it for Claude from the fixture sizes and current list prices. The plan bounds the size:
+The first pilot measured a median of $0.015–0.028 per Claude Sonnet 5.5 turn on these fixtures, by Claude Code's list-price estimate. [PILOT.md](PILOT.md) has the details. Other models, CLIs and harder tasks cost more, so run a pilot of your own. The plan bounds the size:
 
 | Plan | Runs | Most provider turns | Worst-case time at 600 s per run |
 | --- | --- | --- | --- |

@@ -1,6 +1,6 @@
 # Pilot plan: the first live benchmark
 
-Proposed on 2026-10-18. **Nothing here has been run against a real model.** The live stages need the owners' approval of the budget below first.
+Proposed on 2026-10-18 and run the same day, after the owners approved the $25 cap. The plan below is kept as it was fixed before the run. The outcome is under [Results](#results).
 
 The pilot does two things: it checks the live pipeline on Windows with Claude Code, and it measures what each arm costs, so the full benchmark can be sized. It cannot show that Effort keeps quality equal. With eleven tasks the pass-rate interval stays far too wide for that (see [What eleven tasks can show](#what-eleven-tasks-can-show)).
 
@@ -165,3 +165,45 @@ These are the owners' decisions:
 - **Turn limit.** Claude gets the adapter's default of 12 agentic turns per attempt in every arm; the harness does not set `maxTurns`. A turn that hits the limit ends blocked and still gets the hidden check.
 - **Token counts of retried runs.** A retried run's tokens are known only when the resumed turn's stream confirms them, which stage 0 can show. Its cost is known on Claude Code 2.1.277 and later.
 - **Agent-written code.** The checks run it as your user account. The fixtures are this repository's own tasks.
+
+## Results
+
+Run on 2026-10-18 on Claude Sonnet 5.5 through Claude Code 2.1.299, signed in with a Claude Max account, so the runs used plan usage and nothing was billed. All 55 runs were scored, with usage known for every one, and only `claude-sonnet-5-5` was observed. By Claude Code's list-price estimate the pilot cost $1.13 and the smoke test $0.03, well under the $25 cap. The 55 runs took about 14 minutes.
+
+| Arm | Passed | Median tokens | vs `fixed-high` | Total cost | vs `fixed-high` |
+| --- | --- | --- | --- | --- | --- |
+| `fixed-low` | 11/11 | 735 | 0.75× | $0.195 | 0.69× |
+| `fixed-medium` | 11/11 | 846 | 0.87× | $0.209 | 0.74× |
+| `fixed-high` | 11/11 | 978 | 1.00× | $0.282 | 1.00× |
+| `auto-rules` | 11/11 | 821 | 0.84× | $0.213 | 0.76× |
+| `auto-escalate` | 11/11 | 906 | 0.93× | $0.234 | 0.83× |
+
+Read as fixed before the run:
+
+- **The primary comparison is inconclusive.** `auto-rules` against `fixed-high` gives a pass-rate difference of +0.0 pp, with a 95% interval from −25.9 to +25.9 pp. "Effort saves tokens at an equal pass rate" therefore does not hold. What the pilot shows is that `auto-rules` used fewer tokens and less cost; an equal pass rate is not shown.
+- **The seed corpus does not separate effort levels for this model.** Every arm, `fixed-low` included, passed all eleven tasks. On these tasks a fixed low or medium level was as cheap as the rules or cheaper. The rules chose high for `node-money-refactor` and `py-async-cache`, which low also solved.
+- **`auto-escalate` never retried**, because every first attempt passed the visible check. It measured the same as `auto-rules`, plus noise.
+- **The run was clean.** One model was observed, and no excluded run was left. No run hit the turn or time limit. One run changed visible tests (`fixed-high` on `node-csv-quotes`); on review it only added test cases. One run had a permission denial (`fixed-high` on `py-async-cache`): the model tried to write a scratch test file outside its workspace, `--restricted` refused it, and the run still passed.
+
+Median per turn, Claude Code's estimate with 1-hour cache writes:
+
+| Effort | Cost | Output tokens | Cached prompt tokens |
+| --- | --- | --- | --- |
+| low | $0.015 | 668 | about 15k |
+| medium | $0.018 | 840 | about 15k |
+| high | $0.028 | 1,659 | about 20k |
+
+That is 3–5 times below the central estimate, mostly because output was much smaller than assumed.
+
+Getting there took two adapter fixes and one harness fix, each with a regression test:
+
+- **Startup refusal.** Claude Code 2.1.299 reports two built-in plugins at startup, so the adapter refused every turn with `isolation_mismatch` before any model call. The allowlist now names exactly those two.
+- **Bash request.** In the 42nd run, the model asked for `Bash` after finishing its edit, and the CLI refused. The adapter stopped the turn and called it `isolation_mismatch`, which the harness treated as a provider failure, so it stopped the benchmark. That request is now `tool_not_allowed` and counts against the arm. The run was redone on `--resume` (its first attempt had also passed the hidden check), and the summary names the commit the resumed runs used.
+
+What would make the evidence stronger, for the owners to decide:
+
+- **Harder tasks, not more repeats.** When every arm agrees, each task counts once, so repeats of these tasks cannot narrow the interval. The claim needs harder held-out tasks.
+- **Possibly a model where effort matters more.** Sonnet 5.5 solved every seed task even at low effort.
+- **A rough cost for the next step.** At about $0.02 per run, a held-out run of 100 tasks with five arms (500 runs) would cost roughly $10 at list price for tasks of this size. Harder tasks would cost more.
+
+The raw results (`runs.jsonl`, `meta.json`, `summary.md`, chart) are not committed. Publishing them with `git add -f` is the owners' call.
