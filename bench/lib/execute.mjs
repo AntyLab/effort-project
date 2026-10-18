@@ -7,9 +7,10 @@ import { performance } from 'node:perf_hooks';
 import { runTask } from '../../src/runner.mjs';
 import { getAdapter } from '../../src/registry.mjs';
 import { POLICY_VERSION } from '../../src/policy.mjs';
+import { CLI_OVERRIDES, providerCommand } from '../../src/provider-cli.mjs';
 import { verify } from '../../src/verify.mjs';
 import { BENCH_DIR, checkEnvironment, diffSnapshots, materialize, resolveCommand, runAcceptance, snapshot, taskDigest } from './corpus.mjs';
-import { ARMS, buildSchedule, checkSpendGuard, maxProviderTurns, providerLaunch } from './plan.mjs';
+import { ARMS, PROVIDER_FAILURES, buildSchedule, checkSpendGuard, maxProviderTurns, providerLaunch, reportsConversationTotals } from './plan.mjs';
 import { normalizeUsage, totalUsage } from './stats.mjs';
 import { writeReport } from './report.mjs';
 import { FAKE_VERSION, fakeRunConfig, RETRY_BONUS, SOLVE_PROBABILITY, TOKENS_PER_TURN } from '../fake/model.mjs';
@@ -55,11 +56,17 @@ export async function executeRun(entry, context) {
     const launch = providerLaunch(entry.provider, { live: context.live, bin: context.bins[entry.provider], fakeConfig });
     const observedModels = new Set();
     const diagnostics = [];
+    // Failure codes the provider reported during the latest attempt.
+    let attemptCodes = [];
     const onEvent = (event) => {
       if (event?.type === 'session' && typeof event.model === 'string') observedModels.add(event.model.slice(0, 200));
       // Codes only: messages can contain provider or task text.
       if (['diagnostic', 'error'].includes(event?.type) && diagnostics.length < 20) diagnostics.push(`${event.provider ?? 'runner'}:${typeof event.code === 'string' ? event.code.slice(0, 80) : event.type}`);
-      if (event?.type === 'attempt') context.log?.(`    attempt ${event.number} at ${event.effort}`, { verbose: true });
+      if (['diagnostic', 'error'].includes(event?.type) && event.provider === entry.provider && typeof event.code === 'string') attemptCodes.push(event.code);
+      if (event?.type === 'attempt') {
+        attemptCodes = [];
+        context.log?.(`    attempt ${event.number} at ${event.effort}`, { verbose: true });
+      }
     };
     const controller = new AbortController();
     const cancel = () => controller.abort();
@@ -91,6 +98,9 @@ export async function executeRun(entry, context) {
       durationMs: attempt.durationMs, usage: normalizeUsage(attempt.usage),
     }));
     const lastCheck = attempts.at(-1)?.visibleCheck;
+    // A provider-side failure that ended the run says nothing about the arm (see PROVIDER_FAILURES).
+    const providerError = attempts.length && attempts.at(-1).status !== 'completed'
+      ? attemptCodes.find((code) => PROVIDER_FAILURES[entry.provider]?.includes(code)) ?? null : null;
     return {
       ...base,
       model: { requested: context.models[entry.provider] ?? null, observed: [...observedModels] },
@@ -104,12 +114,13 @@ export async function executeRun(entry, context) {
       visibleCheckPassed: lastCheck === 'passed' ? true : lastCheck && lastCheck !== 'not-run' ? false : null,
       accepted: acceptance?.status === 'passed',
       acceptance: acceptance && { status: acceptance.status, kind: acceptance.kind, exitCode: acceptance.exitCode, fingerprint: acceptance.fingerprint, durationMs: acceptance.durationMs },
-      usage: totalUsage(attempts.map((attempt) => attempt.usage)),
+      usage: totalUsage(attempts.map((attempt) => attempt.usage), { conversationTotals: Boolean(context.conversationTotals?.[entry.provider]) }),
       wallMs,
       changedFiles,
       visibleTestsChanged: [...changedFiles.modified, ...changedFiles.deleted].some(isVisibleTest),
       diagnostics,
       interrupted,
+      providerError,
       harnessError: null,
       ...(context.keepWorkspaces ? { workspace } : {}),
       startedAt,
@@ -142,16 +153,20 @@ function effortRevision() {
   return { commit: head.stdout.trim(), dirty: status.status === 0 ? status.stdout.trim().length > 0 : null };
 }
 
-/** `--version` of each live CLI. This starts no model turn; a missing CLI stops the benchmark before any run. */
-function probeProviders(providers, bins) {
+/**
+ * `--version` of each live CLI. This starts no model turn; a missing CLI stops the benchmark before any run.
+ * It probes the command the adapter will start: --<provider>-bin as given, otherwise the same
+ * resolution as `effort doctor` (EFFORT_<PROVIDER>_BIN, then on Windows a native .exe or npm shim on PATH).
+ */
+function probeProviders(providers, bins, env) {
   const versions = {};
   for (const provider of providers) {
-    const launch = providerLaunch(provider, { live: true, bin: bins[provider] });
-    const executable = launch.executable ?? provider;
-    const probe = spawnSync(executable, [...(launch.executableArgs ?? []), '--version'], { encoding: 'utf8', timeout: 20_000, windowsHide: true, shell: false });
-    if (probe.error || probe.status !== 0) {
-      throw new Error(`The ${provider} CLI (${executable}) did not answer --version. Install it and sign in, or pass --${provider}-bin with its executable or JavaScript entry point.`);
-    }
+    const hint = `Install it and sign in, or pass --${provider}-bin or set ${CLI_OVERRIDES[provider]} with its executable or JavaScript entry point.`;
+    let command;
+    try { command = providerCommand(provider, { ...providerLaunch(provider, { live: true, bin: bins[provider] }), env }); }
+    catch (error) { throw new Error(`The ${provider} CLI cannot be started: ${error.message} ${hint}`); }
+    const probe = spawnSync(command.executable, [...command.executableArgs, '--version'], { encoding: 'utf8', timeout: 20_000, windowsHide: true, shell: false });
+    if (probe.error || probe.status !== 0) throw new Error(`The ${provider} CLI (${[command.executable, ...command.executableArgs].join(' ')}) did not answer --version. ${hint}`);
     versions[provider] = String(probe.stdout).trim().split('\n')[0].slice(0, 120);
   }
   return versions;
@@ -181,7 +196,7 @@ export async function runBenchmark({
     try { meta = JSON.parse(await readFile(metaPath, 'utf8')); } catch { throw new Error(`Cannot resume: ${metaPath} is missing or unreadable.`); }
     const changed = Object.keys(plan).filter((key) => JSON.stringify(plan[key]) !== JSON.stringify(meta.plan?.[key]));
     if (changed.length) throw new Error(`Cannot resume ${outDir}: ${changed.join(', ')} differ from the original run. Rerun with the original options.`);
-    for (const record of await readRecords(runsPath)) if (record.key && !record.harnessError && !record.interrupted) completed.add(record.key);
+    for (const record of await readRecords(runsPath)) if (record.key && !record.harnessError && !record.interrupted && !record.providerError) completed.add(record.key);
   } else if (await exists(runsPath)) {
     throw new Error(`${outDir} already contains runs.jsonl. Pass --resume to continue it, or choose another --out.`);
   }
@@ -190,7 +205,9 @@ export async function runBenchmark({
   if (!python && tasks.some((task) => task.language === 'python')) {
     throw new Error('The selected tasks include Python tasks, but Python 3.8 or later was not found. Pass --python, set EFFORT_BENCH_PYTHON, or use --language node.');
   }
-  const providerVersions = live ? probeProviders(providers, bins) : Object.fromEntries(providers.map((provider) => [provider, FAKE_VERSION]));
+  const providerVersions = live ? probeProviders(providers, bins, process.env) : Object.fromEntries(providers.map((provider) => [provider, FAKE_VERSION]));
+  // The fake Claude CLI reports conversation totals on resume the way current Claude Code does.
+  const conversationTotals = { codex: false, claude: providers.includes('claude') && (!live || reportsConversationTotals(providerVersions.claude)) };
   const now = new Date().toISOString();
   if (meta) {
     meta.invocations = [...(meta.invocations ?? []), { startedAt: now, runs: remaining.length, providerVersions }];
@@ -206,7 +223,10 @@ export async function runBenchmark({
       harness: {
         node: process.version, platform: `${process.platform} ${process.arch}`, effort: effortRevision(), policyVersion: POLICY_VERSION,
         python: python?.version ?? null,
-        notes: ['Claude turns use the adapter default of 12 agentic turns; the harness does not set maxTurns.'],
+        notes: [
+          'Claude turns use the adapter default of 12 agentic turns; the harness does not set maxTurns.',
+          ...(conversationTotals.claude ? ['The cost of a retried Claude run is the conversation total its last attempt reported.'] : []),
+        ],
       },
       fake: live ? null : { version: FAKE_VERSION, solveProbability: SOLVE_PROBABILITY, retryBonus: RETRY_BONUS, tokensPerTurn: TOKENS_PER_TURN },
       invocations: [{ startedAt: now, runs: remaining.length, providerVersions }],
@@ -216,13 +236,14 @@ export async function runBenchmark({
   await writeFile(metaPath, `${JSON.stringify(meta, null, 2)}\n`);
 
   const context = {
-    benchId: meta.benchId, live, seed, timeoutMs, models: plan.models, bins, python, workRoot, keepWorkspaces, signal, log,
+    benchId: meta.benchId, live, seed, timeoutMs, models: plan.models, bins, python, workRoot, keepWorkspaces, signal, log, conversationTotals,
     tasks: new Map(tasks.map((task) => [task.id, task])),
     // Offline runs never need credentials, so none are passed to the fake CLIs.
     env: live ? process.env : checkEnvironment(process.env),
   };
   const width = String(remaining.length).length;
   let executed = 0;
+  let providerFailure = null;
   for (const [index, entry] of remaining.entries()) {
     if (signal?.aborted) break;
     if (live) log(`[${String(index + 1).padStart(width)}/${remaining.length}] ${entry.provider} ${entry.task} ${entry.arm} #${entry.repeat}: running…`);
@@ -230,14 +251,22 @@ export async function runBenchmark({
     await appendFile(runsPath, `${JSON.stringify(record)}\n`);
     executed += 1;
     log(`[${String(index + 1).padStart(width)}/${remaining.length}] ${describeRun(record)}`);
+    if (record.providerError) {
+      providerFailure = { provider: record.provider, code: record.providerError, key: record.key };
+      break;
+    }
   }
   const records = await readRecords(runsPath);
   const report = await writeReport({ outDir, meta, records });
-  return { outDir, runsPath, metaPath, summaryPath: report.summaryPath, meta, executed, skipped: schedule.length - remaining.length, interrupted: Boolean(signal?.aborted) };
+  return {
+    outDir, runsPath, metaPath, summaryPath: report.summaryPath, meta, executed, skipped: schedule.length - remaining.length,
+    interrupted: Boolean(signal?.aborted), providerFailure,
+  };
 }
 
 export function describeRun(record) {
-  const verdict = record.harnessError ? `HARNESS ERROR (${record.harnessError})` : record.interrupted ? 'interrupted' : record.accepted ? 'PASS' : 'fail';
+  const verdict = record.harnessError ? `HARNESS ERROR (${record.harnessError})` : record.interrupted ? 'interrupted'
+    : record.providerError ? `PROVIDER FAILURE (${record.providerError}), not scored` : record.accepted ? 'PASS' : 'fail';
   const efforts = record.attempts?.map((attempt) => attempt.effort).join('→') || '-';
   const tokens = record.usage?.totalTokens;
   const usage = tokens === null || tokens === undefined ? 'usage unknown' : `${tokens.toLocaleString('en-US')} tokens`;

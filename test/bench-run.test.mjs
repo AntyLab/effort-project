@@ -1,7 +1,7 @@
 import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,6 +25,28 @@ function withoutPath(directory) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^path$/i.test(key) && key !== 'NODE_TEST_CONTEXT'));
   return { ...env, PATH: join(directory, 'empty-bin') };
 }
+
+// A stand-in for the Claude CLI in live mode. It never contacts a model: it answers --version and
+// --help like Claude Code, then each turn reports a usage limit while limit.flag exists beside it,
+// or completes without changing anything.
+const CLAUDE_FLAGS = '--print --output-format --verbose --effort --resume --restricted --safe-mode --permission-mode --permission-prompts --tools --allowedTools --disallowedTools --strict-mcp-config --mcp-config --settings --setting-sources --disable-slash-commands --no-chrome --max-turns --model';
+const STUB_CLAUDE = `import { existsSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+const args = process.argv.slice(2);
+if (args.includes('--version')) { process.stdout.write('2.1.299 (Claude Code)\\n'); process.exit(0); }
+if (args.includes('--help')) { process.stdout.write('${CLAUDE_FLAGS}\\n'); process.exit(0); }
+for await (const chunk of process.stdin) void chunk;
+const flag = (name) => args[args.indexOf(name) + 1];
+const session_id = randomUUID();
+const emit = (event) => process.stdout.write(JSON.stringify({ session_id, ...event }) + '\\n');
+emit({ type: 'system', subtype: 'init', model: 'stub-model', tools: flag('--tools').split(','), mcp_servers: [], plugins: [], permissionMode: flag('--permission-mode') });
+if (existsSync(new URL('limit.flag', import.meta.url))) {
+  emit({ type: 'assistant', error: 'rate_limit', message: { model: '<synthetic>', content: [{ type: 'text', text: 'You have hit your limit' }] } });
+  emit({ type: 'result', subtype: 'success', is_error: true, result: 'You have hit your limit' });
+  process.exit(1);
+}
+emit({ type: 'result', subtype: 'success', is_error: false, result: 'Left the workspace unchanged.', usage: { input_tokens: 12, output_tokens: 3, cache_read_input_tokens: 0 }, total_cost_usd: 0.0001 });
+`;
 
 function cli(args, { env }) {
   return new Promise((resolveRun, reject) => {
@@ -78,6 +100,10 @@ describe('offline benchmark runs', { concurrency: 1 }, () => {
     assert.equal(escalated.usage.totalTokens, null);
     assert.equal(escalated.usage.attemptsWithTokens, 1);
     assert.equal(escalated.accepted, true);
+    // Its cost is known: like Claude Code 2.1.277 and later, the fake reports the conversation's total on resume.
+    assert.equal(escalated.usage.costSource, 'conversation');
+    assert.equal(escalated.usage.costUsd, escalated.attempts.at(-1).usage.conversationCostUsd);
+    assert.ok(escalated.usage.costUsd > escalated.attempts[0].usage.costUsd);
 
     const summary = await readFile(result.summaryPath, 'utf8');
     for (const expected of [/Offline fake-provider run/, /Unknown usage is not counted as zero/, /## codex/, /## claude/, /Pass rate \(95% CI\)/, /Incomplete usage/, /At a glance, against `fixed-high`/, /\| node-map-limit \| node \| hard \| medium \|/]) assert.match(summary, expected);
@@ -157,5 +183,37 @@ describe('offline benchmark runs', { concurrency: 1 }, () => {
     assert.equal(missing.code, 1);
     assert.match(missing.stderr, /codex CLI .* did not answer --version/);
     await assert.rejects(stat(join(out, 'runs.jsonl')), { code: 'ENOENT' });
+  });
+
+  test('live runs use the CLI that EFFORT_CLAUDE_BIN names, stop at a provider failure, and redo it on --resume', async (t) => {
+    const directory = await scratch(t);
+    const stub = join(directory, 'claude-stub.mjs');
+    await writeFile(stub, STUB_CLAUDE);
+    await writeFile(join(directory, 'limit.flag'), '');
+    // Nothing is on PATH, so the stub is the only CLI that can start, and only through EFFORT_CLAUDE_BIN.
+    const env = { ...withoutPath(directory), EFFORT_CLAUDE_BIN: stub };
+    const out = join(directory, 'out');
+    const args = ['--live', '--max-runs', '2', '--providers', 'claude', '--tasks', 'node-paginate', '--arms', 'fixed-low,fixed-high', '--out', out, '--work-root', directory];
+    const limited = await cli(args, { env });
+    assert.equal(limited.code, 3, limited.stderr);
+    assert.match(limited.stderr, /Stopped: claude reported rate_limited in claude\/node-paginate\/fixed-(low|high)\/1\..*--resume/s);
+    const meta = JSON.parse(await readFile(join(out, 'meta.json'), 'utf8'));
+    assert.deepEqual(meta.providerVersions, { claude: '2.1.299 (Claude Code)' }, 'the probe asked the CLI the adapter starts');
+    assert.ok(meta.harness.notes.some((note) => /conversation total/.test(note)));
+    let records = await readRecords(join(out, 'runs.jsonl'));
+    assert.equal(records.length, 1, 'the benchmark stops instead of starting the next run');
+    assert.deepEqual([records[0].providerError, records[0].runStatus, records[0].diagnostics], ['rate_limited', 'blocked', ['claude:rate_limited']]);
+    assert.match(await readFile(join(out, 'summary.md'), 'utf8'), /\| Scored \| 0 run\(s\); 1 excluded .*provider failure: rate_limited \(redone on --resume\)/s);
+
+    // Once the limit resets, --resume redoes the excluded run and finishes the plan.
+    await rm(join(directory, 'limit.flag'));
+    const resumed = await cli([...args, '--resume'], { env });
+    assert.equal(resumed.code, 0, resumed.stderr);
+    records = await readRecords(join(out, 'runs.jsonl'));
+    assert.equal(records.length, 3);
+    assert.deepEqual(records.slice(1).map((record) => record.key).sort(), ['claude/node-paginate/fixed-high/1', 'claude/node-paginate/fixed-low/1']);
+    // The stub changes nothing, so both runs are scored as ordinary failures.
+    assert.ok(records.slice(1).every((record) => record.providerError === null && record.runStatus === 'failed' && record.accepted === false));
+    assert.match(await readFile(join(out, 'summary.md'), 'utf8'), /\| Scored \| 2 run\(s\) \|/);
   });
 });

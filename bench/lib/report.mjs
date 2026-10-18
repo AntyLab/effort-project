@@ -6,15 +6,18 @@ import { isRoutingArm, renderChart } from './chart.mjs';
 const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 const count = (values) => values.reduce((counts, value) => ({ ...counts, [value]: (counts[value] ?? 0) + 1 }), {});
 
-/** Latest record per run key; harness errors and interrupted runs are set aside, not scored. */
+/** Latest record per run key; harness errors, provider failures and interrupted runs are set aside, not scored. */
 export function analyzableRecords(records) {
   const latest = new Map();
   for (const record of records) if (record?.key) latest.set(record.key, record);
   const included = [];
   const excluded = [];
-  for (const record of latest.values()) (record.harnessError || record.interrupted ? excluded : included).push(record);
+  for (const record of latest.values()) (record.harnessError || record.interrupted || record.providerError ? excluded : included).push(record);
   return { included, excluded };
 }
+
+const exclusionReason = (record) => (record.harnessError ? `harness error: ${record.harnessError}`
+  : record.providerError ? `provider failure: ${record.providerError} (redone on --resume)` : 'interrupted');
 
 const taskKey = (record) => `${record.provider}/${record.task}`;
 
@@ -240,18 +243,18 @@ export function renderSummary(meta, records) {
     ['Tasks', `${meta.tasks.length} (${Object.entries(languages).map(([k, v]) => `${k} ${v}`).join(', ')}; ${Object.entries(difficulties).map(([k, v]) => `${k} ${v}`).join(', ')})`],
     ['Arms', meta.arms.map((arm) => `\`${arm.name}\``).join(', ')],
     ['Plan', `${meta.plannedRuns} runs (${meta.repeats} repeat${meta.repeats === 1 ? '' : 's'}), seed \`${meta.seed}\`, randomized order per provider, ${meta.timeoutMs / 1000} s per run`],
-    ['Scored', `${result.included} run(s)${result.excluded.length ? `; ${result.excluded.length} excluded (harness errors or interruptions, listed below)` : ''}${records.malformed ? `; ${records.malformed} malformed JSONL line(s) skipped` : ''}`],
+    ['Scored', `${result.included} run(s)${result.excluded.length ? `; ${result.excluded.length} excluded (harness errors, provider failures or interruptions, listed below)` : ''}${records.malformed ? `; ${records.malformed} malformed JSONL line(s) skipped` : ''}`],
     ['Providers', Object.entries(meta.providerVersions ?? {}).map(([provider, version]) => `${provider}: ${version}`).join('; ')],
     ['Harness', `Effort ${revision}, policy ${harness.policyVersion ?? '?'}, Node ${harness.node ?? '?'}, ${harness.platform ?? '?'}${harness.python ? `, Python ${harness.python}` : ''}`],
   ]), '');
   lines.push('**Pass** means the hidden acceptance check passed on a copy of the final workspace. The agent never sees that check. Neither a completed provider turn nor a passing visible check counts as a pass.', '');
   for (const summary of result.providers) lines.push(providerSection(summary, meta, `chart-${summary.provider}.svg`));
   if (result.excluded.length) {
-    lines.push('## Excluded runs', '', table(['Run', 'Reason'], result.excluded.map((record) => [record.key, record.harnessError ? `harness error: ${record.harnessError}` : 'interrupted']), ), '');
+    lines.push('## Excluded runs', '', table(['Run', 'Reason'], result.excluded.map((record) => [record.key, exclusionReason(record)])), '');
   }
   lines.push('## Reading these numbers', '');
   lines.push(
-    '- **Unknown usage is not counted as zero.** Token and cost medians and totals use only runs where every attempt reported usage. The "Usage known" column shows how many runs that is. Codex reports no cost, and Claude reports no per-turn tokens on resumed turns, so multi-attempt Claude runs have unknown token totals.',
+    '- **Unknown usage is not counted as zero.** Token and cost medians and totals use only runs where every attempt reported usage. The "Usage known" column shows how many runs that is. Codex reports no cost. Claude reports per-turn tokens on a resumed turn only when the turn\'s own stream confirms them, so some multi-attempt Claude runs have unknown token totals. A retried Claude run\'s cost is the conversation total its last attempt reported (Claude Code 2.1.277 or later), never a sum of such totals.',
     '- Token fields are what each CLI reports, and the two CLIs count input and cached tokens differently. Compare arms within a provider, not across providers.',
     '- Per-arm pass-rate intervals (Wilson) count the repeats of one task as fewer, effective runs, because repeats share the task\'s difficulty. The difference from the reference arm pairs runs by task and repeat, so tasks that both arms find easy or hard do not widen it, and it likewise counts the repeats of one task as fewer, effective pairs. Both still rest on the tasks in the corpus: a failure confined to kinds of task the corpus lacks, or too rare to appear among its tasks, cannot show in any interval, and more repeats cannot replace more tasks. Judge a difference by its paired interval, not by whether two per-arm intervals overlap. A small pilot cannot establish equal quality (see docs/architecture.md, "Evaluate before learning").',
     '- Single-attempt arms get no feedback. `auto-escalate` also gets up to two retries with the visible check\'s output, so its pass rate mixes retrying and escalating. Add the opt-in `medium-retry` arm to separate the two.',

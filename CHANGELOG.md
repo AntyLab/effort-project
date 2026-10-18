@@ -46,6 +46,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - The CLI, MCP server and dashboard report the version from `package.json` instead of a hard-coded one.
 - Resumed Claude turns report their own token counts when the turn's stream confirms them (`tokenScope: "turn"`); otherwise the counts stay `null`, as before.
 - A Claude turn whose stream marks an assistant message with an error, such as `rate_limit` for a request the account's quota refused, keeps that cause when the final result's wording is not one the adapter recognizes. Previously it became a generic CLI failure.
+- Benchmark harness: a live run now starts only after asking the CLI that the adapter will start for its version, found the same way as `effort doctor` (`EFFORT_CODEX_BIN` or `EFFORT_CLAUDE_BIN`, then `PATH`). Previously a CLI set only through those variables was refused before the first run.
+- Benchmark harness: a run ended by a provider-side failure (not signed in, a usage or rate limit, an unavailable or changed model, an incompatible CLI) is no longer scored as a failed task. It is excluded, the benchmark stops, and `--resume` redoes it.
+- Benchmark harness: a retried Claude run's cost is the conversation total its last attempt reported (Claude Code 2.1.277 or later), so cost comparisons no longer leave out exactly the runs that retried.
 
 ## [0.1.0] - 2026-09-26
 

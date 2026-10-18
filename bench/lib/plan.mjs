@@ -19,6 +19,31 @@ export const ARMS = Object.freeze({
 });
 export const DEFAULT_ARMS = Object.freeze(['fixed-low', 'fixed-medium', 'fixed-high', 'auto-rules', 'auto-escalate']);
 
+// Adapter failure codes that mean the provider never gave the arm a fair attempt:
+// sign-in, plan or rate limits, model availability, CLI compatibility or isolation.
+// A run that ends with one is not a result of its arm. It is excluded like a
+// harness error, redone on --resume, and stops the benchmark, because the next
+// runs would most likely hit the same failure.
+export const PROVIDER_FAILURES = Object.freeze({
+  claude: Object.freeze(['authentication_required', 'account_blocked', 'rate_limited', 'model_unavailable', 'unsupported_effort_model',
+    'unsupported_cli', 'missing_cli', 'cli_unavailable', 'invalid_cwd', 'isolation_mismatch', 'model_mismatch', 'session_mismatch']),
+  codex: Object.freeze(['cli_not_found', 'process_error', 'cli_unavailable', 'session_busy', 'provider_error', 'model_rerouted',
+    'model_mismatch', 'policy_mismatch', 'unsupported_effort', 'effort_mismatch']),
+});
+
+/**
+ * Whether a Claude Code version reports a resumed conversation's whole cost on
+ * every resumed turn, which 2.1.277 and later do (docs/claude-adapter.md). The
+ * last attempt of a retried run then carries the run's cost.
+ */
+export function reportsConversationTotals(version) {
+  const parts = /^(\d+)\.(\d+)\.(\d+)/.exec(String(version ?? ''))?.slice(1).map(Number);
+  if (!parts) return false;
+  const minimum = [2, 1, 277];
+  const index = parts.findIndex((part, position) => part !== minimum[position]);
+  return index === -1 || parts[index] > minimum[index];
+}
+
 export const FAKE_CLI = Object.freeze({
   codex: join(BENCH_DIR, 'fake', 'codex.mjs'),
   claude: join(BENCH_DIR, 'fake', 'claude.mjs'),

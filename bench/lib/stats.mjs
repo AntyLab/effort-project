@@ -215,15 +215,38 @@ export function normalizeUsage(usage) {
   return result;
 }
 
+// The run's cost from conversation totals: the first attempt's own cost, then the
+// total each resumed attempt reported, which may never fall. Null otherwise.
+function conversationCost(attempts) {
+  if (attempts.length < 2 || attempts[0].costUsd === null) return null;
+  let cost = attempts[0].costUsd;
+  for (const usage of attempts.slice(1)) {
+    const total = usage.costScope === 'conversation' ? reported(usage.conversationCostUsd) : null;
+    if (total === null || total < cost) return null;
+    cost = total;
+  }
+  return cost;
+}
+
 /**
  * Sum per-attempt usage for a run. A field is known only if every attempt
  * reported it; otherwise the run total is null rather than a partial sum.
+ *
+ * With `conversationTotals`, a run whose later attempts are resumed Claude turns
+ * takes its cost from them instead. Every attempt of a run continues the same
+ * conversation, and Claude Code 2.1.277 and later report that conversation's
+ * whole cost on each resumed turn, so the last attempt's total is the run's
+ * cost. `costSource` is then 'conversation'. The totals are never added up.
  */
-export function totalUsage(attempts) {
+export function totalUsage(attempts, { conversationTotals = false } = {}) {
   const total = {};
   for (const field of USAGE_FIELDS) {
     total[field] = attempts.length && attempts.every((usage) => usage[field] !== null)
       ? attempts.reduce((sum, usage) => sum + usage[field], 0) : null;
+  }
+  if (total.costUsd === null && conversationTotals) {
+    total.costUsd = conversationCost(attempts);
+    if (total.costUsd !== null) total.costSource = 'conversation';
   }
   if (total.costUsd !== null) total.costUsd = Math.round(total.costUsd * 1e6) / 1e6;
   total.totalTokens = total.inputTokens !== null && total.outputTokens !== null ? total.inputTokens + total.outputTokens : null;

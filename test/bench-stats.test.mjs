@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { describe, newcombePaired, newcombePairedByTask, nonInferiority, normalizeUsage, passDesignEffect, quantile, taskDesignEffect, totalUsage, wilson, wilsonByTask } from '../bench/lib/stats.mjs';
-import { ARMS, DEFAULT_ARMS, FAKE_CLI, SpendGuardError, buildSchedule, checkSpendGuard, maxProviderTurns, parseList, providerLaunch, runKey } from '../bench/lib/plan.mjs';
-import { aggregate, pairRuns, renderSummary } from '../bench/lib/report.mjs';
+import { ARMS, DEFAULT_ARMS, FAKE_CLI, PROVIDER_FAILURES, SpendGuardError, buildSchedule, checkSpendGuard, maxProviderTurns, parseList, providerLaunch, reportsConversationTotals, runKey } from '../bench/lib/plan.mjs';
+import { aggregate, analyzableRecords, pairRuns, renderSummary } from '../bench/lib/report.mjs';
 import { seededRandom, shuffle, unitHash } from '../bench/lib/random.mjs';
 import { compact, isRoutingArm, renderChart } from '../bench/lib/chart.mjs';
 
@@ -369,6 +369,56 @@ test('run usage is known only when every attempt reported it', () => {
   assert.deepEqual(normalizeUsage({ inputTokens: -1, outputTokens: '7', cachedInputTokens: Infinity }), { inputTokens: null, outputTokens: null, cachedInputTokens: null, costUsd: null });
   assert.equal(normalizeUsage(null).inputTokens, null);
   assert.equal(totalUsage([]).totalTokens, null);
+});
+
+test('a retried Claude run costs its last conversation total, never a sum of totals', () => {
+  const first = normalizeUsage({ inputTokens: 10, outputTokens: 5, cachedInputTokens: 2, costUsd: 0.25 });
+  const resumed = (total) => normalizeUsage({ inputTokens: 4, outputTokens: 2, cachedInputTokens: 1, costUsd: null, conversationCostUsd: total, costScope: 'conversation', tokenScope: 'turn' });
+  const options = { conversationTotals: true };
+  const run = totalUsage([first, resumed(0.6), resumed(0.9)], options);
+  assert.equal(run.costUsd, 0.9, 'the last total covers the whole conversation');
+  assert.equal(run.costSource, 'conversation');
+  assert.equal(run.totalTokens, 27);
+  // Without the option (Codex, or Claude Code before 2.1.277) the cost stays unknown.
+  assert.equal(totalUsage([first, resumed(0.6)]).costUsd, null);
+  // A falling total, a resumed turn that reported none (a stopped turn), or an unknown first cost: unknown.
+  assert.equal(totalUsage([first, resumed(0.2)], options).costUsd, null);
+  assert.equal(totalUsage([first, resumed(0.6), normalizeUsage({ costUsd: null })], options).costUsd, null);
+  assert.equal(totalUsage([normalizeUsage({ costUsd: null }), resumed(0.6)], options).costUsd, null);
+  // One attempt keeps its own cost, and attempts that each reported their own cost are still summed.
+  const single = totalUsage([first], options);
+  assert.equal(single.costUsd, 0.25);
+  assert.equal(single.costSource, undefined);
+  assert.equal(totalUsage([first, first], options).costUsd, 0.5);
+
+  const versions = ['2.1.299 (Claude Code)', '2.1.277', '2.2.0', '3.0.0', '10.0.1', '2.1.276', '2.0.999', '1.9.400', 'effort-bench-fake/1', '', null];
+  assert.deepEqual(versions.map(reportsConversationTotals), [true, true, true, true, true, false, false, false, false, false, false]);
+});
+
+test('provider failures are set aside like harness errors and listed with their cause', () => {
+  // Sign-in, limits, model and CLI problems are provider failures; what an arm does with its turn is not.
+  for (const code of ['authentication_required', 'rate_limited', 'account_blocked', 'model_mismatch', 'missing_cli']) assert.ok(PROVIDER_FAILURES.claude.includes(code), code);
+  for (const code of ['max_turns', 'timeout', 'permission_denied', 'output_limit', 'cli_error', 'aborted']) assert.ok(!PROVIDER_FAILURES.claude.includes(code), code);
+  for (const code of ['cli_not_found', 'provider_error', 'model_rerouted']) assert.ok(PROVIDER_FAILURES.codex.includes(code), code);
+  assert.ok(!PROVIDER_FAILURES.codex.includes('interaction_required'));
+
+  const tasks = [{ id: 't1', language: 'node', difficulty: 'easy' }, { id: 't2', language: 'node', difficulty: 'easy' }];
+  const meta = { arms: [{ name: 'fixed-high' }, { name: 'auto-rules' }], providers: ['claude'], referenceArm: 'fixed-high', margin: 0.05, tasks, repeats: 1, mode: 'live' };
+  const record = (task, arm, accepted, extra = {}) => ({ key: runKey({ provider: 'claude', task, arm, repeat: 1 }), provider: 'claude', task, arm, repeat: 1, accepted, harnessError: null, interrupted: false, providerError: null, ...extra });
+  const limited = record('t2', 'auto-rules', false, { providerError: 'rate_limited' });
+  const records = [record('t1', 'fixed-high', true), record('t1', 'auto-rules', true), record('t2', 'fixed-high', true), limited];
+  const { included, excluded } = analyzableRecords(records);
+  assert.deepEqual(excluded, [limited]);
+  assert.equal(included.length, 3);
+  const [summary] = aggregate(records, meta).providers;
+  assert.equal(summary.arms.find((arm) => arm.arm === 'auto-rules').runs, 1, 'the failed run is not scored as a fail');
+  assert.equal(summary.comparisons[0].pairs.unpairedReference, 1);
+  const { markdown } = renderSummary(meta, records);
+  assert.match(markdown, /\| Scored \| 3 run\(s\); 1 excluded \(harness errors, provider failures or interruptions, listed below\) \|/);
+  assert.match(markdown, /\| claude\/t2\/auto-rules\/1 \| provider failure: rate_limited \(redone on --resume\) \|/);
+  // Once --resume redoes the run, its latest record is scored and nothing is excluded.
+  const redone = analyzableRecords([...records, record('t2', 'auto-rules', true)]);
+  assert.deepEqual([redone.included.length, redone.excluded.length], [4, 0]);
 });
 
 test('the schedule is a seeded permutation of every task, arm and repeat for each provider', () => {
