@@ -113,7 +113,7 @@ Commands are argv arrays run without a shell. `{node}` becomes this Node binary.
 - The hidden check must fail on `repo/` with a recognized test failure and pass on `solution/`. Run `node bench/run.mjs self-test --tasks <id>`; the bench tests run it for every task too.
 - Specify behavior in the prompt or in the code's own documentation. The hidden check may test only what was specified.
 - Keep tasks deterministic and offline: no network, no reliance on timer precision, standard library only.
-- Never mention `bench_accept` in a prompt. Have the hidden check fail through assertions; a module that does not exist yet should not crash it, because Effort treats "Cannot find module" as an environment error, not a test failure.
+- Never mention `bench_accept` in a prompt. Have the hidden check fail through assertions; a module that does not exist yet should not crash it, because Effort treats "Cannot find module" as an environment error, not a test failure. The import error must not show in the output at all: a Python test that catches the `ImportError` and calls `self.fail()` inside the `except` block still prints `ModuleNotFoundError` in its traceback, so fail after the block. In Node.js, load such a module with a dynamic `import()` inside `try`, and keep the caught error's message out of the assertion.
 - **Keep the corpus held out.** These tasks were written by the project that wrote the rules. Do not tune [src/policy.mjs](../src/policy.mjs) against them. If the policy is ever tuned on a corpus, use a new set of tasks, written without looking at the rules, for the claim. Use `--manifest path/to/manifest.json` to keep a private held-out corpus outside the repository.
 
 ## Output
