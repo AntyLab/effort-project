@@ -45,6 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `effort run --dry-run` now makes the same option checks as a run, including whether the verification command can start.
 - The CLI, MCP server and dashboard report the version from `package.json` instead of a hard-coded one.
 - Resumed Claude turns report their own token counts when the turn's stream confirms them (`tokenScope: "turn"`); otherwise the counts stay `null`, as before.
+- The workspace scan behind `effort recommend`, `effort run` and automatic routing stopped after 50 ms. On a busy machine it could stop before reaching the files a request names, so a request naming five files could be recommended medium instead of high. The scan now stops after a fixed amount of work, 500 files or 500 directories, and gives the same result however busy the machine is. A very large workspace can take longer than 50 ms to scan: listing 500 directories took 0.05–0.4 seconds on a Windows 11 laptop, depending on other load.
 
 ## [0.1.0] - 2026-09-26
 
