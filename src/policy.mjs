@@ -13,7 +13,7 @@ export function recommend({ prompt, provider = 'generic', facts = {}, maxEffort 
   if (!['codex', 'claude', 'generic'].includes(provider)) throw new Error('Provider must be codex, claude, or generic.');
   validateLevel(maxEffort); validateLevel(minEffort);
   if (LEVELS.indexOf(minEffort) > LEVELS.indexOf(maxEffort)) throw new Error('Minimum effort exceeds maximum.');
-  const critical = /\b(auth(?:entication|orization)?|permission|cryptograph\w*|encrypt\w*|payment|migration|race condition|deadlock|data loss|security|vulnerability)\b/i.test(prompt);
+  const critical = /\b(auth(?:entication|orization)?|permission|cryptograph\w*|encrypt\w*|payments?|migrations?|race condition|deadlock|data loss|security|vulnerability)\b/i.test(prompt);
   const complex = /\b(architect\w*|investigate|diagnos\w*|refactor|concurren\w*|intermittent|distributed|across|root cause|regression|debug)\b/i.test(prompt);
   const mechanical = /\b(rename|typo|spelling|format|translate|summarize|capitaliz\w*)\b/i.test(prompt) && prompt.length < 350;
   // Breadth comes from what the request names: five or more distinct workspace files

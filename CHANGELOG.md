@@ -33,6 +33,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Requests mentioning payments or migrations now match the documented high-effort rule, including those plural spellings.
+- Repository file mentions no longer count a filename used as a directory prefix in a longer path.
+- Command lookup resolves relative PATH entries against the verification command's working directory. Explicit Windows executable paths without an extension resolve to the existing `.exe` or `.com` file.
+- Automatic Claude sessions accept decimal timeout values such as `--timeout 16.1` without floating-point validation errors.
+- Process cleanup timeout tests wait for real descendant readiness before advancing a controlled timeout clock, so slow fixture startup cannot bypass the cleanup assertions.
 - Opening `web/index.html` directly left an unstyled page stuck on "Connecting". It now shows a clearly labeled file preview with startup instructions and working command copying. Recommendations and history still need the running local server.
 - A dashboard tab with a missing or expired session now picks up a newly opened access URL, keeps the task text you had entered, and consumes the token fragment from the address.
 - A Codex adapter test no longer races the fake CLI's startup. This changes test code only; no provider behavior changed.

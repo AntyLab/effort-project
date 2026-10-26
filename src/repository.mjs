@@ -10,7 +10,7 @@ const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // A mention starts at the beginning of the prompt or after a character that cannot be part
 // of a path, and ends where the name does: neither 'packages/a/index.ts' nor 'index.tsx'
 // mentions the root index.ts.
-const mention = (name, flags = '') => new RegExp(`(?<![\\w.\\\\/-])${literal(name)}(?![\\w-]|\\.\\w)`, flags);
+const mention = (name, flags = '') => new RegExp(`(?<![\\w.\\\\/-])${literal(name)}(?![\\w\\\\/-]|\\.\\w)`, flags);
 
 // Distinct files the prompt names: each relative path it contains, written with either
 // separator, plus each remaining bare file name once. Five packages/*/index.ts named by

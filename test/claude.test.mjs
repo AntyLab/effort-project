@@ -377,18 +377,34 @@ test('callback exceptions stop the run without escaping event-loop errors', asyn
 
 test('timeout kills the managed process group including stubborn descendants', { skip: process.platform === 'win32' }, async (t) => {
   const f = await fixture(t, `
-    const descendant = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);'], { stdio: 'ignore' });
-    fs.writeFileSync(${JSON.stringify('PIDS_PLACEHOLDER')}, JSON.stringify([process.pid, descendant.pid]));
+    const descendant = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); process.send("ready");'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    descendant.once('message', () => fs.writeFileSync(${JSON.stringify('PIDS_PLACEHOLDER')}, JSON.stringify([process.pid, descendant.pid])));
     process.on('SIGTERM', () => {});
     setInterval(() => {}, 1000);
   `);
   const source = await readFile(f.scriptPath, 'utf8');
   await writeFile(f.scriptPath, source.replace(JSON.stringify('PIDS_PLACEHOLDER'), JSON.stringify(f.pidFile)));
-  const start = Date.now();
-  const result = await run({ ...f.options, timeoutMs: 400 });
+  // Start the timeout clock only after both real processes have installed their handlers.
+  const realTimeout = globalThis.setTimeout;
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
+  const controller = new AbortController();
+  let timersActive = true;
+  t.after(() => { controller.abort(); if (timersActive) { t.mock.timers.tick(500); t.mock.timers.reset(); } });
+  const running = run({ ...f.options, timeoutMs: 400, signal: controller.signal });
+  const startup = performance.now();
+  while (!await exists(f.pidFile)) {
+    assert.ok(performance.now() - startup < 10_000, 'fixture did not become ready');
+    await new Promise(done => realTimeout(done, 20));
+  }
+  const start = performance.now();
+  t.mock.timers.tick(400);
+  t.mock.timers.tick(500);
+  const result = await running;
+  t.mock.timers.reset();
+  timersActive = false;
   assert.equal(result.status, 'failed');
   assert.match(result.text, /timeout/);
-  assert.ok(Date.now() - start < 3000);
+  assert.ok(performance.now() - start < 3000);
   const pids = JSON.parse(await readFile(f.pidFile, 'utf8'));
   for (const pid of pids) {
     let alive = true;
