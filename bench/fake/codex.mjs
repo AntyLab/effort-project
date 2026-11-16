@@ -48,7 +48,7 @@ async function handle({ id, method, params = {} }) {
       thread.effort = params.effort;
       reply(id, { turn: { id: turnId, status: 'inProgress', items: [] } });
       const state = await readState(config);
-      const turn = await simulateTurn(config, state, { cwd: params.cwd, effort: params.effort, canWrite: params.sandboxPolicy?.type === 'workspaceWrite' });
+      const turn = await simulateTurn(config, state, { cwd: params.cwd, effort: params.effort, model: thread.model, canWrite: params.sandboxPolicy?.type === 'workspaceWrite' });
       thread.total = Object.fromEntries(Object.keys(zero).map((key) => [key, thread.total[key] + turn.usage[key]]));
       state.sessions[thread.id] = { model: thread.model, effort: thread.effort, total: thread.total };
       await writeState(config, state);

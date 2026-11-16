@@ -9,7 +9,7 @@ This harness measures whether Effort's routing reaches the same pass rate as fix
 
 The first live pilot, Claude Sonnet 5.5 on the eleven seed tasks, is described in [PILOT.md](PILOT.md). Every arm passed every task, so it could not show an equal pass rate. The repository makes no savings claim, and an offline run cannot support one.
 
-Requirements: Node.js 22 or later; Python 3.8 or later for the Python tasks. There are no npm dependencies.
+Requirements: Node.js 22 or later; Python 3.9 or later with system time-zone data for the Python tasks (the scheduler uses stdlib `zoneinfo`). There are no npm dependencies.
 
 ## Quick start (offline, no credentials)
 
@@ -62,12 +62,25 @@ A run that ends with a provider-side failure is not a result of its arm: the CLI
 | `auto-escalate` | auto | high | up to 3 | `effort run` defaults: the rules choose, a failed visible check is retried, and a repeated failure escalates |
 | `medium-escalate` (opt-in) | medium | high | up to 3 | The architecture document's medium-with-escalation baseline |
 | `medium-retry` (opt-in) | medium | medium | up to 3 | Retries without escalation, to separate retrying from escalating |
+| `fixed-daily` (opt-in) | medium | high | 1 | Daily model: what most people run by default |
+| `fixed-frontier` (opt-in) | high | high | 1 | Frontier model baseline |
+| `auto-route` (opt-in) | auto | high | 1 | Rules choose both model and effort |
+| `auto-route-escalate` (opt-in) | auto | high | up to 3 | Model routing plus the product's retries and escalation |
+
+Use `--arms routing` to select the four model-routing arms together, for example:
+
+```bash
+node bench/run.mjs plan --arms routing --providers codex,claude,gemini
+node bench/run.mjs --arms routing --providers codex,claude,gemini --out /tmp/effort-routing
+```
+
+These arms use the daily/frontier ids in `src/policy.mjs`, or the same automatic model selection as `effort run` with no `--model`. The benchmark resolves the automatic choice using the product policy and repository facts, then pins it for that run while retries can raise effort. A rejected or mismatched model stops the benchmark as a provider failure instead of falling back to a different model. They refuse `--codex-model`, `--claude-model` and `--gemini-model` pins because a pin defeats the comparison. Existing effort arms and defaults are unchanged. `plan` lists each run's requested model and initial effort; the summary lists requested and observed models per arm alongside the existing per-arm pass, token and cost tables. Gemini currently uses the same model id for daily and frontier, so those two baselines differ only by effort. To compare against the frontier baseline, add `--reference-arm fixed-frontier` (the usual `fixed-high` reference is absent from `routing`).
 
 The single-attempt arms get no feedback. `auto-escalate` also benefits from retrying with the visible check's output, so compare it with `medium-retry` before crediting escalation. Every arm uses the same per-run time limit (`--timeout`, default 600 s live). That deliberately differs from `effort run`'s 120 s default, so that a slow high-effort turn is not cut off.
 
 ## The seed corpus
 
-Eleven small, deterministic tasks in `bench/tasks/`. Rules picks are for policy `rules-0.1`; run `plan` to see the current ones.
+Seventeen small, deterministic tasks in `bench/tasks/`: eleven seed tasks and six harder held-out additions. The seed rules picks below were recorded for policy `rules-0.1`; run `plan` to see the current ones. Difficulty is an author judgment until real runs measure it.
 
 | Task | Language | Difficulty | Category | Rules pick |
 | --- | --- | --- | --- | --- |
@@ -82,6 +95,12 @@ Eleven small, deterministic tasks in `bench/tasks/`. Rules picks are for policy 
 | `py-signup-validation` | Python | medium | input validation | medium |
 | `py-inventory-reservations` | Python | medium | small feature | medium |
 | `py-async-cache` | Python | hard | asyncio: shared loads, cancellation | high |
+| `node-lru-ttl` | Node | hard | expiry and eviction ordering | run `plan` |
+| `node-bank-ledger` | Node | hard | ordered replay and idempotency | run `plan` |
+| `node-expression-parser` | Node | hard | unary operators, powers and error positions | run `plan` |
+| `py-interval-scheduler` | Python | hard | zoned intervals and DST | run `plan` |
+| `py-dependency-resolver` | Python | hard | version constraints and dependency order | run `plan` |
+| `py-unified-diff` | Python | hard | minimal line edits and unified hunks | run `plan` |
 
 The hidden checks were also tried against plausible wrong fixes during development. They rejected an `AsyncCache` fix without `asyncio.shield`, a `mapLimit` that keeps starting calls after a rejection, half-fixed pagination, and a rename that kept the old alias. They accepted a legitimate batching `mapLimit`. The difficulty labels are the author's judgment, not measurements.
 
@@ -108,7 +127,7 @@ The task's files live in `bench/tasks/<id>/`:
 - `solution/` is a reference solution, copied over `repo/`. It is used only by the self-test and the fake providers.
 - `accept/` holds the hidden acceptance files. They are copied into `bench_accept/` of a copy of the final workspace.
 
-Commands are argv arrays run without a shell. `{node}` becomes this Node binary. `{python}` becomes the first Python 3.8+ found (`python3`, `python`, or `py -3` on Windows), or the interpreter set with `--python` or `EFFORT_BENCH_PYTHON`. `visibleFailsAtStart` defaults to true. Set it to false for tasks such as refactors, whose tests pass before and after.
+Commands are argv arrays run without a shell. `{node}` becomes this Node binary. `{python}` becomes the first Python 3.9+ found (`python3`, `python`, or `py -3` on Windows), or the interpreter set with `--python` or `EFFORT_BENCH_PYTHON`. `visibleFailsAtStart` defaults to true. Set it to false for tasks such as refactors, whose tests pass before and after.
 
 ### Adding tasks
 
@@ -231,7 +250,7 @@ The Claude adapter allows 12 agentic turns per CLI invocation by default. `runTa
 - `test/bench-corpus.test.mjs` self-tests every task, checks the corpus's coverage and manifest validation, confirms that the hidden check replaces an agent-planted `bench_accept/`, and confirms that checks get no credentials.
 - `test/bench-run.test.mjs` runs end-to-end offline benchmarks through the real adapters (including retries, escalation and unknown Claude usage), a resume after interruption, the CLI with nothing on `PATH`, the live-run refusals, and a live-mode run against a stub CLI named by `EFFORT_CLAUDE_BIN` that reports a usage limit, stops, and is redone on `--resume`.
 
-Python tasks are skipped when Python 3.8 or later is not installed. No test can start a real provider.
+Python tasks are skipped when Python 3.9 or later is not installed. No test can start a real provider.
 
 ## Possible next steps
 

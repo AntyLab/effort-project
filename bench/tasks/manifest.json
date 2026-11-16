@@ -101,6 +101,60 @@
       "prompt": "AsyncCache in cache.py lets concurrent get() calls for the same key each call the loader. Make it follow its docstring: concurrent callers share one load, failures reach every waiting caller and are not cached, and cancelling one caller must not cancel the load for the others.",
       "verify": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
       "accept": ["{python}", "-m", "unittest", "discover", "-s", "bench_accept", "-t", "."]
+    },
+    {
+      "id": "node-lru-ttl",
+      "language": "node",
+      "difficulty": "hard",
+      "category": "failing-test",
+      "prompt": "LruCache in src/cache.mjs sometimes evicts a live value while expired entries remain, and reads do not consistently update recency. Make its operations follow the documented capacity, lifetime and ordering behavior, including replacement and zero-length lifetimes. Keep the public API unchanged.",
+      "verify": ["{node}", "--test", "test/*.test.mjs"],
+      "accept": ["{node}", "--test", "bench_accept/*.test.mjs"]
+    },
+    {
+      "id": "node-bank-ledger",
+      "language": "node",
+      "difficulty": "hard",
+      "category": "failing-test",
+      "prompt": "Our bank event replay in src/ledger.mjs produces different balances when events arrive out of order or are delivered more than once. Make replay follow its documented ordering and event-key semantics, reject conflicting copies and transfers without enough funds, and leave the supplied events and starting balances unchanged.",
+      "verify": ["{node}", "--test", "test/*.test.mjs"],
+      "accept": ["{node}", "--test", "bench_accept/*.test.mjs"]
+    },
+    {
+      "id": "node-expression-parser",
+      "language": "node",
+      "difficulty": "hard",
+      "category": "failing-test",
+      "prompt": "The calculator in src/expression.mjs evaluates expressions such as -2^2 and 2^3^2 incorrectly. Correct the parser to follow its documented arithmetic grammar, including signed exponents, parentheses and decimal values, and preserve accurate SyntaxError positions for malformed input.",
+      "verify": ["{node}", "--test", "test/*.test.mjs"],
+      "accept": ["{node}", "--test", "bench_accept/*.test.mjs"]
+    },
+    {
+      "id": "py-interval-scheduler",
+      "language": "python",
+      "difficulty": "hard",
+      "category": "failing-test",
+      "prompt": "merge_bookings() in scheduler.py sometimes loses occupied time when bookings overlap. Fix it to follow its documented contract: combine overlapping or touching bookings into sorted UTC intervals, compare actual instants across time zones and daylight saving changes, reject invalid endpoints, and leave the input unchanged.",
+      "verify": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+      "accept": ["{python}", "-m", "unittest", "discover", "-s", "bench_accept", "-t", "."]
+    },
+    {
+      "id": "py-dependency-resolver",
+      "language": "python",
+      "difficulty": "hard",
+      "category": "feature",
+      "prompt": "Our package resolver in resolver.py picks versions that disagree with other packages and sometimes puts dependencies after their users. Make resolve() follow its docstring: choose compatible versions using the specified highest-first preference, reconsider choices when necessary, return dependencies before their users in a deterministic order, and raise ResolutionError when the requested packages cannot be resolved without a cycle.",
+      "verify": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+      "accept": ["{python}", "-m", "unittest", "discover", "-s", "bench_accept", "-t", "."]
+    },
+    {
+      "id": "py-unified-diff",
+      "language": "python",
+      "difficulty": "hard",
+      "category": "feature",
+      "prompt": "unified_diff() in textdiff.py produces noisy patches and incorrect line ranges when lines are inserted or removed. Please implement the documented line-based diff: use a longest common subsequence with the stated tie rule, include the requested surrounding context, combine hunks when their context meets, and emit correct unified headers and ranges for empty files and changes at either end.",
+      "verify": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-t", "."],
+      "accept": ["{python}", "-m", "unittest", "discover", "-s", "bench_accept", "-t", "."]
     }
   ]
 }

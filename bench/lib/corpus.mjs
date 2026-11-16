@@ -95,7 +95,7 @@ export async function materialize(task, destination, { solution = false } = {}) 
 }
 
 let pythonCache;
-/** Find Python 3.8+ without a shell. EFFORT_BENCH_PYTHON (or `override`) names one interpreter to use. */
+/** Find Python 3.9+ without a shell. EFFORT_BENCH_PYTHON (or `override`) names one interpreter to use. */
 export function findPython({ override = process.env.EFFORT_BENCH_PYTHON } = {}) {
   const key = override ?? '';
   if (pythonCache?.key === key) return pythonCache.value;
@@ -107,7 +107,7 @@ export function findPython({ override = process.env.EFFORT_BENCH_PYTHON } = {}) 
       { encoding: 'utf8', timeout: 15_000, windowsHide: true, shell: false });
     const version = String(probe.stdout ?? '').trim();
     const match = /^3\.(\d+)\.\d+$/.exec(version);
-    if (probe.status === 0 && match && Number(match[1]) >= 8) { value = { command, prefix, version }; break; }
+    if (probe.status === 0 && match && Number(match[1]) >= 9) { value = { command, prefix, version }; break; }
   }
   pythonCache = { key, value };
   return value;
@@ -119,7 +119,7 @@ export function resolveCommand(argv, { python } = {}) {
   for (const part of argv) {
     if (part === '{node}') resolved.push(process.execPath);
     else if (part === '{python}') {
-      if (!python) throw new Error('This task needs Python 3.8 or later. Install it, set EFFORT_BENCH_PYTHON, or pass --python.');
+      if (!python) throw new Error('This task needs Python 3.9 or later. Install it, set EFFORT_BENCH_PYTHON, or pass --python.');
       resolved.push(python.command, ...python.prefix);
     } else resolved.push(part);
   }
@@ -217,7 +217,7 @@ const tail = (text, length = 3000) => String(text ?? '').slice(-length);
  * visible check passes on the solution and behaves as the manifest says at start.
  */
 export async function selfTestTask(task, { python, timeoutMs = 60_000 } = {}) {
-  if (task.language === 'python' && !python) return { id: task.id, status: 'skipped', reason: 'Python 3.8 or later was not found.', problems: [] };
+  if (task.language === 'python' && !python) return { id: task.id, status: 'skipped', reason: 'Python 3.9 or later was not found.', problems: [] };
   const scratch = await mkdtemp(join(tmpdir(), 'effort-bench-selftest-'));
   try {
     const start = await materialize(task, join(scratch, 'start'));
