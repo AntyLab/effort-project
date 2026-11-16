@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { startCodexRemote } from '../src/integrations/codex-remote.mjs';
+import { maskedFrame, rawClient } from './helpers/ws-client.mjs';
 
 // Deliberate test boundary: real TCP/HTTP Upgrade and an independent Node JSONL
 // child, but WebSocket frame encoding/decoding is represented by this injected
@@ -103,7 +104,7 @@ async function fixture(t, options = {}) {
   // viaOverride launches the backend the way an installed CLI is found: through EFFORT_CODEX_BIN.
   proxy = await startCodexRemote({ cwd, ...(options.viaOverride ? {} : { executable: process.execPath, executableArgs: [script] }),
     env: { EFFORT_FIXTURE_LOG: log, EFFORT_FIXTURE_MODE: options.mode ?? 'normal', ...(options.viaOverride ? { EFFORT_CODEX_BIN: script } : {}), ...(process.env.SystemRoot ? { SystemRoot: process.env.SystemRoot } : {}) },
-    WebSocketServerClass: fake.Class, onDecision: decision => decisions.push(decision),
+    ...(options.builtIn ? {} : { WebSocketServerClass: fake.Class }), onDecision: decision => decisions.push(decision),
     repositoryFactsFn: options.repositoryFactsFn ?? (async () => ({ languages: ['javascript'] })), signal: options.signal,
   });
   const port = Number(new URL(proxy.url).port);
@@ -186,6 +187,21 @@ test('Codex remote requires bearer authentication, exact loopback Host, no Origi
   assert.equal(f.fake.instances[0].connections.length, 1);
   assert.deepEqual(f.fake.instances[0].options, { noServer: true, maxPayload: 8 * 1024 * 1024, perMessageDeflate: false });
   await initialize(accepted.ws);
+});
+
+test('Codex remote built-in WebSocket authenticates and relays initialize to the offline fixture', { timeout: 10_000 }, async t => {
+  const f = await fixture(t, { builtIn: true });
+  const denied = await rawClient(t, f.proxy.url);
+  assert.equal(denied.status, 403);
+  const client = await rawClient(t, f.proxy.url, { headers: { Authorization: `Bearer ${f.proxy.token}` } });
+  assert.equal(client.status, 101);
+  client.socket.write(maskedFrame(JSON.stringify({ id: 1, method: 'initialize', params: { clientInfo: { name: 'offline-test' } } })));
+  const response = await client.readFrame();
+  assert.equal(response.opcode, 1);
+  assert.deepEqual(JSON.parse(response.payload.toString()), { id: 1, result: { userAgent: 'offline-fixture' } });
+  const entries = await f.readLog();
+  assert.deepEqual(entries[0].argv, ['app-server', '--listen', 'stdio://']);
+  assert.equal(entries[1].message.method, 'initialize');
 });
 
 test('Codex remote rewrites the child request and hides its private model discovery messages', { timeout: 10_000 }, async t => {
