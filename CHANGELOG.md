@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Claude's built-in daily model is now `sonnet` instead of `opus`; fast remains `haiku` and frontier remains `fable`.
+- Policy `rules-0.3` recognizes more costly-error, investigative and mechanical English keywords, including login, passwords, billing, destructive data changes, privacy, crashes, performance, comments, lint and version bumps. Basic Spanish, French, German, Portuguese and Italian keyword coverage uses Unicode word boundaries. Risky and investigative words still take precedence over short mechanical edits.
+
 ## [0.2.0] - 2026-11-16
 
 Second experimental release: automatic model and effort routing for Claude, Codex and Gemini, a Claude Code plugin that routes through its own skills, a Codex terminal router with no extra package, an offline benchmark harness, and the fixes from the October 2026 review. Effort still has not demonstrated lower cost at equivalent coding quality.

@@ -63,7 +63,7 @@ Claude Code also runs `UserPromptSubmit` hooks when a scheduled task fires, when
 
 ## Rule confidence
 
-The rules are a transparent keyword and length heuristic with low confidence. They are written for English prompts and do not measure how hard a task is. Lower cost at equal quality has not been demonstrated. See [validation](validation.md).
+The rules are a transparent keyword and length heuristic with low confidence. They cover English plus basic Spanish, French, German, Portuguese and Italian keywords and do not measure how hard a task is. Lower cost at equal quality has not been demonstrated. See [validation](validation.md).
 
 ## Privacy and safety
 
