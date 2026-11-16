@@ -8,24 +8,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Experimental automatic effort routing. Effort chooses an effort level locally before each user prompt, using the prompt wording, bounded repository metadata, the previous decision, and the controls the host supports. It makes no classifier API call and keeps no prompt history. A fixed `--effort` or `--model`, and the `--min-effort` and `--max-effort` bounds, take precedence over the rules. See [automatic effort routing](docs/automatic.md).
-  - `effort auto claude`: an Effort-managed text conversation that resumes the same Claude Code session between prompts through the existing restricted adapter. It does not attach to the native Claude interface.
+- Experimental automatic model and effort routing. Effort chooses a model and effort level locally before each user prompt, using the prompt wording, bounded repository metadata, the previous decision, and the controls the host supports. It makes no classifier API call and keeps no prompt history. A fixed `--effort` or `--model`, and the `--min-effort` and `--max-effort` bounds, take precedence over the rules. See [automatic effort routing](docs/automatic.md).
+  - `effort auto claude`: an Effort-managed text conversation that resumes the same Claude Code session between prompts through the existing restricted adapter, choosing a model and effort. It does not attach to the native Claude interface.
   - OpenCode plugin: `effort config opencode` prints a project plugin wrapper that applies an advertised effort variant before requests. Explicit variants and configuration are preserved, and the selected model stays unchanged.
-  - `effort auto codex` (prototype): a launcher that routes `turn/start` requests for the official Codex terminal through a private loopback WebSocket router. It needs the `ws` package, which is not installed or declared, so it stops before starting a provider. `--dry-run` validates the configuration.
-  - Optional model routing with `--routing-config`, a JSON file containing `models`, `minEffort` and `maxEffort`. It is off by default, and the default keeps your selected model.
+  - `effort auto codex`: a launcher that routes `turn/start` requests for the official Codex terminal through a private loopback WebSocket router. A small built-in WebSocket server keeps the project free of runtime dependencies. `--dry-run` validates the configuration.
+  - Built-in model routing, with a `--model` pin and an `effort auto --routing-config` table as overrides. The JSON file accepts `models`, `minEffort` and `maxEffort`. Precedence is pin, configured effort table, built-in tier model, then current/default model.
 - `effort doctor --json` and the `effort_capabilities` MCP tool now list the automatic Claude session and the OpenCode plugin together with their limits.
+- An offline-first acceptance script, `scripts/live-acceptance.mjs`, for typo, feature and race-condition tasks across selected managed providers. It prints the plan and checks failing starting fixtures by default; provider runs require `--live` and obey a hard run cap. Its optional JSONL output records routing, observed settings, outcomes, usage and timings without prompts or model output.
 - A [handoff document](docs/HANDOFF.md) describing what is implemented, what was verified, and what remains for the automatic integrations.
 - Offline tests for the automatic integrations and the dashboard frontend, using fake processes and, for the Codex transport, a mocked WebSocket. `npm run smoke:package` also checks the automatic dry run and the OpenCode plugin import.
 - Documentation of the automatic integrations' security boundaries in [SECURITY.md](SECURITY.md).
 - Contribution tooling: issue forms for bug reports, feature requests and integration reports, a pull request template, a [Code of Conduct](CODE_OF_CONDUCT.md), and this changelog.
-- An advisory [Claude Code plugin](docs/claude-code-plugin.md), installable from this repository's plugin marketplace. A local `UserPromptSubmit` hook shows a one-line suggestion to apply a level with `/effort` when one of Effort's prompt rules fires; it never changes the prompt or the effort level, because Claude Code hooks cannot set effort. The plugin also adds Effort's read-only MCP server and an `explain` skill.
+- A [Claude Code plugin](docs/claude-code-plugin.md), installable from this repository's plugin marketplace. Its `UserPromptSubmit` hook asks Claude to invoke routing skills: `route-fast` works in a fork on Haiku at low effort, `route-frontier` in a fork on Fable at high, and `route-hard` sets high effort for the rest of the turn on the session model. Ordinary prompts stay unchanged. Hooks cannot set model or effort directly, and a skill changes the main conversation's effort but not its model. Forks need Claude to pass earlier context. The plugin also adds Effort's read-only MCP server and an `explain` skill.
 - An offline-first [benchmark harness](bench/README.md) that compares fixed effort levels with Effort's routing on eleven small Node.js and Python tasks with hidden acceptance checks. By default it runs against fake providers; real turns need `--live` and a `--max-runs` cap. Its first live pilot ([bench/PILOT.md](bench/PILOT.md), Claude Sonnet 5.5) was inconclusive on quality, because every arm passed every task, so it supports no savings claim yet.
 - `effort run` options: `--verify-timeout` to give the check a shorter limit than the task, and the verification command after `--` or as repeated `--verify-arg` parts.
-- `EFFORT_CODEX_BIN` and `EFFORT_CLAUDE_BIN` select a specific provider CLI installation; `effort doctor` reports which one Effort will start.
+- Gemini managed runs and automatic text sessions through the Antigravity CLI: `effort run --provider gemini` and `effort auto gemini`. File permissions last for the session only; shell commands are never allowed. Usage includes tokens but no cost. `effort doctor` checks the third provider.
+- `EFFORT_CODEX_BIN`, `EFFORT_CLAUDE_BIN` and `EFFORT_GEMINI_BIN` select a specific provider CLI installation; `effort doctor` reports which one Effort will start.
 - `runTask` accepts `maxTurns` (1–50) for the Claude adapter and passes it to every attempt. Other adapters refuse it.
 
 ### Changed
 
+- Effort now chooses a model alongside effort. Fast covers short mechanical requests; frontier requires both high-stakes and investigative or tangled work; daily covers everything else. Built-in fast/daily/frontier models are Claude haiku/opus/fable, Codex gpt-6-luna/gpt-6.1-sol/gpt-6-astra, and Gemini gemini-4-hydrogen/gemini-4-argon/gemini-4-argon. `effort recommend` prints the model and tier.
+- `effort run` falls back once to the provider default when an automatically chosen model is explicitly rejected before a turn is submitted. Pinned models do not fall back.
 - The npm package is now named `effort-project` (previously `@antyxo/effort-project`). If you installed the old name globally, remove it with `npm uninstall --global @antyxo/effort-project`.
 - The number of languages in a checkout no longer changes the recommended effort; it describes the repository, not the request. A request that names five or more workspace files raises effort by one level, never past high. The policy version is now `rules-0.2`.
 - `effort run` now allows 600 seconds per task by default (previously 120), verification included. A check may use the time left in the task instead of stopping at 60 seconds. A Claude turn is still limited to 30 minutes.
@@ -33,6 +37,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `effort auto codex` starts with the built-in WebSocket server instead of requiring the undeclared `ws` package.
+- The Claude adapter accepts Haiku 5.x models, which support effort.
 - Requests mentioning payments or migrations now match the documented high-effort rule, including those plural spellings.
 - Repository file mentions no longer count a filename used as a directory prefix in a longer path.
 - Command lookup resolves relative PATH entries against the verification command's working directory. Explicit Windows executable paths without an extension resolve to the existing `.exe` or `.com` file.

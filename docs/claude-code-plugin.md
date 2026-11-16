@@ -11,7 +11,7 @@ The Effort Project routes a prompt to a lighter or stronger model and effort thr
 
 A hook cannot set model or effort directly. It adds an instruction for Claude to invoke the appropriate skill and shows a short line such as `Effort: haiku at low effort for this prompt.` The fork skills select their worker's model and effort; the main-conversation skill sets effort only. `UserPromptSubmit` carries no current effort level, so the hook does not compare against one.
 
-The routing behavior follows the supplied Claude Code 2.1.310 findings. This change has not received a new live verification; the recorded historical checks below describe the earlier advisory implementation.
+Headless functional checks on Claude Code 2.1.310 verified the fast and frontier fork routes and an ordinary prompt left on the session's settings. A separate probe verified a non-forked skill's effort change. The November 16 record below describes these checks; the older checks describe the earlier advisory implementation.
 
 ## What the plugin adds
 
@@ -24,7 +24,7 @@ The routing behavior follows the supplied Claude Code 2.1.310 findings. This cha
 
 ## Install
 
-You need Node.js 22 or later available as `node` on your `PATH`, and a current Claude Code. The plugin was validated with Claude Code 2.1.299.
+You need Node.js 22 or later available as `node` on your `PATH`, and a current Claude Code. Routing was checked headlessly with Claude Code 2.1.310; earlier installation checks used 2.1.299.
 
 In a Claude Code session:
 
@@ -97,13 +97,23 @@ The repository-root layout has these consequences:
 
 ## Validation
 
-Checked without model calls, using the Claude Code 2.1.299 CLI bundled with the Claude desktop app on Windows 11, with a separate, empty configuration directory:
+Historical installation checks used the Claude Code 2.1.299 CLI bundled with the Claude desktop app on Windows 11, without model calls and with a separate, empty configuration directory:
 
 - `claude plugin validate .` passed. Its only warning is the missing version described above.
 - `claude --plugin-dir . plugin list` reported `effort-project@inline` as loaded.
 - `claude --plugin-dir . plugin details effort-project` listed the `explain` skill, the `UserPromptSubmit` hook and the `effort` MCP server.
 
 `npm test` runs `test/claude-plugin.test.mjs`. It feeds the hook realistic `UserPromptSubmit` JSON and checks the routing output, silence when no rule fires, skill frontmatter, fail-open behavior and timing. It also checks the manifests against the documented formats, starts the MCP server from the plugin configuration, and runs the hook and server from a copied plugin root, as Claude Code does after an install.
+
+### Live routing acceptance (November 16, 2026)
+
+The supplied functional checks ran headlessly on macOS with Node 26.13 and Claude Code 2.1.310, loading the real plugin directory in a session on Sonnet 5.5 at medium effort:
+
+- `Fix the typo in README.md` invoked `effort-project:route-fast`. A `claude-haiku-5-5` fork fixed the typo, and tool hooks reported low effort.
+- `Add a second heading called Usage to README.md` invoked no skill and stayed on Sonnet at medium effort.
+- A race-condition investigation invoked `effort-project:route-frontier`. A Fable fork fixed the bug, and tool hooks reported high effort.
+
+The race check cost about $0.67 at list price, against about $0.07 for each of the other two. These different tasks do not establish savings or equal quality. A separate probe showed that a non-forked skill with `effort: low` changed the main conversation from high to low for the rest of the turn, while its `model:` field did not change the main conversation's model. No provider calls were made during this documentation pass. See the [validation record](validation.md#model-and-effort-routing-2026-11-16).
 
 ### Live acceptance (October 17, 2026)
 

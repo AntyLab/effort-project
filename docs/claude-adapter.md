@@ -10,7 +10,7 @@ Each call starts one noninteractive CLI process with `--print --output-format st
 
 The child environment also sets `CLAUDE_CODE_EFFORT_LEVEL` to the selected level because that variable takes priority over `--effort`. This is a per-process change. Authentication and provider routing variables are preserved; arbitrary Claude customization and runtime-injection variables are not. [Environment variable precedence](https://code.claude.com/docs/en/env-vars#precedence).
 
-`effortEvidence.type` is `launch-flag`. `launchAccepted` means a valid initialization message arrived, not that the API applied that effort. `observedEffort` remains `null` and `verified` remains `false`: the stream protocol does not supply a supported applied-effort readback. Organizations can cap effort silently in JSON mode. Known unsupported models are blocked; custom model capabilities remain unverified. No timing, token count, or answer quality is presented as proof of internal reasoning. [Effort limits and model support](https://code.claude.com/docs/en/model-config#organization-effort-limits).
+`effortEvidence.type` is `launch-flag`. `launchAccepted` means a valid initialization message arrived, not that the API applied that effort. `observedEffort` remains `null` and `verified` remains `false`: the stream protocol does not supply a supported applied-effort readback. Organizations can cap effort silently in JSON mode. Haiku 5.x is accepted because it supports effort; known unsupported models are blocked, and custom model capabilities remain unverified. No timing, token count, or answer quality is presented as proof of internal reasoning. [Effort limits and model support](https://code.claude.com/docs/en/model-config#organization-effort-limits).
 
 ## Permissions and isolation
 

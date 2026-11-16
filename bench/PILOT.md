@@ -29,6 +29,8 @@ Preparing the pilot turned up four bugs, all fixed with regression tests (see th
 | Tasks and repeats | all 11, 1 repeat | 55 runs, at most 77 provider turns |
 | Fixed before the run | margin 5 pp, reference `fixed-high`, seed `pilot-2026-10`, 600 s per run | Recorded in `meta.json` when the benchmark starts |
 
+Note added 2026-11-16: the adapter has accepted Haiku 5.x since 2026-11-16 because it supports effort. The table above preserves the recorded pilot plan and its model choice.
+
 Stage 0 is a smoke test of 2 runs: `node-paginate` with `fixed-low` and `auto-escalate`. Stage 1 is the pilot. Each stage starts only after the one before it has been checked.
 
 ## Cost estimate

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/effort-banner.png" alt="effort. Spend reasoning where it helps: a local CLI that picks the reasoning effort for each coding-agent prompt, checks the result, and shows its work. Works with Claude Code, Codex, OpenCode and MCP." width="880">
+  <img src="docs/assets/effort-banner.png" alt="effort. Spend reasoning where it helps: a local CLI that picks a model and reasoning effort for each coding-agent prompt, checks the result, and shows its work. Works with Claude Code, Codex, Gemini, OpenCode and MCP." width="880">
 </p>
 
 # The Effort Project
@@ -8,28 +8,29 @@
 [![Node.js 22 or later](https://img.shields.io/badge/node-%E2%89%A522-339933)](https://nodejs.org/)
 [![No runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](package.json)
 
-**Spend reasoning where it helps.** Effort picks a reasoning effort (low, medium or high) for each prompt you give a coding agent, checks the result with your own tests, and tells you why it chose that level. It runs entirely on your machine, has no runtime dependencies, and works with Claude Code, Codex, OpenCode and any app that supports local MCP servers.
+**Spend reasoning where it helps.** Effort picks a model and effort (low, medium or high) for coding-agent prompts, checks results with your tests, and explains each choice. It runs locally with no runtime dependencies, supporting Claude Code, Codex, Gemini, OpenCode and local MCP hosts.
 
-> **Status: experimental (0.1).** Effort's decisions come from transparent rules, not a trained model, and it has not yet shown lower cost at equal quality. See [Limits](#limits).
+> **Status: experimental (0.1).** Model and effort routing has functional live checks, but lower cost at equal quality is unproven. See [Limits](#limits).
 
 ## Why
 
-Coding agents let you choose how hard the model thinks, but almost nobody changes that setting from one prompt to the next. High effort on a typo wastes time and tokens. Low effort on a race condition wastes an afternoon. Effort makes the call before each prompt, using rules you can read in one file ([`src/policy.mjs`](src/policy.mjs)), and raises effort only when your tests keep failing the same way.
+Coding agents let you choose how hard the model thinks. Effort makes that choice before each prompt, using rules you can read in one file ([`src/policy.mjs`](src/policy.mjs)), and raises effort when your tests keep failing the same way.
 
 It only uses each agent's real effort setting. It never edits your agent's settings files, never fakes effort by adding "think harder" to a prompt, and never interrupts a request that is already running.
 
 ## Set it up once
 
-Effort plugs into the tool you already use. After a one-time setup, your agent starts Effort by itself in every session, so there is no terminal or web page to keep open.
+Effort plugs into the tool you already use. Choose a native plugin, an automatic session, or advisory MCP tools.
 
 | You use | One-time setup | What you get in every session |
 | --- | --- | --- |
-| **Claude Code** | In Claude Code, run `/plugin marketplace add AntyLab/effort-project`, then `/plugin install effort-project@effort-project` | A one-line suggestion before a prompt when a rule fires, such as *Effort suggests high for this prompt*. You apply it with `/effort high`. You also get Effort's MCP tools and the `/effort-project:explain` command. [Details](docs/claude-code-plugin.md) |
+| **Claude Code** | In Claude Code, run `/plugin marketplace add AntyLab/effort-project`, then `/plugin install effort-project@effort-project` | The plugin routes by itself through skills: Haiku/low or Fable/high in a fork, or high effort on the session model. Ordinary prompts stay unchanged. MCP tools and `/effort-project:explain` are included. [Details](docs/claude-code-plugin.md) |
 | **OpenCode** | Run `effort config opencode` and save the output as `.opencode/plugins/effort.mjs` in your project | Effort switches the model's effort automatically before each prompt. [Details](docs/automatic.md#opencode-plugin) |
-| **Codex CLI** | Run `effort config codex` and add the output to `~/.codex/config.toml` | Effort's MCP tools: ask Codex which effort a task needs, then set it with Codex's own selector. [Details](docs/desktop.md) |
+| **Codex CLI** | Start with `effort auto codex` | Model and effort routing in the normal terminal UI, using a built-in WebSocket server with no extra packages. [Details](docs/automatic.md#codex-terminal-router) |
+| **Gemini** | Install and sign in to the Antigravity CLI (`agy`) | `effort run --provider gemini` for verified tasks; `effort auto gemini` for a text conversation. [Details](docs/automatic.md#gemini-through-antigravity) |
 | **Claude desktop, or any app with local MCP** | Run `effort config claude` and merge the output into the app's MCP settings | The same MCP tools in that app. [Details](docs/desktop.md) |
 
-Claude Code and Codex don't let a plugin change effort on its own, so in those tools Effort suggests and you decide. For automatic switching there, see [Automatic sessions](#automatic-sessions).
+`effort config codex` also prints advisory MCP setup for Codex. See [Automatic sessions](#automatic-sessions) for the session choices.
 
 ## Install
 
@@ -47,13 +48,15 @@ To uninstall, run `npm uninstall --global effort-project`. Effort keeps run reco
 ## Try it
 
 ```console
-$ effort recommend "Fix the typo in the README"
+$ effort recommend "Fix the typo in the README" --provider codex
 LOW · heuristic recommendation
+Model: gpt-6-luna · tier: fast
 The request appears short and mechanical; verify the result before accepting it.
 A transparent heuristic, not a trained difficulty model or a measured quality guarantee.
 
-$ effort recommend "Investigate an intermittent race condition in the job queue"
+$ effort recommend "Investigate an intermittent race condition in the job queue" --provider codex
 HIGH · heuristic recommendation
+Model: gpt-6-astra · tier: frontier
 The request touches behavior where an incorrect change can be costly.
 The request suggests investigation or changes with interacting parts.
 A transparent heuristic, not a trained difficulty model or a measured quality guarantee.
@@ -70,6 +73,16 @@ Every recommendation lists its reasons. The full rules are in [`src/policy.mjs`]
 | Anything else | medium, the uncertain default |
 | The request names five or more files in the workspace | one level higher, at most high |
 
+The model tier is **fast** for short mechanical requests, **frontier** when a request is both high-stakes and investigative or tangled, and **daily** otherwise.
+
+| Provider | fast | daily | frontier |
+| --- | --- | --- | --- |
+| Claude | haiku | opus | fable |
+| Codex | gpt-6-luna | gpt-6.1-sol | gpt-6-astra |
+| Gemini | gemini-4-hydrogen | gemini-4-argon | gemini-4-argon |
+
+Pin a model with `--model MODEL_ID`. In `effort auto`, `--routing-config` can override the built-in choices with an effort-to-model table. Precedence is the pin, configured table, built-in tier, then current/default model. See [model routing](docs/automatic.md#model-routing).
+
 Limits you set with `--effort`, `--min-effort` and `--max-effort` always win. How many languages a repository uses doesn't change the effort, because it describes the repository, not the request.
 
 When Effort runs the agent itself and your tests fail:
@@ -80,7 +93,7 @@ When Effort runs the agent itself and your tests fail:
 
 ## Run a task with verification
 
-`effort run` starts your installed, signed-in Codex or Claude Code CLI, runs your test command after each attempt, and retries as described above. Start with a disposable project or a clean working tree.
+`effort run` starts your installed, signed-in Codex, Claude Code or Antigravity CLI, runs your test command after each attempt, and retries as described above. Start with a disposable project or a clean working tree.
 
 ```sh
 effort run "Fix the failing sum test" --provider codex --cwd /path/to/project --allow-write -- node --test
@@ -98,14 +111,15 @@ All options, Windows notes and exit codes are in [managed runs](docs/managed-run
 To have effort change on its own before every prompt:
 
 - **OpenCode:** the plugin above already does this.
-- **Claude Code:** `effort auto claude --cwd .` runs Effort's own text session. It resumes your Claude Code conversation with the chosen effort for each prompt, but you give up Claude Code's own interface while you use it.
-- **Codex:** `effort auto codex` routes the normal Codex terminal through a local router. It's an experimental prototype that needs the `ws` package, which isn't included yet.
+- **Claude Code:** the plugin routes through skills in Claude's interface. `effort auto claude --cwd .` is an alternative text session that resumes the conversation with the chosen model and effort.
+- **Codex:** `effort auto codex` routes the normal terminal through a local router using its built-in WebSocket server. No extra package is needed; driving the official terminal UI by hand remains a check.
+- **Gemini:** `effort auto gemini --cwd .` resumes an Antigravity conversation in Effort's text interface.
 
 See [automatic routing](docs/automatic.md).
 
 ## Dashboard (optional)
 
-`effort dashboard` serves a local, read-only page with your run history and a box for trying recommendations; open the URL it prints. Nothing else depends on the dashboard and it can't start runs, so leave it closed unless you want to browse past runs. `effort history` shows the same list in the terminal.
+`effort dashboard` serves a local, read-only page with run history and a recommendation box; open the printed URL. It cannot start runs. `effort history` shows the same list in the terminal.
 
 The page is served on `127.0.0.1`, and the printed URL contains a one-time access token, so keep that URL private.
 
@@ -120,8 +134,10 @@ The page is served on `127.0.0.1`, and the printed URL contains a one-time acces
 
 - **Rules, not a trained model.** They are English-oriented keyword and length rules with low confidence, and they don't measure how hard a task really is.
 - **Savings aren't proven yet.** Effort hasn't shown lower cost at equal quality. See [what has been tested](docs/validation.md).
-- **Suggestions only in Claude Code, Codex and desktop apps.** Their plugins and MCP tools can't change effort. Only OpenCode and the `effort auto` sessions switch it automatically.
-- **No spending cap.** Time, attempt and effort limits bound a run, but don't guarantee your final bill.
+- **Claude Code routing depends on Claude following the hook.** Forks lose earlier context unless Claude passes it along; the main model still reads the prompt and relays the answer.
+- **Codex desktop and Claude desktop MCP remain advisory.** MCP tools cannot change the host conversation's model or effort.
+- **No spending cap.** Frontier models cost more. Time, attempt and effort limits do not guarantee a final bill.
+- **Gemini needs Antigravity CLI.** File permissions last for the session only; shell commands are never allowed. Token usage is reported, cost is not.
 
 ## Contributing
 
@@ -133,4 +149,4 @@ npm run smoke:package
 
 The tests use fake agent processes and never spend model credits. Start with [CONTRIBUTING.md](CONTRIBUTING.md), the [architecture notes](docs/architecture.md), the [adapter contract](docs/adapter-contract.md) and the [handoff notes](docs/HANDOFF.md). Checks against real agents and evaluation work are especially welcome. Please don't add adapters that only print an effort label without setting a real provider parameter.
 
-MIT licensed. An independent project, not affiliated with OpenAI or Anthropic.
+MIT licensed. An independent project, not affiliated with OpenAI, Anthropic or Google.
