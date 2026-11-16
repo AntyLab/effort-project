@@ -80,6 +80,39 @@ test('a polyglot checkout does not raise a short mechanical recommendation', asy
   }
 });
 
+test('recommend names the built-in model and tier for providers with a model table', async (t) => {
+  const f = await fixture(t);
+  for (const [provider, model] of [['codex', 'gpt-6-luna'], ['claude', 'haiku'], ['gemini', 'gemini-4-hydrogen']]) {
+    const args = ['recommend', 'Rename a variable', '--provider', provider, '--cwd', f.cwd];
+    const text = f.invoke(args);
+    assert.equal(text.status, 0, text.stderr);
+    assert.ok(text.stdout.includes(`Model: ${model} · tier: fast`));
+    const json = JSON.parse(f.invoke([...args, '--json']).stdout);
+    assert.equal(json.model, model); assert.equal(json.tier, 'fast');
+  }
+  assert.doesNotMatch(f.invoke(['recommend', 'Rename a variable']).stdout, /Model:/);
+});
+
+test('run dry-run resolves automatic tier models and preserves explicit model pins', async (t) => {
+  const f = await fixture(t);
+  for (const [provider, prompt, tier, model] of [
+    ['codex', 'Rename a variable', 'fast', 'gpt-6-luna'],
+    ['codex', 'Add a settings page', 'daily', 'gpt-6.1-sol'],
+    ['codex', 'Investigate a security regression', 'frontier', 'gpt-6-astra'],
+    ['claude', 'Rename a variable', 'fast', 'haiku'],
+  ]) {
+    const args = ['run', prompt, '--provider', provider, '--cwd', f.cwd, '--dry-run'];
+    for (const flags of [[], ['--model', 'auto']]) {
+      const result = f.invoke([...args, ...flags]);
+      assert.equal(result.status, 0, result.stderr);
+      const plan = JSON.parse(result.stdout);
+      assert.equal(plan.model, model); assert.equal(plan.tier, tier); assert.equal(plan.modelSelection, 'automatic');
+    }
+    const pinned = JSON.parse(f.invoke([...args, '--model', 'exact-model']).stdout);
+    assert.equal(pinned.model, 'exact-model'); assert.equal(pinned.tier, tier); assert.equal(pinned.modelSelection, 'pinned');
+  }
+});
+
 test('the verification command can follow -- and the JSON form still works', async (t) => {
   const f = await fixture(t);
   const plan = (args) => {

@@ -54,6 +54,7 @@ test('Codex automatic routing rewrites actual turn effort and preserves security
   assert.equal(f.factsCalls[0].cwd, '/workspace/project');
   assert.equal(f.events[0].evidence, 'turn-request-rewrite');
   assert.equal(f.events[0].action, 'apply');
+  assert.equal(f.events[0].modelSelection, 'unchanged');
   assert.equal(JSON.stringify(f.events).includes('do-not-run'), false);
   assert.equal(JSON.stringify(f.events).includes('/workspace'), false);
 });
@@ -136,12 +137,13 @@ test('Codex fixed effort pins override heuristic and TUI effort within bounds', 
 });
 
 test('Codex explicit model maps use discovered models, while launcher model pin wins', async () => {
-  const request = async () => ({ data: [catalogModel(), catalogModel('fast-model'), catalogModel('deep-model')], nextCursor: null });
+  const request = async () => ({ data: [catalogModel(), catalogModel('fast-model'), catalogModel('deep-model'), catalogModel('gpt-6-luna'), catalogModel('gpt-6-astra')], nextCursor: null });
   const f = fixture({ request, models: { low: 'fast-model', high: 'deep-model' } });
   await f.thread();
   const easy = await f.fromClient(f.turn());
   assert.equal(easy.params.model, 'fast-model');
   assert.equal(easy.params.effort, 'low');
+  assert.equal(f.events.at(-1).modelSelection, 'mapped');
   f.ack(easy);
   const hard = await f.fromClient(f.turn('Diagnose a race condition.'));
   assert.equal(hard.params.model, 'deep-model');
@@ -155,6 +157,47 @@ test('Codex explicit model maps use discovered models, while launcher model pin 
   await pinned.thread();
   assert.equal((await pinned.fromClient(pinned.turn())).params.model, 'codex-fixture');
   assert.equal(pinned.events.at(-1).modelSelection, 'pinned');
+});
+
+test('Codex selects built-in tier models when advertised by model ID or picker alias', async () => {
+  for (const pickerAliases of [false, true]) {
+    const models = ['gpt-6-luna', 'gpt-6.1-sol', 'gpt-6-astra'];
+    const f = fixture({ request: async () => ({ data: [catalogModel(), ...models.map(model =>
+      pickerAliases ? catalogModel(`resolved-${model}`, ['low', 'medium', 'high'], model) : catalogModel(model))], nextCursor: null }) });
+    await f.thread();
+    for (const [prompt, tier, model] of [
+      ['Correct a spelling typo.', 'fast', 'gpt-6-luna'],
+      ['Describe the project.', 'daily', 'gpt-6.1-sol'],
+      ['Investigate an authentication regression.', 'frontier', 'gpt-6-astra'],
+    ]) {
+      const rewritten = await f.fromClient(f.turn(prompt));
+      const expected = pickerAliases ? `resolved-${model}` : model;
+      assert.equal(rewritten.params.model, expected);
+      assert.equal(f.events.at(-1).model, expected);
+      assert.equal(f.events.at(-1).tier, tier);
+      assert.equal(f.events.at(-1).modelSelection, 'automatic');
+      f.ack(rewritten);
+    }
+  }
+});
+
+test('Codex preserves the previous model when the built-in tier is absent from the catalog', async () => {
+  const f = fixture({ request: async () => ({ data: [catalogModel(), catalogModel('gpt-6-astra')], nextCursor: null }) });
+  await f.thread();
+  const original = f.turn();
+  const rewritten = await f.fromClient(original);
+  assert.deepEqual(rewritten.params, { ...original.params, effort: 'low' });
+  assert.equal(f.events.at(-1).model, 'codex-fixture');
+  assert.equal(f.events.at(-1).modelSelection, 'unchanged');
+});
+
+test('Codex built-in selections still require a suitable advertised effort', async () => {
+  const f = fixture({ request: async () => ({ data: [catalogModel(), catalogModel('gpt-6-astra', ['low'])], nextCursor: null }) });
+  await f.thread();
+  const original = f.turn('Investigate an authentication regression.');
+  assert.strictEqual(await f.fromClient(original), original);
+  assert.equal(f.events.at(-1).action, 'preserve');
+  assert.match(f.events.at(-1).reasons.join(' '), /no suitable effort/);
 });
 
 test('Codex unknown mapped models preserve the complete request', async () => {

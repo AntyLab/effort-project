@@ -111,7 +111,7 @@ class AppServer {
           const pending = this.pending.get(message.id);
           if (pending) {
             this.pending.delete(message.id);
-            if (message.error) pending.reject(new AdapterError('rpc_error', `Codex rejected the ${pending.method} request.`));
+            if (message.error) pending.reject(Object.assign(new AdapterError('rpc_error', `Codex rejected the ${pending.method} request.`), { method: pending.method }));
             else if (Object.hasOwn(message, 'result')) pending.resolve(message.result);
             else pending.reject(protocolError());
           }
@@ -210,7 +210,7 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
   };
   const result = {
     provider: 'codex', sessionId: sessionId ?? null, requestedEffort: effort,
-    effortEvidence: { kind: 'turn-request', method: 'turn/start', requestedEffort: effort, accepted: false, model: null, supportedEfforts: [], configuredEffort: null },
+    effortEvidence: { kind: 'turn-request', method: 'turn/start', requestedEffort: effort, accepted: false, turnSubmitted: false, model: null, supportedEfforts: [], configuredEffort: null },
     text: '', usage: emptyUsage(), status: 'failed',
   };
   if (signal?.aborted) return { ...result, status: 'cancelled' };
@@ -348,6 +348,7 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
         ? { type: 'workspaceWrite', writableRoots: [directory], networkAccess: false, excludeSlashTmp: true, excludeTmpdirEnvVar: true }
         : { type: 'readOnly', networkAccess: false };
       submitted = true;
+      result.effortEvidence.turnSubmitted = true;
       const started = await server.request('turn/start', {
         threadId: id, input: [{ type: 'text', text: prompt }], cwd: directory,
         model: opened.model, effort, sandboxPolicy, approvalPolicy, approvalsReviewer: 'user',
@@ -373,7 +374,7 @@ export async function run({ prompt, cwd, effort, model, sessionId, allowWrite = 
   } catch (error) {
     const safe = error instanceof AdapterError ? error : new AdapterError('adapter_error', 'The Codex adapter could not complete this turn.');
     result.status = safe.status;
-    emit({ type: 'diagnostic', code: safe.code, message: safe.message });
+    emit({ type: 'diagnostic', code: safe.code, message: safe.message, ...(safe.method ? { method: safe.method } : {}) });
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener('abort', abort);
