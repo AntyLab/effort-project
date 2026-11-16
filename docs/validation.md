@@ -1,6 +1,6 @@
 # Validation record
 
-Release: **0.1.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
+Release: **0.2.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
 
 ## Model and effort routing, 2026-11-16
 

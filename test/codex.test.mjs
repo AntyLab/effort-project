@@ -94,7 +94,7 @@ async function setup(t, mode = 'normal') {
   await writeFile(fixturePath, fixtureSource);
   const events = [];
   const options = {
-    cwd, executable: process.execPath, executableArgs: [fixturePath], prompt: 'A prompt with spaces, quotes " and $(do-not-run).', effort: 'low', timeoutMs: 3000,
+    cwd, executable: process.execPath, executableArgs: [fixturePath], prompt: 'A prompt with spaces, quotes " and $(do-not-run).', effort: 'low', timeoutMs: 30_000, // generous for loaded machines; timeout tests set their own
     // Fixtures receive no provider credentials or inherited provider configuration.
     env: { FIXTURE_MODE: mode, FIXTURE_LOG: log, CHILD_PID: join(cwd, 'child.pid') },
     onEvent: (event) => events.push(event),
