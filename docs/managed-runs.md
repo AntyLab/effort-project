@@ -1,6 +1,6 @@
 # Managed runs
 
-`effort run` gives one task to your installed, signed-in Codex or Claude Code CLI, checks the result with a command you choose, and retries or raises effort when the same check keeps failing. This page is the full reference; the [README](../README.md#run-a-task-with-verification) has the short version.
+`effort run` gives one task to your installed, signed-in Codex, Claude Code, or Antigravity Gemini CLI, checks the result with a command you choose, and retries or raises effort when the same check keeps failing. This page is the full reference; the [README](../README.md#run-a-task-with-verification) has the short version.
 
 Start with a disposable project or a reviewed working tree. Effort does not reset, stash, commit or revert anything, so inspect the final diff, including after a failed run.
 
@@ -21,7 +21,7 @@ effort run "Fix the failing sum test" --provider codex --cwd /path/to/project \
   --allow-write --max-attempts 3 --timeout 180 -- node --test
 ```
 
-Use `--provider claude` for Claude Code. Its adapter allows restricted file edits and does not give the model a general shell. The verification command runs separately.
+Use `--provider claude` for Claude Code or `--provider gemini` for the Antigravity CLI (`agy`). Both adapters allow constrained file edits without giving the model a general shell; Gemini grants file permissions for the session only. The verification command runs separately. Gemini reports token usage but no cost.
 
 ## The verification command
 
@@ -52,7 +52,7 @@ Quote the task: `effort run` takes it as one argument and refuses extra words, s
 - **Defaults:** three attempts, 600 seconds (10 minutes) in total, and a `high` ceiling. The total covers provider turns and verification.
 - **Verification time:** each check may use the time left in the task. `--verify-timeout 300` limits each check to five minutes, and it can never exceed `--timeout`.
 - **Background processes:** a check ends when its process exits, plus up to a second for remaining output. On Linux and macOS, a background process it started in its process group is then stopped. On Windows that process keeps running, because Effort can't reach it once the check has exited, so stop it in the check itself.
-- **Effort and model:** `--effort low` overrides the initial recommendation, `--max-effort medium` sets a lower ceiling, and `--model` chooses a model. Adapters check the supported levels; an unsupported model or effort is never silently replaced.
+- **Effort and model:** `--effort low` overrides the initial recommendation and `--max-effort medium` sets a lower ceiling. Built-in model tiers route automatically; `--model` pins a model. Adapters check supported levels. An automatic model rejected before turn submission falls back once to the provider default, with the fallback recorded; an explicit model pin never does.
 - **Cost:** there is no universal dollar cap. Time, attempt and effort limits bound activity but don't guarantee a final bill.
 - **Planning:** `--dry-run` prints the plan without starting a provider.
 
@@ -78,4 +78,4 @@ Passing the selected check means **that check passed**, not that every requireme
 
 ## Finding the agent CLIs
 
-`effort doctor` reports which provider CLIs Effort can start. On Windows, Effort looks for `codex.exe` or `claude.exe` on `PATH`, then for npm's `codex.cmd` or `claude.cmd` shim, whose JavaScript entry it runs with the current Node; it never starts a shell. To choose a specific installation on any platform, set `EFFORT_CODEX_BIN` or `EFFORT_CLAUDE_BIN` to an executable, a JavaScript entry point or, on Windows, an npm `.cmd` shim.
+`effort doctor` reports which provider CLIs Effort can start. On Windows, Effort looks for `codex.exe`, `claude.exe`, or `agy.exe` on `PATH`, then for the corresponding npm `.cmd` shim, whose JavaScript entry it runs with the current Node; it never starts a shell. To choose a specific installation on any platform, set `EFFORT_CODEX_BIN`, `EFFORT_CLAUDE_BIN`, or `EFFORT_GEMINI_BIN` to an executable, a JavaScript entry point or, on Windows, an npm `.cmd` shim.

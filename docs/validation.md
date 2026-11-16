@@ -1,20 +1,56 @@
 # Validation record
 
-Release: **0.1.0 experimental**, checked September 26, 2026. Development host: macOS, Node 24.16.0. This is a functional acceptance record, not a study of coding quality or cost savings.
+Release: **0.1.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
 
-## Automatic integration prototype
+## Model and effort routing, 2026-11-16
+
+The supplied live evidence was gathered on macOS with Node 26.13, Claude Code 2.1.310, codex-cli 0.160.0, and agy 1.5.9. These are functional checks of routing and task completion. No new provider calls were made during this documentation pass.
+
+### Claude Code plugin
+
+A headless session on Sonnet 5.5 at medium effort loaded the real plugin directory:
+
+| Prompt | Observed route and result |
+| --- | --- |
+| `Fix the typo in README.md` | Invoked `effort-project:route-fast`; a `claude-haiku-5-5` fork fixed the typo, and tool hooks reported low effort |
+| `Add a second heading called Usage to README.md` | Invoked no skill and stayed on Sonnet at medium effort |
+| A race-condition investigation | Invoked `effort-project:route-frontier`; a Fable fork fixed the bug, and tool hooks reported high effort |
+
+The race check cost about $0.67 at list price, against about $0.07 for each of the other two. The tasks differ, so these figures do not establish savings or quality differences.
+
+A separate probe used a non-forked skill with `effort: low`. It moved the main conversation from high to low for the rest of the turn, while the skill's `model:` field did not change the main conversation's model. Hooks cannot set model or effort directly. The plugin asks Claude to invoke a skill; a model change runs in a fork, while the main model reads the prompt and relays the answer. Earlier conversation reaches the fork only if Claude passes it along.
+
+### Codex router
+
+A WebSocket client drove the real `codex app-server` behind Effort's router and built-in WebSocket server. The session default was `gpt-6.1-sol` at max effort. A typo prompt was rewritten to `gpt-6-luna` at low with `modelSelection: automatic`, and the turn completed. Codex's own session record showed `gpt-6-luna` / low. The official terminal UI itself was not driven by this check; its handshake still needs a manual check.
+
+### Gemini through Antigravity
+
+`effort run --provider gemini` on a rename-typo task automatically chose `gemini-4-hydrogen` at low. agy's log label read `Gemini 4 Hydrogen (Low)`, and the task passed its verification command. This checks the Antigravity CLI integration, not Google's own Gemini CLI or a native Antigravity plugin.
+
+### Managed-run matrix
+
+Results are recorded below.
+
+## Automatic integration prototype, 2026-09-26
+
+This historical checkpoint used macOS and Node 24.16.0.
 
 The local prototype adds **79 tests**: 9 shared routing-policy tests, 7 CLI/configuration tests, 18 managed-session tests, 20 OpenCode hook tests, 17 Codex routing tests, and 8 transport lifecycle tests. **All 154 tests passed locally with no failures or skips**; 30 JavaScript files passed syntax checks. The packed archive also passed an offline temporary install with automatic CLI dry-run and OpenCode plugin import, alongside the existing MCP/dashboard checks.
 
-Transport tests use real loopback TCP/HTTP and fixture subprocesses but inject a mocked WebSocket implementation. They establish authentication gates, request rewriting, transparent approvals/cancellation, hidden internal discovery responses, immediate-startup cancellation, and child cleanup. They do **not** establish compatibility with the actual WebSocket library or official Codex terminal. The `ws` dependency is not installed/enabled in this build. The launcher stops before starting a provider when it is unavailable.
+At this checkpoint, transport tests used real loopback TCP/HTTP and fixture subprocesses but injected a mocked WebSocket implementation. They established authentication gates, request rewriting, transparent approvals/cancellation, hidden internal discovery responses, immediate-startup cancellation, and child cleanup. They did not establish actual WebSocket framing or official Codex terminal compatibility. The launcher then stopped for a missing `ws` package. The built-in server and November 16 live check above supersede that dependency limitation; the official terminal UI still needs a manual check.
 
-OpenCode hooks were checked against v1.18.32 source contracts. The managed Claude session uses the existing restricted CLI adapter and verified session-resume semantics in fake-process tests. No new native OpenCode acceptance, official Codex terminal acceptance, billed automatic-session model runs, desktop attachment, or savings evaluation was performed. Historical adapter live checks below are separate evidence.
+OpenCode hooks were checked against v1.18.32 source contracts. The managed Claude session used the existing restricted CLI adapter and verified session-resume semantics in fake-process tests. No new native OpenCode acceptance, official Codex terminal acceptance, billed automatic-session model runs, desktop attachment, or savings evaluation was performed at that checkpoint. Later routing checks are recorded above; historical adapter live checks below are separate evidence.
 
 ## Deterministic acceptance
 
+Local checks on 2026-11-16 used macOS and Node 26.13.0. The final `npm test` run reported 370 tests: 320 passed, 40 failed, and 10 skipped. All five acceptance-script tests passed. Thirty-nine failures were blocked by the sandbox denying loopback listeners (`listen EPERM` on `127.0.0.1`); an existing Claude terminal-JSON fixture timed out in the full run and passed in isolation. An earlier full run also had a descendant-cleanup assertion failure that passed in isolation. `npm run check` passed syntax checks for 99 JavaScript files. `npm run smoke:package` completed the offline pack/install and zero-dependency assertion, then the sandbox blocked its dashboard listener with the same `listen EPERM` error; the full smoke check did not pass.
+
+`node scripts/live-acceptance.mjs` prints a plan and checks the disposable typo, feature, and race fixtures without starting a provider. Every starting fixture must fail, and a reference fix must pass. `--providers codex,claude,gemini` selects providers; `--max-runs` is a hard cap, and provider execution requires `--live`. Live records contain routing metadata and observed evidence, not prompts or responses. Usage stays per attempt; the last reported cost is retained without summing conversation totals. This pass exercised only the offline mode.
+
 The release suite covers the policy and its uncertainty, effort caps, repeated-failure recovery, environment/authentication stops, session preservation, unsupported models, approval denial, malformed and excessive provider output, subprocess timeout/abort cleanup, usage accounting, private metadata boundaries, MCP negotiation/calls/termination, and dashboard authentication/Host/Origin checks.
 
-Before the automatic prototype, the development host passed **75 tests, with zero failures or skips**. The JavaScript syntax check also passed. The current expanded local suite is reported above.
+Before the automatic prototype, the development host passed **75 tests, with zero failures or skips**. The JavaScript syntax check also passed. The September 26 expanded local suite is reported above.
 
 Run `npm test` and `npm run check`. Ordinary tests use fake providers and temporary fixtures, make no paid model calls, and do not modify provider configuration. GitHub Actions is turned off for this repository, so there are no CI results: platform results come from local runs, and a pull request should say which platforms and Node.js versions it was tested on. POSIX-only process-group assertions are explicitly skipped on Windows.
 
@@ -61,7 +97,7 @@ The same review reproduced an existing tab failing to adopt a newly opened acces
 
 MCP was tested through the packaged command entry point with initialization, tool discovery and calls. This establishes stdio protocol behavior. It does not establish installation into every desktop app, nor automatic effort control of a host conversation.
 
-The download was built and installed into an isolated local prefix. CLI help/recommendation, MCP initialization/tool calls, dashboard HTML/JavaScript/CSS, and the authenticated API passed. `npm run smoke:package` automates this offline archive/install check in a temporary directory on every CI matrix job.
+The download was built and installed into an isolated local prefix. CLI help/recommendation, MCP initialization/tool calls, dashboard HTML/JavaScript/CSS, and the authenticated API passed. `npm run smoke:package` automates this offline archive/install check in a temporary directory. GitHub Actions remains disabled; run it locally.
 
 A 10,000-call microbenchmark of the local rules on two short prompts measured p95 below 0.001 ms and maximum below 0.5 ms on this host. It excludes process startup, repository metadata scanning, provider startup and inference. It is not an end-to-end latency guarantee.
 
@@ -70,7 +106,10 @@ A 10,000-call microbenchmark of the local rules on two short prompts measured p9
 - Equal coding quality at lower total cost, or reduced user intervention.
 - A calibrated difficulty predictor, multilingual task classification, or personalization.
 - Native in-flight effort changes inside Codex/Claude desktop chats.
-- Live provider compatibility on Windows/Linux, other provider/CLI versions, or every account/organization policy.
+- The official Codex terminal UI handshake driven by hand, and OpenCode live acceptance.
+- Google's own Gemini CLI and a native Antigravity plugin.
+- A benchmark arm that also routes the model, and savings/quality evidence on a held-out corpus.
+- Windows/Linux live compatibility for the new routes, other provider/CLI versions, or every account/organization policy. Historical Windows Claude checks do not establish those new routes.
 - A universal spending cap. Unknown/cumulative usage is not treated as zero or summed as per-turn usage.
 
 The next research step is a controlled held-out task benchmark, described in [architecture.md](architecture.md). These limitations are visible in the product and README; no savings percentage is advertised.
