@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Two tests added in 0.2.0 now pass on Windows. The route-skill test accepts the CRLF line endings that Git for Windows checks out by default, and the WebSocket terminate test waits for the server end to finish closing, not only the client end. This changes test code only.
+
 ## [0.2.0] - 2026-11-16
 
 Second experimental release: automatic model and effort routing for Claude, Codex and Gemini, a Claude Code plugin that routes through its own skills, a Codex terminal router with no extra package, an offline benchmark harness, and the fixes from the October 2026 review. Effort still has not demonstrated lower cost at equivalent coding quality.

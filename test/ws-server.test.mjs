@@ -179,8 +179,11 @@ test('WebSocket terminate closes its socket and server close closes remaining co
   const f = await fixture(t);
   const first = await rawClient(t, f.url);
   const connection = f.connection;
+  // The client can see its socket close before the server end has finished closing
+  // (on Windows it always does), so wait for both ends before checking the state.
+  const connectionClosed = new Promise(resolve => connection.once('close', resolve));
   connection.terminate();
-  await first.closed;
+  await Promise.all([first.closed, connectionClosed]);
   assert.equal(connection.readyState, 3);
   const second = await rawClient(t, f.url);
   await new Promise(resolve => f.wss.close(resolve));
