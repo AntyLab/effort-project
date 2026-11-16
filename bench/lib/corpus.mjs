@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
+import { findCommand } from '../../src/commands.mjs';
 import { verify, validateCommand } from '../../src/verify.mjs';
 
 export const BENCH_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -95,14 +96,22 @@ export async function materialize(task, destination, { solution = false } = {}) 
 }
 
 let pythonCache;
-/** Find Python 3.8+ without a shell. EFFORT_BENCH_PYTHON (or `override`) names one interpreter to use. */
+/**
+ * Find Python 3.8+ without a shell. EFFORT_BENCH_PYTHON (or `override`) names one interpreter to use.
+ * Checks start commands through findCommand, so only a candidate it resolves is tried. The probe runs
+ * the resolved file, and `command` is its absolute path, so every check runs the interpreter probed.
+ */
 export function findPython({ override = process.env.EFFORT_BENCH_PYTHON } = {}) {
   const key = override ?? '';
   if (pythonCache?.key === key) return pythonCache.value;
   const candidates = override ? [[override]]
     : process.platform === 'win32' ? [['python'], ['py', '-3'], ['python3']] : [['python3'], ['python']];
   let value = null;
-  for (const [command, ...prefix] of candidates) {
+  for (const [name, ...options] of candidates) {
+    let found = null;
+    try { found = findCommand(name); } catch {} // A batch file that is not an npm wrapper cannot run.
+    if (!found) continue;
+    const command = resolve(found.executable), prefix = [...found.executableArgs, ...options];
     const probe = spawnSync(command, [...prefix, '-c', 'import sys; print("%d.%d.%d" % sys.version_info[:3])'],
       { encoding: 'utf8', timeout: 15_000, windowsHide: true, shell: false });
     const version = String(probe.stdout ?? '').trim();

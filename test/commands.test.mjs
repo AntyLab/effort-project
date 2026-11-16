@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises';
+import { lstatSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import { findCommand, variable } from '../src/commands.mjs';
@@ -115,6 +116,30 @@ test('Windows returns the existing extension when resolving an explicit executab
       { executable: join(dir, 'bin', `check${extension}`), executableArgs: [] });
     await rm(join(dir, 'bin', `check${extension}`));
   }
+});
+
+test('Windows finds an app execution alias on PATH, as the Python install manager installs py', async (t) => {
+  const dir = await directory(t, 'effort-commands-alias-win-');
+  const apps = join(dir, 'WindowsApps'), tools = join(dir, 'tools');
+  await mkdir(apps);
+  await mkdir(join(tools, 'folder.exe'), { recursive: true });
+  await writeFile(join(tools, 'notes'), 'not a program');
+  // Node reports an alias as a symbolic link that stat cannot follow (EACCES), and a link
+  // whose target is gone fails with ENOENT. Neither can be made portably, so these two
+  // paths are reported the way Node reports them on Windows; the rest is the real disk.
+  const alias = join(apps, 'py.exe'), broken = join(apps, 'gone.exe');
+  const fail = (code) => { throw Object.assign(new Error(`${code}: simulated`), { code }); };
+  const link = { isFile: () => false, isDirectory: () => false, isSymbolicLink: () => true };
+  const fs = {
+    statSync: (path) => (path === alias ? fail('EACCES') : path === broken ? fail('ENOENT') : statSync(path)),
+    lstatSync: (path) => (path === alias || path === broken ? link : lstatSync(path)),
+  };
+  const options = { env: { PATH: `${tools};${apps}` }, platform: 'win32', fs };
+  for (const command of ['py', 'py.exe', join(apps, 'py'), alias]) assert.deepEqual(findCommand(command, options), { executable: alias, executableArgs: [] }, command);
+  assert.deepEqual(findCommand('py', { ...options, env: { PATH: '' }, cwd: apps }), { executable: alias, executableArgs: [] });
+  // Directories, missing files, broken links and files that are not programs still do not count.
+  for (const command of ['folder', 'missing', 'gone', 'notes', join(apps, 'gone')]) assert.equal(findCommand(command, options), null, command);
+  assert.equal(findCommand('py', { ...options, fs: undefined }), null);
 });
 
 test('a verification command that cannot start stops the run before any provider turn', async (t) => {

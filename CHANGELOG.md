@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- On Windows, command lookup now finds programs installed as app execution aliases, such as the `py` launcher that the Python install manager puts in `%LOCALAPPDATA%\Microsoft\WindowsApps`. Node cannot read these entries, so a verification command such as `py -m pytest` stopped with "was not found on PATH". The benchmark harness now picks only a Python that this lookup finds, and its checks run the interpreter it probed.
+
 ## [0.2.0] - 2026-11-16
 
 Second experimental release: automatic model and effort routing for Claude, Codex and Gemini, a Claude Code plugin that routes through its own skills, a Codex terminal router with no extra package, an offline benchmark harness, and the fixes from the October 2026 review. Effort still has not demonstrated lower cost at equivalent coding quality.
