@@ -335,6 +335,7 @@ export async function run(inputOptions) {
   let permissionDenied = false;
   let observedModel = null;
   let isolationDiagnostic = null;
+  let deniedTool = null;
   const evidence = {
     type: 'launch-flag', flag: '--effort', requested: options.effort,
     environment: 'CLAUDE_CODE_EFFORT_LEVEL', launchAccepted: false, turnSubmitted: false,
@@ -353,7 +354,8 @@ export async function run(inputOptions) {
       status = info[0];
       // Never include raw stderr or provider error bodies in diagnostics.
       text = detail ?? info[1];
-      emit({ type: 'error', code: failure, message: text, ...(isolationDiagnostic && failure === 'isolation_mismatch' ? { details: isolationDiagnostic } : {}) });
+      emit({ type: 'error', code: failure, message: text, ...(isolationDiagnostic && failure === 'isolation_mismatch' ? { details: isolationDiagnostic } : {}),
+        ...(deniedTool && failure === 'tool_not_allowed' ? { tool: deniedTool } : {}) });
     }
     evidence.launchAccepted = initialized;
     evidence.observedModel = observedModel;
@@ -443,7 +445,11 @@ export async function run(inputOptions) {
       if (Array.isArray(blocks)) {
         for (const block of blocks) {
           // The model's own request, unlike a configuration the CLI reported; it is still stopped.
-          if (block.type === 'tool_use' && !allowed.has(block.name)) { stop('tool_not_allowed'); return; }
+          if (block.type === 'tool_use' && !allowed.has(block.name)) {
+            // A tool name is not prompt text; naming it tells the user what the model reached for.
+            deniedTool = typeof block.name === 'string' && /^[A-Za-z0-9_*-]{1,80}$/.test(block.name) ? block.name : '[invalid-tool-name]';
+            stop('tool_not_allowed'); return;
+          }
           if (block.type === 'tool_use' && !emit({ type: 'tool', name: block.name })) { stop('callback_error'); return; }
         }
         const assistantText = blocks.filter((b) => b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n');
