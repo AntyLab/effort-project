@@ -37,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Managed Claude turns now receive a system note listing their available tools and explaining that the caller runs tests, to avoid shell requests after editing; unoffered tool requests still stop the turn.
 - `effort auto codex` starts with the built-in WebSocket server instead of requiring the undeclared `ws` package.
 - The Claude adapter accepts Haiku 5.x models, which support effort.
 - Requests mentioning payments or migrations now match the documented high-effort rule, including those plural spellings.

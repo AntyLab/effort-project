@@ -26,7 +26,7 @@ const READ_TOOLS = ['Read', 'Grep', 'Glob'];
 const KNOWN_BUILTIN_PLUGINS = new Set(['agents-md', 'cc-plugin-agents-md', 'cc-plugin-plugin-authoring']);
 const isKnownBuiltinPlugin = (plugin) => KNOWN_BUILTIN_PLUGINS.has(plugin?.name) && plugin?.path === 'builtin';
 const REQUIRED_FLAGS = [
-  '--print', '--output-format', '--verbose', '--effort', '--resume',
+  '--print', '--output-format', '--verbose', '--effort', '--resume', '--append-system-prompt',
   '--restricted', '--safe-mode', '--permission-mode', '--permission-prompts',
   '--tools', '--allowedTools', '--disallowedTools', '--strict-mcp-config', '--mcp-config',
   '--settings', '--setting-sources', '--disable-slash-commands', '--no-chrome',
@@ -122,6 +122,7 @@ function launchArgs(options) {
   const args = [
     '--print', '--output-format', 'stream-json', '--verbose',
     '--effort', options.effort,
+    '--append-system-prompt', `Only the ${tools.slice(0, -1).join(', ')} and ${tools.at(-1)} tools exist in this session; there is no shell and no other tool: do not request one, and do not try to run tests or commands; the caller runs its own checks.`,
     '--restricted', '--safe-mode', '--setting-sources', '',
     '--settings', JSON.stringify({ disableAllHooks: true, autoMemoryEnabled: false,
       fallbackModel: [], switchModelsOnFlag: false, ultracode: false,

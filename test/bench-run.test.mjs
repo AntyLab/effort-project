@@ -29,7 +29,7 @@ function withoutPath(directory) {
 // A stand-in for the Claude CLI in live mode. It never contacts a model: it answers --version and
 // --help like Claude Code, then each turn reports a usage limit while limit.flag exists beside it,
 // or completes without changing anything.
-const CLAUDE_FLAGS = '--print --output-format --verbose --effort --resume --restricted --safe-mode --permission-mode --permission-prompts --tools --allowedTools --disallowedTools --strict-mcp-config --mcp-config --settings --setting-sources --disable-slash-commands --no-chrome --max-turns --model';
+const CLAUDE_FLAGS = '--print --output-format --verbose --effort --resume --restricted --safe-mode --permission-mode --permission-prompts --tools --allowedTools --disallowedTools --strict-mcp-config --mcp-config --settings --setting-sources --disable-slash-commands --no-chrome --max-turns --model --append-system-prompt';
 const STUB_CLAUDE = `import { existsSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 const args = process.argv.slice(2);

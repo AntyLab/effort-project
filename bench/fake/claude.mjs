@@ -10,7 +10,7 @@ const FLAGS = [
   '--print', '--output-format', '--verbose', '--effort', '--resume', '--restricted', '--safe-mode',
   '--permission-mode', '--permission-prompts', '--tools', '--allowedTools', '--disallowedTools',
   '--strict-mcp-config', '--mcp-config', '--settings', '--setting-sources', '--disable-slash-commands',
-  '--no-chrome', '--max-turns', '--model',
+  '--no-chrome', '--max-turns', '--model', '--append-system-prompt',
 ];
 if (args.includes('--help')) {
   process.stdout.write(`Usage: claude [options] (offline effort-bench fake)\n\n${FLAGS.join('\n')}\n`);

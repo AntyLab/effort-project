@@ -8,7 +8,7 @@ import { capabilities, run } from '../src/adapters/claude.mjs';
 
 const SESSION = '12345678-1234-4234-8234-123456789abc';
 const OTHER_SESSION = '87654321-1234-4234-8234-123456789abc';
-const HELP = '--print --output-format --verbose --effort --resume --restricted --safe-mode --permission-mode --permission-prompts --tools --allowedTools --disallowedTools --strict-mcp-config --mcp-config --settings --setting-sources --disable-slash-commands --no-chrome';
+const HELP = '--print --output-format --verbose --effort --resume --restricted --safe-mode --permission-mode --permission-prompts --tools --allowedTools --disallowedTools --strict-mcp-config --mcp-config --settings --setting-sources --disable-slash-commands --no-chrome --append-system-prompt';
 
 async function fixture(t, body = '', { help = HELP, startup = true } = {}) {
   const cwd = await mkdtemp(join(tmpdir(), 'effort-claude-test-'));
@@ -67,6 +67,7 @@ test('passes a literal prompt on stdin and isolates default read-only turns', as
   assert.equal(argValue(launch.argv, '--permission-mode'), 'dontAsk');
   assert.equal(argValue(launch.argv, '--permission-prompts'), 'none');
   assert.equal(argValue(launch.argv, '--tools'), 'Read,Grep,Glob');
+  assert.equal(argValue(launch.argv, '--append-system-prompt'), 'Only the Read, Grep and Glob tools exist in this session; there is no shell and no other tool: do not request one, and do not try to run tests or commands; the caller runs its own checks.');
   assert.equal(argValue(launch.argv, '--setting-sources'), '');
   assert.equal(argValue(launch.argv, '--mcp-config'), '{"mcpServers":{}}');
   for (const flag of ['--restricted', '--safe-mode', '--strict-mcp-config', '--disable-slash-commands', '--no-chrome']) assert.ok(launch.argv.includes(flag));
@@ -110,6 +111,7 @@ test('explicit write mode retains restrictions and resumes at the next effort', 
   assert.equal(argValue(argv, '--effort'), 'high');
   assert.equal(argValue(argv, '--model'), 'sonnet');
   assert.equal(argValue(argv, '--tools'), 'Read,Grep,Glob,Edit,Write');
+  assert.equal(argValue(argv, '--append-system-prompt'), 'Only the Read, Grep, Glob, Edit and Write tools exist in this session; there is no shell and no other tool: do not request one, and do not try to run tests or commands; the caller runs its own checks.');
   assert.equal(argValue(argv, '--permission-mode'), 'acceptEdits');
   assert.equal(argValue(argv, '--permission-prompts'), 'none');
   assert.equal(argValue(argv, '--max-turns'), '3');
@@ -198,14 +200,16 @@ test('validates inputs before any process launch', async (t) => {
 });
 
 test('unknown isolation flags block before a provider turn', async (t) => {
-  const f = await fixture(t, '', { help: HELP.replace('--restricted', '') });
-  const events = [];
-  const result = await run({ ...f.options, onEvent: (e) => events.push(e) });
-  assert.equal(result.status, 'blocked');
-  assert.equal(events.at(-1).code, 'unsupported_cli');
-  assert.equal(result.effortEvidence.launchAccepted, false);
-  assert.equal(result.effortEvidence.turnSubmitted, false);
-  assert.equal(await exists(f.log), false);
+  for (const flag of ['--restricted', '--append-system-prompt']) {
+    const f = await fixture(t, '', { help: HELP.replace(flag, '') });
+    const events = [];
+    const result = await run({ ...f.options, onEvent: (e) => events.push(e) });
+    assert.equal(result.status, 'blocked');
+    assert.equal(events.at(-1).code, 'unsupported_cli');
+    assert.equal(result.effortEvidence.launchAccepted, false);
+    assert.equal(result.effortEvidence.turnSubmitted, false);
+    assert.equal(await exists(f.log), false);
+  }
 });
 
 test('missing executable and working directory return useful blocked results', async (t) => {
@@ -396,6 +400,23 @@ test('checks session, model, tools, plugins, hooks and permission evidence', asy
     assert.notEqual(result.status, 'completed');
     assert.equal(events.at(-1).code, code);
     assert.equal(result.effortEvidence.turnSubmitted, true);
+  }
+});
+
+test('unoffered tool requests stop the turn and report only a safe tool name', async (t) => {
+  for (const allowWrite of [false, true]) {
+    for (const name of ['Bash', 'unsafe\nsecret', '', null, 'x'.repeat(81)]) {
+      const f = await fixture(t, `emit({ type: 'assistant', message: { content: [{ type: 'tool_use', name: ${JSON.stringify(name)}, input: { command: 'private command' } }] } }); setInterval(() => {}, 1000);`);
+      const events = [];
+      const result = await run({ ...f.options, allowWrite, onEvent: (event) => events.push(event) });
+      assert.equal(result.status, 'blocked');
+      const errors = events.filter((event) => event.type === 'error');
+      assert.equal(errors.length, 1);
+      assert.equal(errors[0].code, 'tool_not_allowed');
+      assert.equal(errors[0].tool, name === 'Bash' ? 'Bash' : '[invalid-tool-name]');
+      assert.ok(!events.some((event) => event.type === 'tool'));
+      assert.ok(!JSON.stringify(events).includes('private command'));
+    }
   }
 });
 
