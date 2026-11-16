@@ -36,10 +36,12 @@ node bench/run.mjs
 
 `bench/results/` is git-ignored. To publish a result deliberately, use `git add -f`.
 
+Providers default to `codex,claude`. Gemini is opt-in: add `--providers gemini` or `--providers codex,claude,gemini`; offline runs use its fake CLI too.
+
 ## How one run works
 
 1. The task's `repo/` is copied into a fresh temporary directory outside this repository.
-2. `runTask` from [src/runner.mjs](../src/runner.mjs) runs the task through the real Codex or Claude adapter. It gets write permission, the arm's effort settings, the per-run time limit, and the task's **visible check** (its own test command) as `verify`. No shell is used anywhere.
+2. `runTask` from [src/runner.mjs](../src/runner.mjs) runs the task through the real Codex, Claude or Gemini adapter. It gets write permission, the arm's effort settings, the per-run time limit, and the task's **visible check** (its own test command) as `verify`. No shell is used anywhere.
 3. When `runTask` returns, the final workspace is copied again. The task's hidden `accept/` files are placed in that copy as `bench_accept/`, replacing anything the agent created under that name, and the task's accept command runs there. **Pass means this hidden check passed.** The agent's workspace itself is never modified.
 4. The record is appended to `runs.jsonl` and the temporary directories are removed. Keep them for inspection with `--keep-workspaces`.
 
@@ -125,6 +127,7 @@ Each line of `runs.jsonl` is one run:
 | `key`, `order`, `benchId` | `provider/task/arm/repeat`, position in that provider's randomized schedule (each provider's runs are shuffled and numbered separately, and the providers run one after the other), benchmark id |
 | `provider`, `task`, `language`, `difficulty`, `category`, `arm`, `repeat` | What ran |
 | `model.requested`, `model.observed` | Model asked for (null = provider default) and models the CLI reported |
+| `model.observedLabels` (Gemini) | Selection display labels; these do not verify the backend model id. An unavailable observed id stays unknown even when a model is pinned |
 | `effort.initial`, `effort.final`, `effort.decisions`, `effort.features`, `effort.policyVersion` | Effort decisions with their fixed reasons; no task text |
 | `attempts[]` | Per attempt: effort, provider status, visible check result and failure kind, duration, usage |
 | `runStatus`, `stopReason` | `runTask`'s verdict (`verified`, `failed`, `blocked`, …). This is *not* the pass/fail used for scoring |
@@ -168,8 +171,8 @@ The charts are separate SVG files because GitHub strips inline `<svg>` from Mark
 
 ### Reading the numbers honestly
 
-- **Unknown usage is not counted as zero.** Medians and totals use only runs whose every attempt reported usage, and the summary shows how many that is. Codex reports no cost. Claude reports a resumed turn's tokens only when the turn's own stream confirms them (see [the Claude adapter notes](../docs/claude-adapter.md)), and the fake Claude CLI never does, so some Claude runs that retried have unknown token totals. That biases token comparisons toward the arms that retry less. Their cost is known: Claude Code 2.1.277 and later report the conversation's whole cost on every resumed turn, and every attempt of a run continues one conversation, so the run's cost is the last attempt's total. The harness uses that only when the probed CLI is 2.1.277 or later, and never adds totals together.
-- Token fields are what each CLI reports, and the CLIs count input and cached tokens differently. Compare arms within a provider, not across providers. Claude also runs in restricted mode without a shell, so it cannot run tests itself, while Codex can.
+- **Unknown usage is not counted as zero.** Medians and totals use only runs whose every attempt reported usage, and the summary shows how many that is. Codex and Gemini report no cost (`costUsd: null`). Gemini reports tokens on the first turn but no verified per-turn tokens on resume, so retried Gemini runs have unknown token totals. Claude reports a resumed turn's tokens only when the turn's own stream confirms them (see [the Claude adapter notes](../docs/claude-adapter.md)), and the fake Claude CLI never does, so some Claude runs that retried have unknown token totals. That biases token comparisons toward the arms that retry less. Their cost is known: Claude Code 2.1.277 and later report the conversation's whole cost on every resumed turn, and every attempt of a run continues one conversation, so the run's cost is the last attempt's total. The harness uses that only when the probed CLI is 2.1.277 or later, and never adds totals together.
+- Token fields are what each CLI reports, and the CLIs count input and cached tokens differently. Compare arms within a provider, not across providers. Claude and Gemini run without a shell, so they cannot run tests themselves, while Codex can.
 - The paired difference removes the task-to-task variation both arms share. The per-arm Wilson intervals keep it, so they are wider than a comparison needs. Both count the repeats of one task as fewer runs. Judge a difference by its paired interval, not by whether two per-arm intervals overlap.
 - **More repeats cannot replace more tasks.** The design effects are themselves estimated from eleven tasks. A failure confined to kinds of task the corpus lacks, or too rare to appear among its tasks, cannot show in any interval. In the simulations, with 10 repeats the paired interval still covered as little as 80% of the time (41% unadjusted), and the per-arm interval 86% (41% unadjusted). Repeats narrow the comparison only as far as the arms' disagreements vary within tasks. To make a verdict firmer, add tasks. A pilot cannot establish equal quality.
 - The hidden check guards against accidental or opportunistic test editing, not a determined adversary: an agent that searched the disk could find this repository. `changedFiles` and `visibleTestsChanged` help spot that.
@@ -177,19 +180,20 @@ The charts are separate SVG files because GitHub strips inline `<svg>` from Mark
 
 ## Offline mode (the default)
 
-Without `--live`, the real adapters drive two fake CLIs, using the same fake-process approach as `test/codex.test.mjs` and `test/claude.test.mjs`:
+Without `--live`, the real adapters drive local fake CLIs, using the same fake-process approach as `test/codex.test.mjs` and `test/claude.test.mjs`:
 
 - [fake/codex.mjs](fake/codex.mjs) speaks the app-server JSON-RPC that [src/adapters/codex.mjs](../src/adapters/codex.mjs) uses.
 - [fake/claude.mjs](fake/claude.mjs) emits the stream-json events [src/adapters/claude.mjs](../src/adapters/claude.mjs) reads.
+- [fake/gemini.mjs](fake/gemini.mjs) emits the print JSON and selection log [src/adapters/gemini.mjs](../src/adapters/gemini.mjs) reads.
 
 Each simulated turn either copies the reference solution into the workspace or changes nothing. It succeeds with a made-up probability per difficulty and effort, set in [fake/model.mjs](fake/model.mjs), and reports synthetic token counts. The fake CLIs get no credentials. Their output is labeled synthetic in the summary and charts. It exercises the whole pipeline (adapters, `runTask` retries and escalation, hidden checks, JSONL, statistics, report) and says nothing about real models.
 
 ## Real runs
 
-Real runs use your installed, signed-in Codex and Claude Code CLIs and count against your account: billed per token with an API key, or against your plan's usage limits on a subscription.
+Real runs use your installed, signed-in Codex, Claude Code or Antigravity (`agy`, provider `gemini`) CLIs and count against your account: billed per token with an API key, or against your plan's usage limits on a subscription.
 
-1. Install and sign in to each CLI, and confirm it with `node bin/effort.mjs doctor`. The harness starts the same CLI that `doctor` finds: `EFFORT_CODEX_BIN` or `EFFORT_CLAUDE_BIN` first, then on Windows a native `.exe` or an npm shim on `PATH`. `--codex-bin` and `--claude-bin` override that with a native executable or JavaScript entry point. They take no npm `.cmd` shim, because one cannot be started without a shell; name a shim with the environment variable instead. [PILOT.md](PILOT.md) has the plan for the first live run, with its cost estimate.
-2. Pin the models with `--codex-model` and `--claude-model`. Otherwise the provider default is used and may change mid-benchmark. The summary flags a provider whose runs reported more than one model.
+1. Install and sign in to each CLI, and confirm it with `node bin/effort.mjs doctor`. The harness starts the same CLI that `doctor` finds: `EFFORT_CODEX_BIN`, `EFFORT_CLAUDE_BIN` or `EFFORT_GEMINI_BIN` first, then on Windows a native `.exe` or an npm shim on `PATH`. `--codex-bin`, `--claude-bin` and `--gemini-bin` override that with a native executable or JavaScript entry point. They take no npm `.cmd` shim, because one cannot be started without a shell; name a shim with the environment variable instead. Each selected CLI is probed with `--version`. [PILOT.md](PILOT.md) has the plan for the first live run, with its cost estimate.
+2. Pin the models with `--codex-model`, `--claude-model` or `--gemini-model`. Otherwise the provider default is used and may change mid-benchmark. The summary flags a provider whose runs reported more than one model. Gemini supplies a selection label, not an independently verified backend id; labels are saved in `model.observedLabels`, and missing observed ids do not reject pinned runs.
 3. Check the plan:
 
    ```bash
@@ -235,4 +239,4 @@ The harness uses only `runTask` and the adapters as they are. `src/` has since g
 
 1. **Per-turn usage for resumed Claude turns.** The Claude adapter now reports a resumed turn's tokens when the turn's own stream confirms them (`tokenScope: "turn"`, see [the Claude adapter notes](../docs/claude-adapter.md)). The fake Claude CLI does not emit per-message usage, so offline runs still show unknown usage for retried Claude runs.
 2. **`maxTurns`.** `runTask` passes it to the Claude adapter. A harness option could set it and record it in `meta.json`.
-3. **A shared executable resolver for the flags.** Without `--codex-bin` or `--claude-bin`, the harness already resolves the CLI through [src/provider-cli.mjs](../src/provider-cli.mjs), as `doctor` does. The flags still take their path literally, so they cannot name an npm `.cmd` shim.
+3. **A shared executable resolver for the flags.** Without `--codex-bin`, `--claude-bin` or `--gemini-bin`, the harness already resolves the CLI through [src/provider-cli.mjs](../src/provider-cli.mjs), as `doctor` does. The flags still take their path literally, so they cannot name an npm `.cmd` shim.

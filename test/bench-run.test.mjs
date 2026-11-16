@@ -20,7 +20,7 @@ async function scratch(t) {
   return directory;
 }
 
-// Hide every executable on PATH, so a real codex or claude could not start even if the guards failed.
+// Hide every executable on PATH, so a real codex, claude or agy could not start even if the guards failed.
 function withoutPath(directory) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^path$/i.test(key) && key !== 'NODE_TEST_CONTEXT'));
   return { ...env, PATH: join(directory, 'empty-bin') };
@@ -126,6 +126,8 @@ describe('offline benchmark runs', { concurrency: 1 }, () => {
     const first = await runBenchmark({ ...options, signal: controller.signal, log: (line) => { if (/^\[/.test(line)) controller.abort(); } });
     assert.equal(first.interrupted, true);
     assert.equal((await readRecords(first.runsPath)).length, 1);
+    assert.deepEqual(first.meta.plan.models, { codex: null, claude: null }, 'retain the model map stored before Gemini was added');
+    assert.deepEqual(first.meta.models, { codex: null, claude: null });
     await assert.rejects(runBenchmark(options), /--resume/);
     await assert.rejects(runBenchmark({ ...options, resume: true, seed: 'another' }), /seed/);
     const second = await runBenchmark({ ...options, resume: true });
@@ -149,6 +151,14 @@ describe('offline benchmark runs', { concurrency: 1 }, () => {
     assert.deepEqual(records.map((record) => record.provider).sort(), ['claude', 'codex']);
     assert.ok(records.every((record) => record.harnessError === null && record.model.observed[0]?.startsWith('fake-')));
 
+    const meta = JSON.parse(await readFile(join(out, 'meta.json'), 'utf8'));
+    assert.deepEqual(meta.plan.models, { codex: null, claude: null }, 'default plans keep the pre-Gemini shape');
+    // A Gemini model option must not change a legacy plan when Gemini is not selected.
+    const resumed = await cli(['--tasks', 'node-paginate', '--arms', 'auto-escalate', '--out', out, '--work-root', directory,
+      '--gemini-model', 'gemini-4-argon', '--resume'], { env });
+    assert.equal(resumed.code, 0, resumed.stderr);
+    assert.deepEqual(await readRecords(join(out, 'runs.jsonl')), records, 'resume skips the finished pre-Gemini plan');
+
     await rm(join(out, 'summary.md'));
     const report = await cli(['report', out], { env });
     assert.equal(report.code, 0, report.stderr);
@@ -158,12 +168,72 @@ describe('offline benchmark runs', { concurrency: 1 }, () => {
     assert.equal(plan.code, 0, plan.stderr);
     const parsed = JSON.parse(plan.stdout);
     assert.equal(parsed.mode, 'fake');
+    assert.deepEqual(parsed.providers, ['codex', 'claude']);
     assert.equal(parsed.runs, corpus.tasks.length * DEFAULT_ARMS.length * 2);
     assert.ok(parsed.tasks.every((task) => ['low', 'medium', 'high'].includes(task.rulesPick)));
 
     const unknownArm = await cli(['--arms', 'fixed-huge'], { env });
     assert.equal(unknownArm.code, 1);
     assert.match(unknownArm.stderr, /Unknown arm: fixed-huge/);
+  });
+
+  for (const [providers, model] of [['gemini', 'gemini-4-hydrogen'], ['gemini', 'gemini-4-hydrogen-custom'], ['codex,claude,gemini', undefined]]) {
+    test(`the CLI runs ${providers} offline with ${model ?? 'provider defaults'} and resumes`, async (t) => {
+      const directory = await scratch(t);
+      const env = withoutPath(directory);
+      const out = join(directory, 'out');
+      const args = ['--providers', providers, '--tasks', 'node-map-limit', '--arms', 'fixed-low,fixed-high,auto-escalate',
+        '--out', out, '--work-root', directory, ...(model ? ['--gemini-model', model] : [])];
+      const run = await cli(args, { env });
+      assert.equal(run.code, 0, run.stderr);
+      assert.match(run.stderr, /No real provider is started/);
+      const records = await readRecords(join(out, 'runs.jsonl'));
+      assert.deepEqual([...new Set(records.map((record) => record.provider))], providers.split(','));
+      assert.equal(records.length, providers.split(',').length * 3);
+      assert.ok(records.every((record) => record.harnessError === null && record.providerError === null && !record.interrupted));
+      const gemini = records.filter((record) => record.provider === 'gemini');
+      for (const record of gemini) {
+        assert.equal(record.model.requested, model ?? null);
+        assert.deepEqual(record.model.observed, model === 'gemini-4-hydrogen' ? [model] : []);
+        assert.ok(record.model.observedLabels.length > 0);
+        assert.ok(record.model.observedLabels.every((label) => /^Gemini 4 .+ \((Low|Medium|High)\)$/.test(label)));
+        assert.equal(record.usage.costUsd, null);
+        assert.ok(record.attempts.every((attempt) => attempt.usage.costUsd === null));
+        assert.ok(record.attempts[0].usage.inputTokens > 0 && record.attempts[0].usage.outputTokens > 0);
+        assert.equal(record.usage.totalTokens === null, record.attempts.length > 1, 'resumed tokens stay unknown');
+        assert.equal(record.accepted, record.acceptance.status === 'passed');
+      }
+      const meta = JSON.parse(await readFile(join(out, 'meta.json'), 'utf8'));
+      assert.deepEqual(meta.providerVersions, Object.fromEntries(providers.split(',').map((provider) => [provider, FAKE_VERSION])));
+      assert.deepEqual(meta.plan.models, { codex: null, claude: null, gemini: model ?? null });
+      assert.deepEqual(meta.models, meta.plan.models);
+      assert.equal(meta.plannedRuns, records.length);
+      const summary = await readFile(join(out, 'summary.md'), 'utf8');
+      assert.match(summary, /## gemini/);
+      assert.match(summary, /Codex and Gemini report no cost/);
+      for (const provider of providers.split(',')) assert.match(await readFile(join(out, `chart-${provider}.svg`), 'utf8'), /SYNTHETIC · FAKE PROVIDER/);
+
+      const resumed = await cli([...args, '--resume'], { env });
+      assert.equal(resumed.code, 0, resumed.stderr);
+      assert.deepEqual(await readRecords(join(out, 'runs.jsonl')), records);
+      const changed = await cli([...args, '--gemini-model', 'gemini-4-argon', '--resume'], { env });
+      assert.equal(changed.code, 1);
+      assert.match(changed.stderr, /models differ from the original run/);
+    });
+  }
+
+  test('Gemini options are documented and validate before launching a provider', async (t) => {
+    const directory = await scratch(t);
+    const env = withoutPath(directory);
+    const help = await cli(['--help'], { env });
+    assert.equal(help.code, 0, help.stderr);
+    for (const text of [/codex, claude, gemini/, /default: codex,claude/, /--gemini-model ID/, /--gemini-bin PATH/, /EFFORT_GEMINI_BIN, else agy/]) assert.match(help.stdout, text);
+    const bin = await cli(['--providers', 'gemini', '--gemini-bin', join(directory, 'never-run-agy')], { env });
+    assert.equal(bin.code, 1);
+    assert.match(bin.stderr, /--gemini-bin only applies with --live/);
+    const unknown = await cli(['--providers', 'unknown'], { env });
+    assert.equal(unknown.code, 1);
+    assert.match(unknown.stderr, /Choose from codex, claude, gemini/);
   });
 
   test('the CLI refuses live runs without an explicit, sufficient run cap', async (t) => {

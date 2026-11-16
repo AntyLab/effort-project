@@ -371,6 +371,28 @@ test('run usage is known only when every attempt reported it', () => {
   assert.equal(totalUsage([]).totalTokens, null);
 });
 
+test('Gemini token usage stays known while its unreported cost stays unknown', () => {
+  const usage = (inputTokens, outputTokens) => totalUsage([normalizeUsage({ inputTokens, outputTokens, cachedInputTokens: 0, costUsd: null })]);
+  const meta = { arms: [{ name: 'fixed-high' }, { name: 'auto-rules' }], providers: ['gemini'], referenceArm: 'fixed-high', margin: 0.05,
+    tasks: [{ id: 't1', language: 'node', difficulty: 'easy' }], repeats: 1, mode: 'fake' };
+  const record = (arm, tokens) => ({ key: runKey({ provider: 'gemini', task: 't1', arm, repeat: 1 }), provider: 'gemini', task: 't1', arm,
+    repeat: 1, accepted: true, runStatus: 'verified', usage: tokens, wallMs: 100, attempts: [{}] });
+  const records = [record('fixed-high', usage(100, 50)), record('auto-rules', usage(50, 25))];
+  assert.equal(records[0].usage.totalTokens, 150);
+  assert.equal(records[0].usage.costUsd, null);
+  const { markdown, aggregate: result } = renderSummary(meta, records);
+  const [summary] = result.providers;
+  for (const arm of summary.arms) {
+    assert.equal(arm.tokens.n, 1);
+    assert.deepEqual(arm.cost, { n: 0, median: null, p25: null, p75: null, sum: null });
+  }
+  assert.equal(summary.comparisons[0].tokenRatio, 0.5);
+  assert.deepEqual(summary.comparisons[0].tokensKnown, [1, 1]);
+  assert.match(markdown, /\| `fixed-high` \| 1\/1 \| 150 \| 50 \| 150 \|/);
+  assert.match(markdown, /\| `auto-rules` \| 1\/1 \| 75 \| 25 \| 75 \|/);
+  assert.doesNotMatch(markdown, /Total cost, known runs|\$0(?:\.0+)?\b|Incomplete usage/);
+});
+
 test('a retried Claude run costs its last conversation total, never a sum of totals', () => {
   const first = normalizeUsage({ inputTokens: 10, outputTokens: 5, cachedInputTokens: 2, costUsd: 0.25 });
   const resumed = (total) => normalizeUsage({ inputTokens: 4, outputTokens: 2, cachedInputTokens: 1, costUsd: null, conversationCostUsd: total, costScope: 'conversation', tokenScope: 'turn' });
@@ -401,6 +423,8 @@ test('provider failures are set aside like harness errors and listed with their 
   for (const code of ['max_turns', 'timeout', 'permission_denied', 'tool_not_allowed', 'output_limit', 'cli_error', 'aborted']) assert.ok(!PROVIDER_FAILURES.claude.includes(code), code);
   for (const code of ['cli_not_found', 'provider_error', 'model_rerouted']) assert.ok(PROVIDER_FAILURES.codex.includes(code), code);
   assert.ok(!PROVIDER_FAILURES.codex.includes('interaction_required'));
+  for (const code of ['authentication_required', 'account_blocked', 'rate_limited', 'permission_denied', 'model_unavailable', 'unsupported_effort', 'missing_cli', 'cli_unavailable', 'invalid_cwd']) assert.ok(PROVIDER_FAILURES.gemini.includes(code), code);
+  for (const code of ['tool_denied', 'empty_response', 'timeout', 'aborted', 'malformed_output', 'callback_error', 'cli_error']) assert.ok(!PROVIDER_FAILURES.gemini.includes(code), code);
 
   const tasks = [{ id: 't1', language: 'node', difficulty: 'easy' }, { id: 't2', language: 'node', difficulty: 'easy' }];
   const meta = { arms: [{ name: 'fixed-high' }, { name: 'auto-rules' }], providers: ['claude'], referenceArm: 'fixed-high', margin: 0.05, tasks, repeats: 1, mode: 'live' };
@@ -427,9 +451,9 @@ test('provider failures are set aside like harness errors and listed with their 
 });
 
 test('the schedule is a seeded permutation of every task, arm and repeat for each provider', () => {
-  const options = { taskIds: ['a', 'b', 'c'], arms: [...DEFAULT_ARMS], providers: ['codex', 'claude'], repeats: 2, seed: 'seed-1' };
+  const options = { taskIds: ['a', 'b', 'c'], arms: [...DEFAULT_ARMS], providers: ['codex', 'claude', 'gemini'], repeats: 2, seed: 'seed-1' };
   const schedule = buildSchedule(options);
-  assert.equal(schedule.length, 3 * 5 * 2 * 2);
+  assert.equal(schedule.length, 3 * 5 * 2 * 3);
   assert.equal(new Set(schedule.map((entry) => entry.key)).size, schedule.length);
   for (const provider of options.providers) {
     const entries = schedule.filter((entry) => entry.provider === provider);
@@ -459,7 +483,7 @@ test('the spend guard refuses live plans without an explicit, sufficient cap', (
 });
 
 test('offline launches always use the fake CLIs and live launches never do', () => {
-  for (const provider of ['codex', 'claude']) {
+  for (const provider of ['codex', 'claude', 'gemini']) {
     assert.ok(existsSync(FAKE_CLI[provider]));
     const offline = providerLaunch(provider, { live: false, fakeConfig: 'run.json' });
     assert.equal(offline.executable, process.execPath);
@@ -469,6 +493,7 @@ test('offline launches always use the fake CLIs and live launches never do', () 
   }
   assert.deepEqual(providerLaunch('claude', { live: true, bin: '/opt/claude/cli.js' }), { executable: process.execPath, executableArgs: ['/opt/claude/cli.js'] });
   assert.deepEqual(providerLaunch('codex', { live: true, bin: 'C:/tools/codex.exe' }), { executable: 'C:/tools/codex.exe', executableArgs: [] });
+  assert.deepEqual(providerLaunch('gemini', { live: true, bin: '/opt/agy' }), { executable: '/opt/agy', executableArgs: [] });
 });
 
 test('arms cover the baselines and match the effort run defaults', () => {

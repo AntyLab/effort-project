@@ -2,7 +2,8 @@ import { join } from 'node:path';
 import { BENCH_DIR } from './corpus.mjs';
 import { seededRandom, shuffle } from './random.mjs';
 
-export const PROVIDERS = Object.freeze(['codex', 'claude']);
+export const PROVIDERS = Object.freeze(['codex', 'claude', 'gemini']);
+export const DEFAULT_PROVIDERS = Object.freeze(['codex', 'claude']);
 
 // Each arm is one runTask configuration. Within a provider every arm gets the
 // same prompts, fresh fixture copies, visible check, time limit and model.
@@ -29,6 +30,9 @@ export const PROVIDER_FAILURES = Object.freeze({
     'unsupported_cli', 'missing_cli', 'cli_unavailable', 'invalid_cwd', 'isolation_mismatch', 'model_mismatch', 'session_mismatch']),
   codex: Object.freeze(['cli_not_found', 'process_error', 'cli_unavailable', 'session_busy', 'provider_error', 'model_rerouted',
     'model_mismatch', 'policy_mismatch', 'unsupported_effort', 'effort_mismatch']),
+  // Gemini access restrictions use permission_denied; denied tools use tool_denied and are scored.
+  gemini: Object.freeze(['authentication_required', 'account_blocked', 'rate_limited', 'permission_denied', 'model_unavailable',
+    'unsupported_effort', 'missing_cli', 'cli_unavailable', 'invalid_cwd']),
 });
 
 /**
@@ -47,6 +51,7 @@ export function reportsConversationTotals(version) {
 export const FAKE_CLI = Object.freeze({
   codex: join(BENCH_DIR, 'fake', 'codex.mjs'),
   claude: join(BENCH_DIR, 'fake', 'claude.mjs'),
+  gemini: join(BENCH_DIR, 'fake', 'gemini.mjs'),
 });
 
 /** Parse a comma-separated option against an allowed list, keeping the given order. */
