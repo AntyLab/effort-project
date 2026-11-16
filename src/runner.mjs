@@ -62,7 +62,7 @@ export async function runTask(options, { adapter, store, verifyFn = verify } = {
       let result = await run();
       // Accepted=false alone is insufficient: an unacknowledged turn/start may
       // already have done work. Only explicit pre-submission evidence permits replay.
-      const safeCodes = provider === 'codex' ? ['model_mismatch','unsupported_effort','rpc_error'] : provider === 'claude' ? ['unsupported_effort_model'] : [];
+      const safeCodes = provider === 'codex' ? ['model_mismatch','unsupported_effort','rpc_error'] : provider === 'claude' ? ['unsupported_effort_model'] : provider === 'gemini' ? ['model_unavailable'] : [];
       if (number === 1 && task.modelSelection === 'automatic' && ['blocked','failed'].includes(result.status) &&
           result.effortEvidence?.turnSubmitted === false && safeCodes.includes(rejectionCode) &&
           (rejectionCode !== 'rpc_error' || ['thread/start','thread/resume','model/list'].includes(rejectionMethod)) &&

@@ -17,7 +17,7 @@ import { createAutomaticRouter, validateModelMap } from '../src/automatic.mjs';
 import { resolveProviderCommand, CLI_OVERRIDES } from '../src/provider-cli.mjs';
 import { VERSION } from '../src/version.mjs';
 
-const help=`The Effort Project · ${VERSION}\nLocal effort decisions, with evidence you can inspect.\n\n  effort doctor [--json]\n  effort recommend "task" [--provider codex|claude|generic] [--cwd path] [--json]\n  effort run "task" --provider codex|claude --cwd path [--allow-write]\n    [--max-attempts 3] [--timeout 600] [--verify-timeout seconds]\n    [--effort auto|low|medium|high] [--max-effort high] [--model auto|model-id]\n    [--prompt-file path] [--dry-run] [--json]\n    [-- verification command | --verify-arg part ...]\n  effort auto codex|claude [--cwd path] [--effort auto|low|medium|high]\n    [--min-effort low] [--max-effort high] [--model model-id]\n    [--routing-config path] [--dry-run] [--allow-write (Claude only)]\n  effort dashboard [--port 0]\n  effort history [--json]\n  effort mcp\n  effort config codex|claude|opencode\n\nAuto Codex: normal Codex terminal UI through an experimental local router.\nAuto Claude: Effort's text session, resuming Claude Code between prompts.\nRun selects a built-in tier model by default; --model pins an exact model.\nAuto selects before each user turn; --effort pins effort and --model pins model.\nAuto model precedence: --model, routing-config models, built-in tier, current model.\nOpenCode: config opencode prints a native plugin module; see docs/automatic.md.\nManaged runs use your installed, signed-in provider CLI and its billed access.\nRun defaults: read-only, 600 seconds per task including verification, high effort\nceiling. Each check may use the time left; --verify-timeout sets a shorter limit.\nAuto Claude defaults: read-only, 120 seconds per prompt, high effort ceiling.\nAuto Codex preserves the official interface's sandbox and approval settings.\n--allow-write permits provider-constrained edits. Verification is your explicitly\nchosen local command; it is NOT sandboxed by Effort. Review it before running.\nPut it last, after --: effort run "task" --provider codex -- node --test\nIn PowerShell, quote the separator ('--') or give each part with --verify-arg:\n  --verify-arg node --verify-arg=--test. The JSON form\n  --verify '["node","--test"]' works where your shell keeps the inner quotes.\nQuote the task: effort run takes it as one argument (or use --prompt-file).\nWithout a verification command a completed task is UNVERIFIED and never auto-retried.\nDesktop MCP offers advice; it cannot change the host chat's effort.\nPrompts, code, responses and test output are not stored by Effort. Provider CLIs\nhave their own storage policies. EFFORT_DATA_DIR changes the metadata directory.\n`;
+const help=`The Effort Project · ${VERSION}\nLocal effort decisions, with evidence you can inspect.\n\n  effort doctor [--json]\n  effort recommend "task" [--provider codex|claude|gemini|generic] [--cwd path] [--json]\n  effort run "task" --provider codex|claude|gemini --cwd path [--allow-write]\n    [--max-attempts 3] [--timeout 600] [--verify-timeout seconds]\n    [--effort auto|low|medium|high] [--max-effort high] [--model auto|model-id]\n    [--prompt-file path] [--dry-run] [--json]\n    [-- verification command | --verify-arg part ...]\n  effort auto codex|claude|gemini [--cwd path] [--effort auto|low|medium|high]\n    [--min-effort low] [--max-effort high] [--model model-id]\n    [--routing-config path] [--dry-run] [--allow-write (Claude/Gemini)]\n  effort dashboard [--port 0]\n  effort history [--json]\n  effort mcp\n  effort config codex|claude|opencode\n\nAuto Codex: normal Codex terminal UI through an experimental local router.\nAuto Claude: Effort's text session, resuming Claude Code between prompts.\nAuto Gemini: Effort's text session, resuming Antigravity CLI between prompts.\nRun selects a built-in tier model by default; --model pins an exact model.\nAuto selects before each user turn; --effort pins effort and --model pins model.\nAuto model precedence: --model, routing-config models, built-in tier, current model.\nOpenCode: config opencode prints a native plugin module; see docs/automatic.md.\nManaged runs use your installed, signed-in provider CLI and its billed access.\nRun defaults: read-only, 600 seconds per task including verification, high effort\nceiling. Each check may use the time left; --verify-timeout sets a shorter limit.\nAuto Claude/Gemini defaults: read-only, 120 seconds per prompt, high effort ceiling.\nAuto Codex preserves the official interface's sandbox and approval settings.\n--allow-write permits provider-constrained edits. Verification is your explicitly\nchosen local command; it is NOT sandboxed by Effort. Review it before running.\nPut it last, after --: effort run "task" --provider codex -- node --test\nIn PowerShell, quote the separator ('--') or give each part with --verify-arg:\n  --verify-arg node --verify-arg=--test. The JSON form\n  --verify '["node","--test"]' works where your shell keeps the inner quotes.\nQuote the task: effort run takes it as one argument (or use --prompt-file).\nWithout a verification command a completed task is UNVERIFIED and never auto-retried.\nDesktop MCP offers advice; it cannot change the host chat's effort.\nPrompts, code, responses and test output are not stored by Effort. Provider CLIs\nhave their own storage policies. EFFORT_DATA_DIR changes the metadata directory.\n`;
 const controller=new AbortController();
 function handleCancellation(){process.once('SIGINT',()=>controller.abort());process.once('SIGTERM',()=>controller.abort());}
 function number(value,fallback){if(value===undefined)return fallback;const n=Number(value);if(!Number.isFinite(n))throw new Error('Numeric option is invalid.');return n;}
@@ -64,7 +64,7 @@ async function main(){
   if(command==='mcp'){serveMcp();return;}
   if(command==='doctor'){
     // The same shell-free resolution as managed runs: EFFORT_*_BIN, then a Windows .exe or npm shim.
-    const checks=['codex','claude'].map(name=>{
+    const checks=['codex','claude','gemini'].map(name=>{
       let cli;try{cli=resolveProviderCommand(name);}catch(e){return {provider:name,installed:false,version:null,source:null,error:e.message,authenticated:'not checked',liveTest:'not performed'};}
       const r=spawnSync(cli.executable,[...cli.executableArgs,'--version'],{encoding:'utf8',timeout:5000,windowsHide:true,shell:false});
       return {provider:name,installed:!r.error&&r.status===0,version:r.status===0?r.stdout.trim().slice(0,150):null,source:cli.source,command:[cli.executable,...cli.executableArgs],authenticated:'not checked',liveTest:'not performed'};
@@ -81,7 +81,7 @@ async function main(){
   }
   if(command==='auto'){
     const provider=positionals[1]??values.provider;
-    if(!['codex','claude'].includes(provider))throw new Error('Use effort auto codex or effort auto claude.');
+    if(!['codex','claude','gemini'].includes(provider))throw new Error('Use effort auto codex, effort auto claude, or effort auto gemini.');
     if(values.json||values.verify!==undefined||values['verify-arg']!==undefined||values['verify-timeout']!==undefined||values['max-attempts']||values['prompt-file']||positionals.length>2)throw new Error('Auto is interactive. Use effort run for a single task, JSON output, or verification/retries.');
     if(provider==='codex'&&(values['allow-write']||values.timeout))throw new Error('Auto Codex uses the official terminal UI permissions and cancellation controls. Do not pass --allow-write or --timeout.');
     const cwd=resolve(values.cwd??process.cwd());
@@ -95,14 +95,16 @@ async function main(){
     }
     const options={cwd,model:values.model,models:validateModelMap(config.models),effort:values.effort??'auto',minEffort:values['min-effort']??config.minEffort??'low',maxEffort:values['max-effort']??config.maxEffort??'high',signal:controller.signal};
     if(options.model!==undefined)validateModelMap({low:options.model});
-    if(provider==='claude'){
+    const managedAdapter=provider==='codex'?null:getAdapter(provider);
+    const providerLabel=provider==='gemini'?'Gemini':'Claude';
+    if(managedAdapter){
       options.allowWrite=values['allow-write']??false;
       options.timeoutMs=milliseconds(values.timeout,120);
-      if(!Number.isSafeInteger(options.timeoutMs)||options.timeoutMs<1||options.timeoutMs>1_800_000)throw new Error('Claude timeout must be between 0.001 and 1800 seconds.');
-      if(options.effort!=='auto'&&!getAdapter('claude').capabilities.levels.includes(options.effort))throw new Error('The Claude adapter supports low, medium, or high effort.');
+      if(!Number.isSafeInteger(options.timeoutMs)||options.timeoutMs<1||options.timeoutMs>1_800_000)throw new Error(`${providerLabel} timeout must be between 0.001 and 1800 seconds.`);
+      if(options.effort!=='auto'&&!managedAdapter.capabilities.levels.includes(options.effort))throw new Error(`The ${providerLabel} adapter supports low, medium, or high effort.`);
     }
     createAutomaticRouter({...options,provider}); // Validate bounds even in dry-run mode.
-    if(provider==='claude'&&!getAdapter('claude').capabilities.levels.some(level=>LEVELS.indexOf(level)>=LEVELS.indexOf(options.minEffort)&&LEVELS.indexOf(level)<=LEVELS.indexOf(options.maxEffort)))throw new Error('The Claude adapter has no supported effort within these bounds.');
+    if(managedAdapter&&!managedAdapter.capabilities.levels.some(level=>LEVELS.indexOf(level)>=LEVELS.indexOf(options.minEffort)&&LEVELS.indexOf(level)<=LEVELS.indexOf(options.maxEffort)))throw new Error(`The ${providerLabel} adapter has no supported effort within these bounds.`);
     if(values['dry-run'])return print({provider,mode:provider==='codex'?'native-terminal-router':'managed-resumable-chat',...options,signal:undefined,willExecute:false,desktopControl:false},true);
     if(!process.stdin.isTTY)throw new Error('Auto requires an interactive terminal. Use --dry-run to inspect setup, or effort run for scripts.');
     handleCancellation();
@@ -113,13 +115,13 @@ async function main(){
       return;
     }
     const {createManagedChat}=await import('../src/integrations/managed-chat.mjs');
-    const chat=createManagedChat({...options,adapter:getAdapter('claude'),onEvent:event=>{
+    const chat=createManagedChat({...options,adapter:managedAdapter,onEvent:event=>{
       if(['routing','diagnostic','error'].includes(event.type))process.stderr.write(`[effort] ${JSON.stringify(event)}\n`);
     }});
     const input=createInterface({input:process.stdin,output:process.stdout,terminal:true,historySize:0});
     const close=()=>input.close();controller.signal.addEventListener('abort',close,{once:true});
     input.on('SIGINT',()=>controller.abort());
-    print('Automatic Claude session · one prompt per line. /new starts a new conversation; /quit exits.\nClaude uses your signed-in access. Results are unverified; provider transcripts follow Claude settings.');
+    print(`Automatic ${providerLabel} session · one prompt per line. /new starts a new conversation; /quit exits.\n${providerLabel} uses your signed-in access. Results are unverified; provider transcripts follow ${providerLabel} settings.`);
     input.setPrompt('You > ');input.prompt();
     try{
       for await(const line of input){
@@ -155,7 +157,7 @@ async function main(){
       const result=recommend({prompt,provider:values.provider??'generic',facts:await repositoryFacts(cwd,prompt),maxEffort:values['max-effort']??'high'});
       return print(values.json?result:`${result.effort.toUpperCase()} · heuristic recommendation\n${result.model?`Model: ${result.model} · tier: ${result.tier}\n`:''}${result.reasons.join('\n')}\n${result.caveat}`,values.json);
     }
-    if(!values.provider)throw new Error('Choose --provider codex or claude explicitly.');
+    if(!values.provider)throw new Error('Choose --provider codex, claude, or gemini explicitly.');
     handleCancellation();
     const adapter=getAdapter(values.provider);
     const options={prompt,cwd,model:values.model??'auto',effort:values.effort??'auto',maxEffort:values['max-effort']??'high',allowWrite:values['allow-write']??false,maxAttempts:number(values['max-attempts'],3),timeoutMs:milliseconds(values.timeout,600),verifyTimeoutMs:milliseconds(values['verify-timeout']),verify:verification(values.verify,verifyArgv,values['verify-arg']),signal:controller.signal};

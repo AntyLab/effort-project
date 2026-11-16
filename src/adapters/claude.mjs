@@ -154,7 +154,7 @@ function killTree(child, signal) {
   }
 }
 
-function execute({ executable, executableArgs, args, cwd, env, signal, timeoutMs, input = '', onStdout, maxBytes = MAX_OUTPUT_BYTES }) {
+export function execute({ executable, executableArgs, args, cwd, env, signal, timeoutMs, input = '', onStdout, maxBytes = MAX_OUTPUT_BYTES }) {
   return new Promise((resolve) => {
     let child;
     let ended = false;

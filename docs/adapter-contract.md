@@ -13,3 +13,15 @@ Use read-only operation by default. Explicit `allowWrite` may enable the provide
 Each `run` is a complete provider turn. The coordinator verifies the result and may resume `sessionId` at a different effort for the next turn. Do not pretend this changes a request already in flight, or controls another desktop application's active chat.
 
 `onEvent` receives provider-neutral diagnostic objects `{type, ...}`. Do not log raw text to disk. Tests should mock CLI processes/protocol using temporary executables with no provider credentials.
+
+Gemini (`gemini`) uses the Antigravity CLI (`agy`) in print mode: the prompt is a
+literal argv value because JSON print mode has no stdin prompt mode. Session-only
+`--settings` allow `read_file(*)` in plan mode and additionally `write_file(*)` in
+accept-edits mode; the adapter never grants shell permissions. A fixed prompt
+sentence explains that shell commands, including tests, are unavailable. These
+settings do not rewrite the user's configuration. Selection labels from a private
+temporary log record the backend model/effort request; they do not measure applied
+reasoning. Resumed usage is cumulative and all per-turn usage fields remain null
+(thinking tokens are separate per-call evidence). `turnSubmitted` is false before
+launch and for an explicit invalid model selection with zero turns; only
+`model_unavailable` permits the runner's automatic-model fallback.

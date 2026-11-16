@@ -332,7 +332,7 @@ test('automatic run models stay fixed through retries and effort escalation',asy
   assert.equal(result.task.model,'gpt-6-luna');assert.equal(result.task.status,'verified');
 });
 test('first pre-submission model rejection falls back once and records both choices',async()=>{
-  for(const [provider,code,method] of [['codex','model_mismatch'],['codex','unsupported_effort'],['codex','rpc_error','thread/start'],['codex','rpc_error','model/list'],['claude','unsupported_effort_model']]){
+  for(const [provider,code,method] of [['codex','model_mismatch'],['codex','unsupported_effort'],['codex','rpc_error','thread/start'],['codex','rpc_error','model/list'],['claude','unsupported_effort_model'],['gemini','model_unavailable']]){
     const calls=[],events=[];let checks=0;
     const f=await fixture(async o=>{
       calls.push(o);
@@ -342,7 +342,7 @@ test('first pre-submission model rejection falls back once and records both choi
     f.adapter.capabilities.id=provider;
     const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',maxAttempts:2,verify:['fake-check'],onEvent:e=>events.push(e)},
       {...f,verifyFn:async()=>++checks===2?{status:'passed',exitCode:0}:{status:'failed',kind:'test',exitCode:1,output:'FAIL',fingerprint:'same'}});
-    assert.deepEqual(calls.map(o=>o.model),[provider==='codex'?'gpt-6-luna':'haiku',undefined,undefined]);
+    assert.deepEqual(calls.map(o=>o.model),[provider==='codex'?'gpt-6-luna':provider==='gemini'?'gemini-4-hydrogen':'haiku',undefined,undefined]);
     assert.deepEqual(calls.map(o=>o.sessionId),[undefined,undefined,'fake-session']);
     assert.equal(calls[0].prompt,calls[1].prompt);assert.equal(calls[0].effort,calls[1].effort);
     assert.equal(result.task.status,'verified');assert.equal(result.task.attempts.length,2);
@@ -367,6 +367,8 @@ test('pins, submitted or uncertain turns, and unrelated failures never fall back
     {code:'rpc_error',method:'initialize',turnSubmitted:false},
     {code:'model_mismatch',accepted:false},{code:'rpc_error',turnSubmitted:false},
     {code:'policy_mismatch',turnSubmitted:false},{code:'cleanup_timeout',turnSubmitted:false},
+    {provider:'gemini',code:'model_unavailable',turnSubmitted:true},
+    {provider:'gemini',code:'unsupported_effort',turnSubmitted:false},
     {provider:'claude',code:'model_unavailable',turnSubmitted:true},
     {provider:'claude',code:'model_mismatch',turnSubmitted:true},
     {provider:'claude',code:'unsupported_effort_model',turnSubmitted:true},
