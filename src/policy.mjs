@@ -2,6 +2,24 @@ import { plainReport, reportsTestFailure, suiteBlocker } from './test-reports.mj
 
 export const POLICY_VERSION = 'rules-0.2';
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
+export const MODELS = Object.freeze({
+  claude: Object.freeze({ fast: 'haiku', daily: 'opus', frontier: 'fable' }),
+  codex: Object.freeze({ fast: 'gpt-6-luna', daily: 'gpt-6.1-sol', frontier: 'gpt-6-astra' }),
+  gemini: Object.freeze({ fast: 'gemini-4-hydrogen', daily: 'gemini-4-argon', frontier: 'gemini-4-argon' }),
+});
+export const TIERS = ['fast', 'daily', 'frontier'];
+
+export function modelTier(features) {
+  if (features.critical && features.complex) return 'frontier';
+  if (features.mechanical && !features.broadEdit && !features.critical && !features.complex) return 'fast';
+  return 'daily';
+}
+
+export function chooseModel(provider, tier, available) {
+  if (!Object.hasOwn(MODELS, provider) || !Object.hasOwn(MODELS[provider], tier)) return undefined;
+  const model = MODELS[provider][tier];
+  return Array.isArray(available) && !available.includes(model) ? undefined : model;
+}
 
 export function validateLevel(level) {
   if (!LEVELS.includes(level)) throw new Error(`Unsupported effort: ${level}`);
@@ -10,7 +28,7 @@ export function validateLevel(level) {
 
 export function recommend({ prompt, provider = 'generic', facts = {}, maxEffort = 'high', minEffort = 'low' }) {
   if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 100_000) throw new Error('Prompt must contain 1–100,000 characters.');
-  if (!['codex', 'claude', 'generic'].includes(provider)) throw new Error('Provider must be codex, claude, or generic.');
+  if (![...Object.keys(MODELS), 'generic'].includes(provider)) throw new Error('Provider must be codex, claude, gemini, or generic.');
   validateLevel(maxEffort); validateLevel(minEffort);
   if (LEVELS.indexOf(minEffort) > LEVELS.indexOf(maxEffort)) throw new Error('Minimum effort exceeds maximum.');
   const critical = /\b(auth(?:entication|orization)?|permission|cryptograph\w*|encrypt\w*|payments?|migrations?|race condition|deadlock|data loss|security|vulnerability)\b/i.test(prompt);
@@ -39,8 +57,10 @@ export function recommend({ prompt, provider = 'generic', facts = {}, maxEffort 
   const index = Math.max(LEVELS.indexOf(minEffort), Math.min(LEVELS.indexOf(maxEffort), LEVELS.indexOf(effort)));
   effort = LEVELS[index];
   if (effort !== unclamped) reasons.push(`Your configured effort bounds changed ${unclamped} to ${effort}.`);
-  return { effort, reasons, policyVersion: POLICY_VERSION, confidence: 'low',
-    features: { promptCharacters: prompt.length, critical, complex, mechanical, broadEdit, manyLanguages, repositoryComplex: broadEdit },
+  const features = { promptCharacters: prompt.length, critical, complex, mechanical, broadEdit, manyLanguages, repositoryComplex: broadEdit };
+  const tier = modelTier(features);
+  return { effort, tier, model: chooseModel(provider, tier) ?? null, reasons, policyVersion: POLICY_VERSION, confidence: 'low',
+    features,
     control: provider === 'generic' ? 'advisory' : 'managed-turns',
     caveat: 'A transparent heuristic, not a trained difficulty model or a measured quality guarantee.' };
 }

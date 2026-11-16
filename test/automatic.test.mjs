@@ -12,16 +12,34 @@ test('routes mechanical and risky requests without another model call', () => {
 
 test('short followups keep the prior task context and sessions stay isolated', () => {
   const router = createAutomaticRouter();
-  request(router, 'Investigate the intermittent data loss.');
-  for (const prompt of ['yes', 'continue', 'please fix it', 'try again']) assert.equal(request(router, prompt).effort, 'high');
+  assert.equal(request(router, 'Investigate the intermittent data loss.').tier, 'frontier');
+  for (const prompt of ['yes, continue', 'yes', 'continue', 'please fix it', 'try again']) {
+    const result = request(router, prompt);
+    assert.equal(result.effort, 'high');
+    assert.equal(result.tier, 'frontier');
+    assert.equal(result.recommendation.tier, 'daily');
+  }
   assert.equal(request(router, 'Fix a typo.', { sessionId: 'b' }).effort, 'low');
 });
 
 test('two explicit simpler requests allow downgrade, including after a model change', () => {
   const router = createAutomaticRouter();
-  request(router, 'Debug the authentication regression.');
-  assert.equal(request(router, 'Fix a spelling typo.', { model: 'new-model' }).effort, 'high');
-  assert.equal(request(router, 'Rename a README heading.', { model: 'new-model' }).effort, 'low');
+  assert.equal(request(router, 'Debug the authentication regression.').tier, 'frontier');
+  const first = request(router, 'Fix a spelling typo.', { model: 'new-model' });
+  assert.equal(first.effort, 'high');
+  assert.equal(first.tier, 'frontier');
+  const second = request(router, 'Rename a README heading.', { model: 'new-model' });
+  assert.equal(second.effort, 'low');
+  assert.equal(second.tier, 'fast');
+});
+
+test('tier follows the recommendation when hysteresis does not keep prior effort', () => {
+  const router = createAutomaticRouter();
+  request(router, 'Investigate data loss.');
+  assert.equal(request(router, 'Debug a regression.').tier, 'daily');
+  assert.equal(request(router, 'Fix a typo.').tier, 'daily');
+  assert.equal(request(router, 'Fix a typo.').tier, 'fast');
+  assert.equal(request(router, 'Investigate data loss.').tier, 'frontier');
 });
 
 test('reset forgets prior complexity', () => {
@@ -40,7 +58,12 @@ test('uses advertised capabilities and preserves requests when no adequate bound
 });
 
 test('fixed effort and explicit ceiling win and cannot exceed bounds', () => {
-  assert.equal(request(createAutomaticRouter({ effort: 'low' }), 'Investigate data loss.').effort, 'low');
+  const fixed = createAutomaticRouter({ effort: 'low' });
+  const result = request(fixed, 'Investigate data loss.');
+  assert.equal(result.effort, 'low');
+  assert.equal(result.tier, 'frontier');
+  assert.equal(request(fixed, 'yes, continue').tier, 'daily');
+  assert.equal(request(fixed, 'Fix a typo.').tier, 'fast');
   assert.equal(request(createAutomaticRouter({ maxEffort: 'medium' }), 'Investigate data loss.').effort, 'medium');
   assert.throws(() => createAutomaticRouter({ effort: 'high', maxEffort: 'medium' }), /bounds/);
   assert.throws(() => createAutomaticRouter({ minEffort: 'high', maxEffort: 'low' }), /Minimum/);
@@ -56,6 +79,9 @@ test('invalid input is rejected and public decisions contain no prompt', () => {
   assert.throws(() => request(router, ''), /Prompt/);
   const secretPrompt = 'Rename PRIVATE_MARKER in a README.';
   assert.ok(!JSON.stringify(request(router, secretPrompt)).includes('PRIVATE_MARKER'));
+  for (const supportedEfforts of [['low', 'medium', 'high'], []]) {
+    assert.equal(Object.hasOwn(request(router, 'Fix a typo.', { supportedEfforts }), 'model'), false);
+  }
 });
 
 test('model routing tables accept only explicit effort-to-ID mappings', () => {
@@ -67,12 +93,22 @@ test('model routing tables accept only explicit effort-to-ID mappings', () => {
 
 test('preview neither creates a session nor consumes a simpler-request count', () => {
   const router = createAutomaticRouter();
-  request(router, 'Debug a regression.', { preview: true });
-  assert.equal(request(router, 'Fix a typo.').effort, 'low');
-  request(router, 'Debug a regression.');
-  assert.equal(request(router, 'Fix a typo.', { preview: true }).effort, 'high');
-  assert.equal(request(router, 'Fix a typo.').effort, 'high');
-  assert.equal(request(router, 'Fix a typo.').effort, 'low');
+  assert.equal(request(router, 'Investigate data loss.', { preview: true }).tier, 'frontier');
+  const fresh = request(router, 'Fix a typo.');
+  assert.equal(fresh.effort, 'low');
+  assert.equal(fresh.tier, 'fast');
+  request(router, 'Investigate data loss.');
+  const preview = request(router, 'Fix a typo.', { preview: true });
+  assert.equal(preview.effort, 'high');
+  assert.equal(preview.tier, 'frontier');
+  const first = request(router, 'Fix a typo.');
+  assert.equal(first.effort, 'high');
+  assert.equal(first.tier, 'frontier');
+  assert.equal(request(router, 'Fix a typo.', { preview: true }).tier, 'fast');
+  assert.equal(request(router, 'yes, continue', { preview: true }).tier, 'frontier');
+  const second = request(router, 'Fix a typo.');
+  assert.equal(second.effort, 'low');
+  assert.equal(second.tier, 'fast');
 });
 
 test('continuations and renewed complexity reset a pending downgrade', () => {
@@ -88,8 +124,14 @@ test('continuations and renewed complexity reset a pending downgrade', () => {
 
 test('preserving an unsupported request keeps the prior session state', () => {
   const router = createAutomaticRouter();
-  request(router, 'Debug a regression.');
-  assert.equal(request(router, 'Fix a typo.', { supportedEfforts: ['low'] }).action, 'preserve');
+  const unsupported = request(router, 'Investigate data loss.', { supportedEfforts: [] });
+  assert.equal(unsupported.action, 'preserve');
+  assert.equal(unsupported.tier, 'frontier');
+  assert.equal(request(router, 'Fix a typo.').tier, 'fast');
+  request(router, 'Investigate data loss.');
+  const kept = request(router, 'Fix a typo.', { supportedEfforts: ['low'] });
+  assert.equal(kept.action, 'preserve');
+  assert.equal(kept.tier, 'frontier');
   assert.equal(request(router, 'Fix a typo.').effort, 'high');
   assert.equal(request(router, 'Fix a typo.').effort, 'low');
   assert.equal(request(createAutomaticRouter({ effort: 'medium' }), 'Fix a typo.', { supportedEfforts: ['high'] }).action, 'preserve');
