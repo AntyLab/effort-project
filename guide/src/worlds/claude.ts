@@ -1493,7 +1493,8 @@ export function create(): World {
         try {
           let texture = scale > 1
             ? await Assets.load<Texture>({ src: path, data: { resolution: scale, autoGenerateMipmaps: true } }).catch(() => undefined) : undefined;
-          if (!texture) { path = url(key); texture = await Assets.load<Texture>(path); }
+          // One dropped request on mobile data used to swap the whole world for the fallback drawing: retry first.
+          if (!texture) { path = url(key); texture = await Assets.load<Texture>(path, { strategy: 'retry', retryCount: 3, retryDelay: 1000 }); }
           loaded.add(path);
           if (!dead) textures.set(key, texture);
         } catch (error) {
