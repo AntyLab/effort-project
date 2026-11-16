@@ -18,7 +18,8 @@ test('unknown tasks remain uncertain and mechanical requests can start low',()=>
 test('the checkout language count is informational; only files the request names raise effort',()=>{
   const languages=['javascript','python','typescript'];
   assert.equal(recommend({prompt:'Fix the typo in the README',facts:{languages,mentionedFiles:0}}).effort,'low');
-  for(const prompt of ['Add a settings page','Fix the broken link in the README','Bump the version number in package.json','Change the button color from blue to green']){
+  assert.equal(recommend({prompt:'Bump the version number in package.json',facts:{languages,mentionedFiles:1}}).effort,'low');
+  for(const prompt of ['Add a settings page','Fix the broken link in the README','Change the button color from blue to green']){
     const result=recommend({prompt,facts:{languages,mentionedFiles:1}});
     assert.equal(result.effort,'medium',prompt);assert.equal(result.features.manyLanguages,true);
     assert.ok(result.reasons.some(reason=>/several languages/.test(reason)),prompt);

@@ -314,7 +314,7 @@ test('repository breadth does not change the line: many languages or named files
     ['continue', null],
     ['yes, go ahead', null],
     ['Fix the broken link in the README', null],
-    ['Bump the version number in package.json', null],
+    ['Bump the version number in package.json', 'fast'],
     ['Change the button color from blue to green', null],
     [PLAIN, null],
     ['Update a.py, b.go, c.ts, d.rs and e.js to the new logger', null],
