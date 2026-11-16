@@ -43,7 +43,9 @@ test('doctor finds npm-installed and overridden provider CLIs without a shell', 
   const f = await fixture(t);
   const fake = (name) => `console.log(process.argv.includes('--version') ? '${name} 9.9.9-fixture' : 'unexpected');\n`;
   await writeFile(join(f.cwd, 'claude-entry.cjs'), fake('claude'));
-  const extra = { EFFORT_CLAUDE_BIN: join(f.cwd, 'claude-entry.cjs') };
+  await writeFile(join(f.cwd, 'agy-entry.cjs'), fake('agy'));
+  // Shield PATH even for doctor calls that exercise missing binaries.
+  const extra = { PATH: f.cwd, EFFORT_CLAUDE_BIN: join(f.cwd, 'claude-entry.cjs'), EFFORT_GEMINI_BIN: join(f.cwd, 'agy-entry.cjs') };
   if (process.platform === 'win32') {
     await mkdir(join(f.cwd, 'node_modules', '@openai', 'codex', 'bin'), { recursive: true });
     await writeFile(join(f.cwd, 'node_modules', '@openai', 'codex', 'bin', 'codex.js'), fake('codex-cli'));
@@ -55,13 +57,19 @@ test('doctor finds npm-installed and overridden provider CLIs without a shell', 
   assert.equal(checks.claude.installed, true);
   assert.equal(checks.claude.version, 'claude 9.9.9-fixture');
   assert.equal(checks.claude.source, 'override');
+  assert.equal(checks.gemini.installed, true);
+  assert.equal(checks.gemini.version, 'agy 9.9.9-fixture');
+  assert.equal(checks.gemini.source, 'override');
+  assert.ok(JSON.parse(result.stdout).capabilities.some((provider) => provider.id === 'gemini'));
   if (process.platform === 'win32') {
     assert.equal(checks.codex.installed, true);
     assert.equal(checks.codex.version, 'codex-cli 9.9.9-fixture');
     assert.equal(checks.codex.source, 'npm-shim');
   } else assert.equal(checks.codex.installed, false);
-  assert.match(f.invoke(['doctor']).stdout, /claude: not found \(set EFFORT_CLAUDE_BIN to its path\)/);
-  const misconfigured = f.invoke(['doctor'], { EFFORT_CODEX_BIN: join(f.cwd, 'missing-codex') });
+  const missing = f.invoke(['doctor'], { PATH: f.cwd });
+  assert.match(missing.stdout, /claude: not found \(set EFFORT_CLAUDE_BIN to its path\)/);
+  assert.match(missing.stdout, /gemini: not found \(set EFFORT_GEMINI_BIN to its path\)/);
+  const misconfigured = f.invoke(['doctor'], { PATH: f.cwd, EFFORT_CODEX_BIN: join(f.cwd, 'missing-codex') });
   assert.match(misconfigured.stdout, /codex: cannot start: EFFORT_CODEX_BIN points to .*missing-codex, which does not exist; authentication not checked/);
 });
 
@@ -78,6 +86,72 @@ test('a polyglot checkout does not raise a short mechanical recommendation', asy
   for (const task of ['Add a settings page', 'Bump the version number in package.json', 'Change the button color from blue to green']) {
     assert.match(f.invoke(['recommend', task, '--cwd', f.cwd]).stdout, /^MEDIUM /, task);
   }
+});
+
+test('recommend names the built-in model and tier for providers with a model table', async (t) => {
+  const f = await fixture(t);
+  for (const [provider, model] of [['codex', 'gpt-6-luna'], ['claude', 'haiku'], ['gemini', 'gemini-4-hydrogen']]) {
+    const args = ['recommend', 'Rename a variable', '--provider', provider, '--cwd', f.cwd];
+    const text = f.invoke(args);
+    assert.equal(text.status, 0, text.stderr);
+    assert.ok(text.stdout.includes(`Model: ${model} · tier: fast`));
+    const json = JSON.parse(f.invoke([...args, '--json']).stdout);
+    assert.equal(json.model, model); assert.equal(json.tier, 'fast');
+  }
+  assert.doesNotMatch(f.invoke(['recommend', 'Rename a variable']).stdout, /Model:/);
+});
+
+test('run dry-run resolves automatic tier models and preserves explicit model pins', async (t) => {
+  const f = await fixture(t);
+  for (const [provider, prompt, tier, model] of [
+    ['codex', 'Rename a variable', 'fast', 'gpt-6-luna'],
+    ['codex', 'Add a settings page', 'daily', 'gpt-6.1-sol'],
+    ['codex', 'Investigate a security regression', 'frontier', 'gpt-6-astra'],
+    ['claude', 'Rename a variable', 'fast', 'haiku'],
+    ['gemini', 'Rename a variable', 'fast', 'gemini-4-hydrogen'],
+  ]) {
+    const args = ['run', prompt, '--provider', provider, '--cwd', f.cwd, '--dry-run'];
+    for (const flags of [[], ['--model', 'auto']]) {
+      const result = f.invoke([...args, ...flags]);
+      assert.equal(result.status, 0, result.stderr);
+      const plan = JSON.parse(result.stdout);
+      assert.equal(plan.model, model); assert.equal(plan.tier, tier); assert.equal(plan.modelSelection, 'automatic');
+    }
+    const pinned = JSON.parse(f.invoke([...args, '--model', 'exact-model']).stdout);
+    assert.equal(pinned.model, 'exact-model'); assert.equal(pinned.tier, tier); assert.equal(pinned.modelSelection, 'pinned');
+  }
+});
+
+test('auto Gemini uses managed chat options and routing configuration', async (t) => {
+  const f = await fixture(t);
+  const defaults = f.invoke(['auto', 'gemini', '--cwd', f.cwd, '--dry-run']);
+  assert.equal(defaults.status, 0, defaults.stderr);
+  const plan = JSON.parse(defaults.stdout);
+  assert.equal(plan.provider, 'gemini');
+  assert.equal(plan.mode, 'managed-resumable-chat');
+  assert.equal(plan.effort, 'auto');
+  assert.equal(plan.allowWrite, false);
+  assert.equal(plan.timeoutMs, 120_000);
+  assert.equal(plan.willExecute, false);
+  const routing = join(f.cwd, 'routing.json');
+  await writeFile(routing, JSON.stringify({ models: { low: 'gemini-4-hydrogen', high: 'gemini-4-argon' }, minEffort: 'medium', maxEffort: 'high' }));
+  const configured = f.invoke(['auto', 'gemini', '--cwd', f.cwd, '--routing-config', routing, '--min-effort', 'low', '--max-effort', 'medium', '--effort', 'low', '--model', 'exact-model', '--allow-write', '--timeout', '7.5', '--dry-run']);
+  assert.equal(configured.status, 0, configured.stderr);
+  assert.deepEqual(JSON.parse(configured.stdout), { ...plan, model: 'exact-model', models: { low: 'gemini-4-hydrogen', high: 'gemini-4-argon' }, minEffort: 'low', maxEffort: 'medium', effort: 'low', allowWrite: true, timeoutMs: 7500 });
+  for (const [args, message] of [
+    [['--effort', 'max'], /Gemini adapter supports low, medium, or high/],
+    [['--timeout', '1801'], /Gemini timeout must be between/],
+    [['--min-effort', 'xhigh', '--max-effort', 'max'], /Gemini adapter has no supported effort/],
+    [['--model', 'bad model'], /exact model ID without whitespace or options/],
+  ]) {
+    const result = f.invoke(['auto', 'gemini', '--dry-run', ...args]);
+    assert.equal(result.status, 1, result.stdout);
+    assert.match(result.stderr, message);
+  }
+  await writeFile(routing, '{"unknown":true}');
+  const invalid = f.invoke(['auto', 'gemini', '--routing-config', routing, '--dry-run']);
+  assert.equal(invalid.status, 1);
+  assert.match(invalid.stderr, /Routing configuration accepts models, minEffort, and maxEffort only/);
 });
 
 test('the verification command can follow -- and the JSON form still works', async (t) => {

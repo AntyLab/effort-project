@@ -27,22 +27,26 @@ async function fixture(t, options = {}, run = async (request) => completed(reque
   return { chat, calls, events, adapter, cwd };
 }
 
-test('routes before the provider call, resumes the same session, and retains the observed model', async (t) => {
+test('routes before the provider call and resumes the same session with the built-in tier model', async (t) => {
   const f = await fixture(t);
   const first = await f.chat.submit('Fix a spelling typo in the heading.');
   assert.equal(first.status, 'unverified');
   assert.equal(f.calls[0].effort, 'low');
   assert.equal(f.calls[0].sessionId, undefined);
-  assert.equal(f.calls[0].model, undefined);
+  assert.equal(f.calls[0].model, 'haiku');
   assert.equal(f.events[0].type, 'routing');
   assert.equal(f.events[0].requestedEffort, 'low');
-  assert.equal(first.requestedModel, null);
-  assert.equal(first.observedModel, DEFAULT_MODEL);
+  assert.equal(f.events[0].modelSelection, 'automatic');
+  assert.equal(first.decision.modelSelection, 'automatic');
+  assert.equal(first.decision.tier, 'fast');
+  assert.equal(first.requestedModel, 'haiku');
+  assert.equal(first.observedModel, 'haiku');
   const second = await f.chat.submit('Investigate a regression across the permission system.');
   assert.equal(second.status, 'unverified');
   assert.equal(f.calls[1].effort, 'high');
   assert.equal(f.calls[1].sessionId, SESSION);
-  assert.equal(f.calls[1].model, DEFAULT_MODEL);
+  assert.equal(f.calls[1].model, 'fable');
+  assert.equal(second.decision.tier, 'frontier');
   assert.equal(second.turn, 2);
   assert.equal(second.verification.status, 'not-run');
   assert.equal(second.observedEffort, null);
@@ -65,24 +69,58 @@ test('explicit effort and model pins take precedence over prompt difficulty and 
   const result = await f.chat.submit('Investigate an authentication vulnerability.');
   assert.equal(f.calls[0].effort, 'low');
   assert.equal(f.calls[0].model, 'claude-opus-4-6');
+  assert.equal(result.decision.modelSelection, 'pinned');
   assert.deepEqual(result.decision.reasons, ['Explicit user effort selection.']);
   await f.chat.submit('Continue.');
   assert.equal(f.calls[1].model, 'claude-opus-4-6');
 });
 
-test('opt-in model routing uses only supplied tiers and holds the current model for missing tiers', async (t) => {
+test('the user model table beats built-in models and missing entries use the built-in tier', async (t) => {
   const models = { low: DEFAULT_MODEL, high: 'claude-opus-4-6' };
   const f = await fixture(t, { models });
   models.low = 'unexpected-model';
   await f.chat.submit('Fix a spelling typo.');
   await f.chat.submit('Investigate a security regression.');
   assert.deepEqual(f.calls.map((call) => call.model), [DEFAULT_MODEL, 'claude-opus-4-6']);
+  assert.equal(f.events[0].decision.modelSelection, 'mapped');
+  assert.equal(f.events[1].decision.modelSelection, 'mapped');
   assert.equal(f.calls[1].sessionId, SESSION);
   const missingTier = await fixture(t, { models: { high: 'claude-opus-4-6' } });
   await missingTier.chat.submit('Fix a spelling typo.');
   await missingTier.chat.submit('Write a short description of the project.');
-  assert.equal(missingTier.calls[0].model, undefined);
-  assert.equal(missingTier.calls[1].model, DEFAULT_MODEL);
+  assert.equal(missingTier.calls[0].model, 'haiku');
+  assert.equal(missingTier.calls[1].model, 'opus');
+  assert.equal(missingTier.events[1].decision.modelSelection, 'automatic');
+});
+
+test('fixed effort still selects the built-in model from the prompt tier', async (t) => {
+  const f = await fixture(t, { effort: 'low' });
+  const result = await f.chat.submit('Investigate an authentication vulnerability.');
+  assert.equal(f.calls[0].effort, 'low');
+  assert.equal(f.calls[0].model, 'fable');
+  assert.equal(result.decision.tier, 'frontier');
+  assert.equal(result.decision.modelSelection, 'automatic');
+});
+
+test('all built-in providers route by tier while unknown providers retain the current model', async (t) => {
+  const f = await fixture(t);
+  const geminiCalls = [];
+  const gemini = createManagedChat({ cwd: f.cwd, adapter: { capabilities: { id: 'gemini', levels: ['low', 'medium', 'high'] },
+    async run(request) { geminiCalls.push(request); return completed(request); } } });
+  const selected = await gemini.submit('Fix a spelling typo.');
+  assert.equal(geminiCalls[0].model, 'gemini-4-hydrogen');
+  assert.equal(selected.decision.recommendation.model, 'gemini-4-hydrogen');
+  assert.equal(selected.decision.modelSelection, 'automatic');
+
+  const genericCalls = [];
+  const generic = createManagedChat({ cwd: f.cwd, adapter: { capabilities: { id: 'custom', levels: ['low', 'medium', 'high'] },
+    async run(request) { genericCalls.push(request); return completed(request); } } });
+  const first = await generic.submit('Fix a spelling typo.');
+  const second = await generic.submit('Describe the project.');
+  assert.deepEqual(genericCalls.map(call => call.model), [undefined, DEFAULT_MODEL]);
+  assert.equal(first.decision.modelSelection, 'default');
+  assert.equal(second.requestedModel, DEFAULT_MODEL);
+  assert.equal(second.decision.modelSelection, 'default');
 });
 
 test('fresh repository metadata is read for each prompt without writing task records', async (t) => {
@@ -191,7 +229,7 @@ test('reset clears the provider session, learned model, routing history, and tur
   assert.equal(next.turn, 1);
   assert.equal(next.requestedEffort, 'low');
   assert.equal(f.calls[1].sessionId, undefined);
-  assert.equal(f.calls[1].model, undefined);
+  assert.equal(f.calls[1].model, 'haiku');
 });
 
 test('cancellation before launch does not call the provider', async (t) => {

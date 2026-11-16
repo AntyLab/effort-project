@@ -55,11 +55,15 @@ export async function executeRun(entry, context) {
     }
     const launch = providerLaunch(entry.provider, { live: context.live, bin: context.bins[entry.provider], fakeConfig });
     const observedModels = new Set();
+    const observedLabels = new Set();
     const diagnostics = [];
     // Failure codes the provider reported during the latest attempt.
     let attemptCodes = [];
     const onEvent = (event) => {
       if (event?.type === 'session' && typeof event.model === 'string') observedModels.add(event.model.slice(0, 200));
+      // Gemini exposes a selection display label, not a backend model id. Keep
+      // missing ids unknown; a pinned request is not an independently observed id.
+      if (entry.provider === 'gemini' && event?.type === 'effort' && typeof event.observedLabel === 'string') observedLabels.add(event.observedLabel.slice(0, 200));
       // Codes only: messages can contain provider or task text.
       if (['diagnostic', 'error'].includes(event?.type) && diagnostics.length < 20) diagnostics.push(`${event.provider ?? 'runner'}:${typeof event.code === 'string' ? event.code.slice(0, 80) : event.type}`);
       if (['diagnostic', 'error'].includes(event?.type) && event.provider === entry.provider && typeof event.code === 'string') attemptCodes.push(event.code);
@@ -103,7 +107,8 @@ export async function executeRun(entry, context) {
       ? attemptCodes.find((code) => PROVIDER_FAILURES[entry.provider]?.includes(code)) ?? null : null;
     return {
       ...base,
-      model: { requested: context.models[entry.provider] ?? null, observed: [...observedModels] },
+      model: { requested: context.models[entry.provider] ?? null, observed: [...observedModels],
+        ...(entry.provider === 'gemini' ? { observedLabels: [...observedLabels] } : {}) },
       effort: {
         initial: result.initialEffort, final: result.effort, policyVersion: result.policyVersion, features: result.features,
         decisions: result.decisions.map((decision, index) => ({ action: decision.action ?? (index === 0 ? 'start' : 'unknown'), effort: decision.effort, reason: decision.reason })),
@@ -186,7 +191,9 @@ export async function runBenchmark({
   const digests = Object.fromEntries(await Promise.all(tasks.map(async (task) => [task.id, await taskDigest(task)])));
   const plan = {
     mode: live ? 'live' : 'fake', seed, providers, arms, repeats, timeoutMs,
-    models: { codex: models.codex ?? null, claude: models.claude ?? null }, tasks: digests,
+    // Keep the pre-Gemini shape when it is not selected, so old plans resume.
+    models: { codex: models.codex ?? null, claude: models.claude ?? null,
+      ...(providers.includes('gemini') ? { gemini: models.gemini ?? null } : {}) }, tasks: digests,
   };
   const runsPath = join(outDir, 'runs.jsonl');
   const metaPath = join(outDir, 'meta.json');
@@ -207,7 +214,8 @@ export async function runBenchmark({
   }
   const providerVersions = live ? probeProviders(providers, bins, process.env) : Object.fromEntries(providers.map((provider) => [provider, FAKE_VERSION]));
   // The fake Claude CLI reports conversation totals on resume the way current Claude Code does.
-  const conversationTotals = { codex: false, claude: providers.includes('claude') && (!live || reportsConversationTotals(providerVersions.claude)) };
+  const conversationTotals = { codex: false, claude: providers.includes('claude') && (!live || reportsConversationTotals(providerVersions.claude)),
+    ...(providers.includes('gemini') ? { gemini: false } : {}) };
   const now = new Date().toISOString();
   // Each invocation records the code it ran, since a resumed benchmark may run on a later commit.
   const revision = effortRevision();

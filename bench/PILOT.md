@@ -29,6 +29,8 @@ Preparing the pilot turned up four bugs, all fixed with regression tests (see th
 | Tasks and repeats | all 11, 1 repeat | 55 runs, at most 77 provider turns |
 | Fixed before the run | margin 5 pp, reference `fixed-high`, seed `pilot-2026-10`, 600 s per run | Recorded in `meta.json` when the benchmark starts |
 
+Note added 2026-11-16: the adapter has accepted Haiku 5.x since 2026-11-16 because it supports effort. The table above preserves the recorded pilot plan and its model choice.
+
 Stage 0 is a smoke test of 2 runs: `node-paginate` with `fixed-low` and `auto-escalate`. Stage 1 is the pilot. Each stage starts only after the one before it has been checked.
 
 ## Cost estimate
@@ -207,3 +209,35 @@ What would make the evidence stronger, for the owners to decide:
 - **A rough cost for the next step.** At about $0.02 per run, a held-out run of 100 tasks with five arms (500 runs) would cost roughly $10 at list price for tasks of this size. Harder tasks would cost more.
 
 The raw results (`runs.jsonl`, `meta.json`, `summary.md`, chart) are not committed. Publishing them with `git add -f` is the owners' call.
+
+## Codex and Gemini pilots, 2026-11-16
+
+The same pilot was run on the other two providers after Gemini support was added: the 11 seed tasks, the five default arms, 1 repeat, 55 runs each, margin 5 pp, reference `fixed-high`, seed `pilot-2026-11`, 600 s per run. A 2-run smoke test on `node-paginate` came first for each. Both ran on macOS (Node 26.13.0) on subscription sign-ins, so nothing was billed and neither CLI reports a cost. The harness was at commit `1a0a406`; the commits after it changed the Claude adapter and documentation only.
+
+```sh
+node bench/run.mjs --live --max-runs 55 --providers codex --codex-model gpt-6.1-sol --seed pilot-2026-11 --out bench/results/pilot-codex-gpt-6.1-sol
+node bench/run.mjs --live --max-runs 55 --providers gemini --gemini-model gemini-4-argon --seed pilot-2026-11 --out bench/results/pilot-gemini-4-argon
+```
+
+| Provider and model | Arm | Passed | Median tokens | vs `fixed-high` | Median output tokens | Median wall time |
+| --- | --- | --- | --- | --- | --- | --- |
+| Codex 0.160.0, `gpt-6.1-sol` | `fixed-low` | 11/11 | 168,627 | 1.00× | 858 | 37.2 s |
+| | `fixed-medium` | 11/11 | 155,891 | 0.92× | 1,237 | 39.3 s |
+| | `fixed-high` | 11/11 | 168,581 | 1.00× | 1,830 | 50.9 s |
+| | `auto-rules` | 11/11 | 166,913 | 0.99× | 1,264 | 41.3 s |
+| | `auto-escalate` | 11/11 | 155,125 | 0.92× | 998 | 32.8 s |
+| Antigravity 1.5.9, `gemini-4-argon` | `fixed-low` | 11/11 | 21,390 | 0.79× | 1,168 | 56.3 s |
+| | `fixed-medium` | 11/11 | 21,962 | 0.81× | 1,504 | 49.3 s |
+| | `fixed-high` | 11/11 | 27,088 | 1.00× | 3,013 | 73.8 s |
+| | `auto-rules` | 11/11 | 22,569 | 0.83× | 1,976 | 63.1 s |
+| | `auto-escalate` | 11/11 | 22,446 | 0.83× | 2,262 | 64.3 s |
+
+Read by the rules fixed before the first pilot:
+
+- **The primary comparison is inconclusive on both providers.** `auto-rules` against `fixed-high` gives +0.0 pp with a 95% interval from −25.9 to +25.9 pp. "Effort saves tokens at an equal pass rate" does not hold here either.
+- **The seed corpus does not separate effort levels for these models.** Every arm passed all eleven tasks, `fixed-low` included, as on Claude Sonnet 5.5. `auto-escalate` never retried.
+- **Codex token counts are dominated by input.** Each run reads about 155,000 tokens of fixed prompt and tools, so the effort level moves the total by a few percent at most; the output tokens (858 at low, 1,830 at high) show the difference. No cost is reported, so the cost condition cannot be checked on Codex or Gemini.
+- **Gemini's rules arm used fewer tokens than `fixed-high`** (0.83×), about the same as a fixed medium level (0.81×). On these tasks the rules add nothing over a lower fixed level.
+- **Both runs were clean.** All 55 runs were scored with usage known, one model was observed per provider, and no run was excluded. For Gemini the observed model is the pinned id, and the backend's display label was recorded for each run: "Gemini 4 Argon" at Low for 15 runs, Medium for 25 and High for 15, which matches the arms.
+
+These pilots used a pinned model in every arm, as the Claude pilot did. They do not test the model choice added on 2026-11-16; that needs an arm that routes the model too, and harder held-out tasks. The raw results are in the git-ignored `bench/results/` on the machine that ran them and are not committed.

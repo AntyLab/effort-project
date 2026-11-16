@@ -8,7 +8,7 @@ import { capabilities, run } from '../src/adapters/claude.mjs';
 
 const SESSION = '12345678-1234-4234-8234-123456789abc';
 const OTHER_SESSION = '87654321-1234-4234-8234-123456789abc';
-const HELP = '--print --output-format --verbose --effort --resume --restricted --safe-mode --permission-mode --permission-prompts --tools --allowedTools --disallowedTools --strict-mcp-config --mcp-config --settings --setting-sources --disable-slash-commands --no-chrome';
+const HELP = '--print --output-format --verbose --effort --resume --restricted --safe-mode --permission-mode --permission-prompts --tools --allowedTools --disallowedTools --strict-mcp-config --mcp-config --settings --setting-sources --disable-slash-commands --no-chrome --append-system-prompt';
 
 async function fixture(t, body = '', { help = HELP, startup = true } = {}) {
   const cwd = await mkdtemp(join(tmpdir(), 'effort-claude-test-'));
@@ -67,6 +67,7 @@ test('passes a literal prompt on stdin and isolates default read-only turns', as
   assert.equal(argValue(launch.argv, '--permission-mode'), 'dontAsk');
   assert.equal(argValue(launch.argv, '--permission-prompts'), 'none');
   assert.equal(argValue(launch.argv, '--tools'), 'Read,Grep,Glob');
+  assert.equal(argValue(launch.argv, '--append-system-prompt'), 'Only the Read, Grep and Glob tools exist in this session; there is no shell and no other tool: do not request one, and do not try to run tests or commands; the caller runs its own checks.');
   assert.equal(argValue(launch.argv, '--setting-sources'), '');
   assert.equal(argValue(launch.argv, '--mcp-config'), '{"mcpServers":{}}');
   for (const flag of ['--restricted', '--safe-mode', '--strict-mcp-config', '--disable-slash-commands', '--no-chrome']) assert.ok(launch.argv.includes(flag));
@@ -92,6 +93,7 @@ test('passes a literal prompt on stdin and isolates default read-only turns', as
   assert.deepEqual(sourceEnv, before);
   assert.equal(result.effortEvidence.type, 'launch-flag');
   assert.equal(result.effortEvidence.launchAccepted, true);
+  assert.equal(result.effortEvidence.turnSubmitted, true);
   assert.equal(result.effortEvidence.observedEffort, null);
   assert.equal(result.effortEvidence.verified, false);
   assert.match(result.effortEvidence.note, /caps/);
@@ -109,6 +111,7 @@ test('explicit write mode retains restrictions and resumes at the next effort', 
   assert.equal(argValue(argv, '--effort'), 'high');
   assert.equal(argValue(argv, '--model'), 'sonnet');
   assert.equal(argValue(argv, '--tools'), 'Read,Grep,Glob,Edit,Write');
+  assert.equal(argValue(argv, '--append-system-prompt'), 'Only the Read, Grep, Glob, Edit and Write tools exist in this session; there is no shell and no other tool: do not request one, and do not try to run tests or commands; the caller runs its own checks.');
   assert.equal(argValue(argv, '--permission-mode'), 'acceptEdits');
   assert.equal(argValue(argv, '--permission-prompts'), 'none');
   assert.equal(argValue(argv, '--max-turns'), '3');
@@ -197,13 +200,16 @@ test('validates inputs before any process launch', async (t) => {
 });
 
 test('unknown isolation flags block before a provider turn', async (t) => {
-  const f = await fixture(t, '', { help: HELP.replace('--restricted', '') });
-  const events = [];
-  const result = await run({ ...f.options, onEvent: (e) => events.push(e) });
-  assert.equal(result.status, 'blocked');
-  assert.equal(events.at(-1).code, 'unsupported_cli');
-  assert.equal(result.effortEvidence.launchAccepted, false);
-  assert.equal(await exists(f.log), false);
+  for (const flag of ['--restricted', '--append-system-prompt']) {
+    const f = await fixture(t, '', { help: HELP.replace(flag, '') });
+    const events = [];
+    const result = await run({ ...f.options, onEvent: (e) => events.push(e) });
+    assert.equal(result.status, 'blocked');
+    assert.equal(events.at(-1).code, 'unsupported_cli');
+    assert.equal(result.effortEvidence.launchAccepted, false);
+    assert.equal(result.effortEvidence.turnSubmitted, false);
+    assert.equal(await exists(f.log), false);
+  }
 });
 
 test('missing executable and working directory return useful blocked results', async (t) => {
@@ -238,12 +244,50 @@ test('EFFORT_CLAUDE_BIN selects the Claude CLI when no executable is given', asy
 
 test('known unsupported effort models block before invoking the CLI', async (t) => {
   const f = await fixture(t);
-  for (const model of ['haiku', 'claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-opus-4-1', 'opusplan']) {
-    const result = await run({ ...f.options, model });
+  for (const model of ['claude-3-haiku-20240307', 'claude-3-7-sonnet', 'claude-haiku-4-5', 'claude-sonnet-4', 'claude-sonnet-4-0', 'claude-sonnet-4-5', 'claude-opus-4-1', 'opusplan']) {
+    const events = [];
+    const result = await run({ ...f.options, model, onEvent: (event) => events.push(event) });
     assert.equal(result.status, 'blocked', model);
     assert.match(result.text, /does not support/);
+    assert.equal(events.at(-1).code, 'unsupported_effort_model');
+    assert.equal(result.effortEvidence.turnSubmitted, false);
   }
   assert.equal(await exists(f.log), false);
+});
+
+test('Haiku aliases and 5.x model IDs support effort and match the observed model', async (t) => {
+  const f = await fixture(t, 'emit({ ...initial, model: "claude-haiku-5-5" }); emit({ type: "assistant", message: { model: "claude-haiku-5-5", content: [{ type: "text", text: "Done." }] } }); emit(success);', { startup: false });
+  for (const model of ['haiku', 'claude-haiku-5-5']) {
+    const result = await run({ ...f.options, model, effort: 'low' });
+    assert.equal(result.status, 'completed', model);
+    assert.equal(result.effortEvidence.observedModel, 'claude-haiku-5-5');
+    assert.equal(result.effortEvidence.turnSubmitted, true);
+    const { argv } = JSON.parse(await readFile(f.log, 'utf8'));
+    assert.equal(argValue(argv, '--model'), model);
+    assert.equal(argValue(argv, '--effort'), 'low');
+  }
+});
+
+test('aliases resolving to unsupported generations are blocked after prompt submission', async (t) => {
+  for (const [model, observed] of [['haiku', 'claude-haiku-4-5'], ['sonnet', 'claude-sonnet-4-5'], ['opus', 'claude-opus-4-1']]) {
+    const f = await fixture(t, `emit({ ...initial, model: ${JSON.stringify(observed)} }); emit(success);`, { startup: false });
+    const events = [];
+    const result = await run({ ...f.options, model, onEvent: (event) => events.push(event) });
+    assert.equal(result.status, 'blocked', model);
+    assert.equal(events.at(-1).code, 'unsupported_effort_model');
+    assert.equal(result.effortEvidence.launchAccepted, false);
+    assert.equal(result.effortEvidence.turnSubmitted, true);
+  }
+});
+
+test('model unavailability reported by the CLI is after prompt submission even without initialization', async (t) => {
+  const f = await fixture(t, 'emit({ ...success, subtype: "error_during_execution", is_error: true, result: "model_not_found" }); process.exitCode = 1;', { startup: false });
+  const events = [];
+  const result = await run({ ...f.options, model: 'haiku', onEvent: (event) => events.push(event) });
+  assert.equal(result.status, 'blocked');
+  assert.equal(events.at(-1).code, 'model_unavailable');
+  assert.equal(result.effortEvidence.launchAccepted, false);
+  assert.equal(result.effortEvidence.turnSubmitted, true);
 });
 
 test('provider errors and stderr do not leak credential values', async (t) => {
@@ -355,6 +399,24 @@ test('checks session, model, tools, plugins, hooks and permission evidence', asy
     const result = await run({ ...f.options, model: 'sonnet', sessionId: SESSION, onEvent: (e) => events.push(e) });
     assert.notEqual(result.status, 'completed');
     assert.equal(events.at(-1).code, code);
+    assert.equal(result.effortEvidence.turnSubmitted, true);
+  }
+});
+
+test('unoffered tool requests stop the turn and report only a safe tool name', async (t) => {
+  for (const allowWrite of [false, true]) {
+    for (const name of ['Bash', 'unsafe\nsecret', '', null, 'x'.repeat(81)]) {
+      const f = await fixture(t, `emit({ type: 'assistant', message: { content: [{ type: 'tool_use', name: ${JSON.stringify(name)}, input: { command: 'private command' } }] } }); setInterval(() => {}, 1000);`);
+      const events = [];
+      const result = await run({ ...f.options, allowWrite, onEvent: (event) => events.push(event) });
+      assert.equal(result.status, 'blocked');
+      const errors = events.filter((event) => event.type === 'error');
+      assert.equal(errors.length, 1);
+      assert.equal(errors[0].code, 'tool_not_allowed');
+      assert.equal(errors[0].tool, name === 'Bash' ? 'Bash' : '[invalid-tool-name]');
+      assert.ok(!events.some((event) => event.type === 'tool'));
+      assert.ok(!JSON.stringify(events).includes('private command'));
+    }
   }
 });
 
@@ -377,18 +439,34 @@ test('callback exceptions stop the run without escaping event-loop errors', asyn
 
 test('timeout kills the managed process group including stubborn descendants', { skip: process.platform === 'win32' }, async (t) => {
   const f = await fixture(t, `
-    const descendant = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000);'], { stdio: 'ignore' });
-    fs.writeFileSync(${JSON.stringify('PIDS_PLACEHOLDER')}, JSON.stringify([process.pid, descendant.pid]));
+    const descendant = spawn(process.execPath, ['-e', 'process.on("SIGTERM", () => {}); setInterval(() => {}, 1000); process.send("ready");'], { stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+    descendant.once('message', () => fs.writeFileSync(${JSON.stringify('PIDS_PLACEHOLDER')}, JSON.stringify([process.pid, descendant.pid])));
     process.on('SIGTERM', () => {});
     setInterval(() => {}, 1000);
   `);
   const source = await readFile(f.scriptPath, 'utf8');
   await writeFile(f.scriptPath, source.replace(JSON.stringify('PIDS_PLACEHOLDER'), JSON.stringify(f.pidFile)));
-  const start = Date.now();
-  const result = await run({ ...f.options, timeoutMs: 400 });
+  // Start the timeout clock only after both real processes have installed their handlers.
+  const realTimeout = globalThis.setTimeout;
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
+  const controller = new AbortController();
+  let timersActive = true;
+  t.after(() => { controller.abort(); if (timersActive) { t.mock.timers.tick(500); t.mock.timers.reset(); } });
+  const running = run({ ...f.options, timeoutMs: 400, signal: controller.signal });
+  const startup = performance.now();
+  while (!await exists(f.pidFile)) {
+    assert.ok(performance.now() - startup < 10_000, 'fixture did not become ready');
+    await new Promise(done => realTimeout(done, 20));
+  }
+  const start = performance.now();
+  t.mock.timers.tick(400);
+  t.mock.timers.tick(500);
+  const result = await running;
+  t.mock.timers.reset();
+  timersActive = false;
   assert.equal(result.status, 'failed');
   assert.match(result.text, /timeout/);
-  assert.ok(Date.now() - start < 3000);
+  assert.ok(performance.now() - start < 3000);
   const pids = JSON.parse(await readFile(f.pidFile, 'utf8'));
   for (const pid of pids) {
     let alive = true;

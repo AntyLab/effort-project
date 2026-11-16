@@ -45,7 +45,7 @@ function dashboard({ url = 'http://127.0.0.1:43210/', storage = new Map(), fetch
   elements.get('stat-tasks').textContent = '—';
   elements.get('local-file-help').hidden = true;
   elements.get('status-filter').value = 'all';
-  const providers = ['codex', 'claude', 'generic'].map((provider) => Object.assign(new Element('input'), { value: provider }));
+  const providers = ['codex', 'claude', 'gemini', 'generic'].map((provider) => Object.assign(new Element('input'), { value: provider }));
   elements.get('recommend-form').elements = [...providers, elements.get('task-prompt'), elements.get('recommend-button')];
   const links = ['sandbox', 'history', 'compatibility', 'setup'].map((id) => { const link = new Element('a'); link.setAttribute('href', `#${id}`); return link; });
   const location = new URL(url);
@@ -105,6 +105,30 @@ test('file preview has no API requests or polling and clearly disables server ac
   await settled();
   assert.equal(app.requests.length, 0);
   assert.equal(app.elements.get('recommendation').dataset.state, 'preview');
+});
+
+test('managed providers have labeled radio options and accessible recommendation commands', async () => {
+  const markup = await readFile(new URL('../web/index.html', import.meta.url), 'utf8');
+  const app = dashboard({ url: 'file:///example/effort-project/web/index.html' });
+  const descendants = (element) => [element, ...element.children.flatMap(descendants)];
+  for (const [provider, name] of [['codex', 'Codex'], ['claude', 'Claude'], ['gemini', 'Gemini']]) {
+    assert.match(markup, new RegExp(`<label><input type="radio" name="provider" value="${provider}"(?: checked)?><span>${name}</span></label>`));
+    assert.equal(vm.runInContext(`providerName('${provider}')`, app.context), name);
+    for (const effort of ['low', 'medium', 'high']) {
+      vm.runInContext(`renderRecommendation({ effort: '${effort}', control: 'managed-turns' }, '${provider}')`, app.context);
+      const elements = descendants(app.elements.get('recommendation'));
+      const command = elements.find((element) => element.id === 'recommendation-command');
+      assert.equal(command.textContent, `effort run "YOUR TASK HERE" --provider ${provider} --cwd /path/to/repo --effort ${effort}`);
+      const copy = elements.find((element) => element.dataset.copy === command.id);
+      assert.equal(copy.tagName, 'button');
+      assert.equal(copy.type, 'button');
+      assert.equal(copy.getAttribute('aria-label'), 'Copy read-only CLI recommendation example');
+      assert.equal(app.elements.get('recommendation').dataset.state, 'ready');
+    }
+  }
+  vm.runInContext("renderRecommendation({ effort: 'medium' }, 'generic')", app.context);
+  assert.ok(!descendants(app.elements.get('recommendation')).some((element) => element.id === 'recommendation-command'));
+  assert.equal(app.requests.length, 0);
 });
 
 test('HTTP bootstrap consumes the token and an ordinary reload retains its session', async () => {

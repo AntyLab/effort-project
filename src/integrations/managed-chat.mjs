@@ -1,6 +1,6 @@
 import { isAbsolute } from 'node:path';
 import { createAutomaticRouter } from '../automatic.mjs';
-import { LEVELS } from '../policy.mjs';
+import { chooseModel, LEVELS, MODELS } from '../policy.mjs';
 import { repositoryFacts } from '../repository.mjs';
 
 const MODEL_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:/[\]-]{0,199}$/;
@@ -56,7 +56,7 @@ export function createManagedChat({ adapter, cwd, model, models, effort = 'auto'
   const provider = adapter.capabilities.id;
   const supportedEfforts = [...adapter.capabilities.levels];
   const router = createAutomaticRouter({ minEffort, maxEffort,
-    provider: ['codex', 'claude'].includes(provider) ? provider : 'generic' });
+    provider: Object.hasOwn(MODELS, provider) ? provider : 'generic' });
   const routingSessionId = 'local-conversation';
   let sessionId;
   let currentModel = model;
@@ -101,15 +101,19 @@ export function createManagedChat({ adapter, cwd, model, models, effort = 'auto'
         requestedEffort = decision.effort;
       } else {
         requestedEffort = effort;
-        decision = { action: 'apply', effort, reasons: ['Explicit user effort selection.'], recommendation: null };
+        const preview = router.decide({ sessionId: routingSessionId, prompt, facts, supportedEfforts, preview: true });
+        decision = { action: 'apply', effort, tier: preview.tier, reasons: ['Explicit user effort selection.'], recommendation: preview.recommendation };
       }
       if (!supportedEfforts.includes(requestedEffort) || LEVELS.indexOf(requestedEffort) < LEVELS.indexOf(minEffort) ||
           LEVELS.indexOf(requestedEffort) > LEVELS.indexOf(maxEffort)) {
         return envelope({ decision, requestedEffort, facts, code: 'unsupported_effort',
           text: 'No supported effort can be selected within the configured bounds. No provider turn was started.' });
       }
-      requestedModel = model ?? table[requestedEffort] ?? currentModel ?? null;
-      onEvent({ type: 'routing', provider, decision, requestedModel, requestedEffort, resumed: Boolean(sessionId) });
+      const automaticModel = chooseModel(provider, decision.tier);
+      requestedModel = model ?? table[requestedEffort] ?? automaticModel ?? currentModel ?? null;
+      const modelSelection = model !== undefined ? 'pinned' : table[requestedEffort] !== undefined ? 'mapped' : automaticModel !== undefined ? 'automatic' : 'default';
+      decision = { ...decision, model: requestedModel, modelSelection };
+      onEvent({ type: 'routing', provider, decision, requestedModel, requestedEffort, modelSelection, resumed: Boolean(sessionId) });
       if (signal?.aborted) return envelope({ status: 'cancelled', decision, requestedModel, requestedEffort, facts, code: 'aborted', text: 'The conversation was cancelled before submitting this prompt.' });
       if (routingInput) router.decide(routingInput);
       launched = true;

@@ -7,7 +7,7 @@ import { recommend, nextDecision, classifyFailure } from '../src/policy.mjs';
 import { repositoryFacts } from '../src/repository.mjs';
 import { Store } from '../src/store.mjs';
 import { verify, failureFingerprint } from '../src/verify.mjs';
-import { runTask } from '../src/runner.mjs';
+import { runTask, checkRunOptions } from '../src/runner.mjs';
 
 test('unknown tasks remain uncertain and mechanical requests can start low',()=>{
   assert.equal(recommend({prompt:'Do this task'}).effort,'medium');
@@ -280,11 +280,24 @@ test('a passing check settles when it exits, even if a descendant keeps stdout o
     try{process.kill(Number(await readFile(join(cwd,'child.pid'),'utf8')),'SIGKILL');}catch{}
   }
 });
-test('verification timeout reaps descendants holding stdout open',{skip:process.platform==='win32'},async()=>{
+test('verification timeout reaps descendants holding stdout open',{skip:process.platform==='win32'},async(t)=>{
   const cwd=await mkdtemp(join(tmpdir(),'effort-tree-'));
-  const script=`const {spawn}=require('node:child_process'); const fs=require('node:fs'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:['ignore','inherit','inherit']}); fs.writeFileSync('pid',String(c.pid));setInterval(()=>{},1000);`;
-  const start=Date.now();const result=await verify([process.execPath,'-e',script],{cwd,timeoutMs:150});
-  assert.equal(result.kind,'timeout');assert.ok(Date.now()-start<2200);
+  const script=`const {spawn}=require('node:child_process'); const fs=require('node:fs'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000);process.send("ready")'],{stdio:['ignore','inherit','inherit','ipc']}); c.once('message',()=>fs.writeFileSync('pid',String(c.pid)));setInterval(()=>{},1000);`;
+  // Real process startup is independent of the short timeout being exercised.
+  const realTimeout=globalThis.setTimeout;
+  t.mock.timers.enable({apis:['setTimeout']});
+  const controller=new AbortController();let timersActive=true;
+  t.after(()=>{controller.abort();if(timersActive){t.mock.timers.tick(500);t.mock.timers.reset();}});
+  const running=verify([process.execPath,'-e',script],{cwd,timeoutMs:150,signal:controller.signal});
+  const startup=performance.now();
+  while(true){
+    try{await readFile(join(cwd,'pid'),'utf8');break;}catch(error){if(error.code!=='ENOENT')throw error;}
+    assert.ok(performance.now()-startup<10_000,'fixture did not become ready');
+    await new Promise(done=>realTimeout(done,20));
+  }
+  const start=performance.now();t.mock.timers.tick(150);t.mock.timers.tick(500);
+  const result=await running;t.mock.timers.reset();timersActive=false;
+  assert.equal(result.kind,'timeout');assert.ok(performance.now()-start<2200);
   const pid=Number(await readFile(join(cwd,'pid'),'utf8'));assert.throws(()=>process.kill(pid,0));
 });
 async function fixture(run){
@@ -292,6 +305,95 @@ async function fixture(run){
   return {cwd,store,adapter:{capabilities:{id:'codex',levels:['low','medium','high']},run}};
 }
 const completed={status:'completed',sessionId:'fake-session',text:'sensitive response',effortEvidence:'fixture-request',usage:{inputTokens:10,outputTokens:2}};
+test('automatic run models resolve per tier while pins and omitted models retain their behavior',async()=>{
+  const calls=[];const f=await fixture(async o=>{calls.push(o);return completed;});
+  assert.doesNotThrow(()=>checkRunOptions({model:'auto'},{adapter:f.adapter}));
+  for(const [prompt,tier,model] of [['Rename variable','fast','gpt-6-luna'],['Add a settings page','daily','gpt-6.1-sol'],['Investigate a security regression','frontier','gpt-6-astra']]){
+    const events=[];
+    const result=await runTask({prompt,cwd:f.cwd,model:'auto',onEvent:e=>events.push(e)},f);
+    assert.equal(calls.at(-1).model,model);assert.equal(result.task.model,model);
+    assert.equal(result.task.tier,tier);assert.equal(result.task.modelSelection,'automatic');
+    assert.equal(events[0].model,model);assert.equal(events[0].tier,tier);assert.equal(events[0].modelSelection,'automatic');
+    assert.equal((await f.store.get(result.task.id)).model,model);
+  }
+  for(const [model,selection] of [['my-pinned-model','pinned'],[undefined,'default']]){
+    const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model},f);
+    assert.equal(calls.at(-1).model,model);assert.equal(result.task.model,model??null);assert.equal(result.task.modelSelection,selection);
+  }
+  f.adapter.capabilities.id='custom-provider';
+  const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto'},f);
+  assert.equal(calls.at(-1).model,undefined);assert.equal(result.task.model,null);assert.equal(result.task.modelSelection,'default');
+});
+test('automatic run models stay fixed through retries and effort escalation',async()=>{
+  const calls=[];const f=await fixture(async o=>{calls.push(o);return completed;});let checks=0;
+  const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',verify:['fake-check']},{...f,verifyFn:async()=>++checks===3?{status:'passed',exitCode:0}:{status:'failed',kind:'test',exitCode:1,output:'FAIL',fingerprint:'same'}});
+  assert.deepEqual(calls.map(o=>o.effort),['low','low','medium']);
+  assert.deepEqual(calls.map(o=>o.model),Array(3).fill('gpt-6-luna'));
+  assert.equal(result.task.model,'gpt-6-luna');assert.equal(result.task.status,'verified');
+});
+test('first pre-submission model rejection falls back once and records both choices',async()=>{
+  for(const [provider,code,method] of [['codex','model_mismatch'],['codex','unsupported_effort'],['codex','rpc_error','thread/start'],['codex','rpc_error','model/list'],['claude','unsupported_effort_model'],['gemini','model_unavailable']]){
+    const calls=[],events=[];let checks=0;
+    const f=await fixture(async o=>{
+      calls.push(o);
+      if(calls.length===1){o.onEvent({type:provider==='codex'?'diagnostic':'error',code,method});return {status:'blocked',sessionId:'rejected-session',effortEvidence:{turnSubmitted:false}};}
+      return completed;
+    });
+    f.adapter.capabilities.id=provider;
+    const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',maxAttempts:2,verify:['fake-check'],onEvent:e=>events.push(e)},
+      {...f,verifyFn:async()=>++checks===2?{status:'passed',exitCode:0}:{status:'failed',kind:'test',exitCode:1,output:'FAIL',fingerprint:'same'}});
+    assert.deepEqual(calls.map(o=>o.model),[provider==='codex'?'gpt-6-luna':provider==='gemini'?'gemini-4-hydrogen':'haiku',undefined,undefined]);
+    assert.deepEqual(calls.map(o=>o.sessionId),[undefined,undefined,'fake-session']);
+    assert.equal(calls[0].prompt,calls[1].prompt);assert.equal(calls[0].effort,calls[1].effort);
+    assert.equal(result.task.status,'verified');assert.equal(result.task.attempts.length,2);
+    assert.equal(result.task.model,null);assert.equal(result.task.modelSelection,'default-after-fallback');
+    const fallbacks=events.filter(e=>e.type==='model_fallback');assert.equal(fallbacks.length,1);assert.equal(fallbacks[0].code,code);assert.equal(fallbacks[0].number,1);
+    const saved=await f.store.get(result.task.id);
+    assert.equal(saved.decisions[0].model,calls[0].model);assert.equal(saved.decisions[1].type,'model_fallback');
+  }
+});
+test('a fallback that is also rejected stops without a second fallback',async()=>{
+  const calls=[],events=[];const f=await fixture(async o=>{calls.push(o);o.onEvent({type:'diagnostic',code:'unsupported_effort'});return {status:'blocked',effortEvidence:{turnSubmitted:false}};});
+  const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',onEvent:e=>events.push(e)},f);
+  assert.deepEqual(calls.map(o=>o.model),['gpt-6-luna',undefined]);assert.equal(result.task.status,'blocked');
+  assert.equal(events.filter(e=>e.type==='model_fallback').length,1);
+});
+test('pins, submitted or uncertain turns, and unrelated failures never fall back',async()=>{
+  const cases=[
+    {model:'pinned',code:'model_mismatch',turnSubmitted:false},
+    {model:undefined,code:'unsupported_effort',turnSubmitted:false},
+    {code:'model_mismatch',turnSubmitted:true},{code:'unsupported_effort',turnSubmitted:true},
+    {code:'rpc_error',method:'turn/start',turnSubmitted:true,accepted:false},
+    {code:'rpc_error',method:'initialize',turnSubmitted:false},
+    {code:'model_mismatch',accepted:false},{code:'rpc_error',turnSubmitted:false},
+    {code:'policy_mismatch',turnSubmitted:false},{code:'cleanup_timeout',turnSubmitted:false},
+    {provider:'gemini',code:'model_unavailable',turnSubmitted:true},
+    {provider:'gemini',code:'unsupported_effort',turnSubmitted:false},
+    {provider:'claude',code:'model_unavailable',turnSubmitted:true},
+    {provider:'claude',code:'model_mismatch',turnSubmitted:true},
+    {provider:'claude',code:'unsupported_effort_model',turnSubmitted:true},
+    {code:'unsupported_effort',turnSubmitted:false,status:'cancelled'},
+    {code:'unsupported_effort',turnSubmitted:false,status:'completed'},
+  ];
+  for(const scenario of cases){
+    const calls=[],events=[];const f=await fixture(async o=>{calls.push(o);o.onEvent({type:'diagnostic',code:scenario.code,method:scenario.method});return {status:scenario.status??'blocked',effortEvidence:{turnSubmitted:scenario.turnSubmitted,accepted:scenario.accepted}};});
+    f.adapter.capabilities.id=scenario.provider??'codex';
+    await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',...('model' in scenario?{model:scenario.model}:{}),onEvent:e=>events.push(e)},f);
+    assert.equal(calls.length,1,JSON.stringify(scenario));assert.equal(events.some(e=>e.type==='model_fallback'),false);
+  }
+});
+test('later model rejections and thrown errors never replay an automatic task',async()=>{
+  for(const throws of [false,true]){
+    const calls=[],events=[];const f=await fixture(async o=>{
+      calls.push(o);if(throws)throw new Error('model_unavailable');
+      if(calls.length===1)return completed;
+      o.onEvent({type:'diagnostic',code:'unsupported_effort'});return {status:'blocked',effortEvidence:{turnSubmitted:false}};
+    });
+    const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',verify:['fake-check'],onEvent:e=>events.push(e)},
+      {...f,verifyFn:async()=>({status:'failed',kind:'test',exitCode:1,output:'FAIL',fingerprint:'same'})});
+    assert.equal(result.task.status,'blocked');assert.equal(calls.length,throws?1:2);assert.equal(events.some(e=>e.type==='model_fallback'),false);
+  }
+});
 test('managed runs resume same session and escalate only after repeated check failure',async()=>{
   const calls=[];const f=await fixture(async o=>{calls.push(o);return completed;});let checks=0;
   const result=await runTask({prompt:'Rename variable',cwd:f.cwd,effort:'low',verify:['fake-check'],maxAttempts:3},{...f,verifyFn:async()=>++checks===3?{status:'passed',exitCode:0}:{status:'failed',kind:'test',exitCode:1,output:'sensitive test output',fingerprint:'same'}});

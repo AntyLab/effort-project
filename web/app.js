@@ -51,7 +51,7 @@ function label(value, fallback = 'Not recorded') {
 }
 
 function providerName(value) {
-  return ({ codex: 'Codex', claude: 'Claude', generic: 'Other tools' })[value] || label(value, 'Unknown provider');
+  return ({ codex: 'Codex', claude: 'Claude', gemini: 'Gemini', generic: 'Other tools' })[value] || label(value, 'Unknown provider');
 }
 
 function effortTransition(task) {
@@ -351,7 +351,7 @@ function renderRecommendation(result, provider) {
   const control = result.control ? `${label(result.control)} recommendation. ` : '';
   const policy = result.policyVersion ? `Policy ${result.policyVersion}. ` : '';
   container.append(node('p', 'recommendation-note', `${control}No settings changed. ${policy}This is a starting estimate, not a guarantee of difficulty or outcome.`));
-  const supportedCLI = ['codex', 'claude'].includes(provider) && ['low', 'medium', 'high'].includes(result.effort);
+  const supportedCLI = ['codex', 'claude', 'gemini'].includes(provider) && ['low', 'medium', 'high'].includes(result.effort);
   container.append(node('p', 'recommendation-handoff', supportedCLI
     ? `For desktop use, choose ${label(result.effort)} in your app’s effort selector, if supported. Effort cannot change that setting.`
     : 'Apply this advice manually only if your host supports the suggested level. Effort does not assume an effort mapping for other tools.'));

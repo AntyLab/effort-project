@@ -73,11 +73,11 @@ function batch(path, command) {
  * before PATH, as cmd.exe does, and a batch file must be an npm wrapper.
  */
 export function findCommand(command, { env = process.env, cwd, platform = process.platform } = {}) {
-  const base = cwd ?? process.cwd();
+  const base = resolve(cwd ?? process.cwd());
   const hasDirectory = /[\\/]/.test(command);
   if (platform !== 'win32') {
     if (hasDirectory) return isExecutable(resolve(base, command)) ? { executable: command, executableArgs: [] } : null;
-    const path = pathDirectories(env, platform).map((directory) => resolve(directory, command)).find(isExecutable);
+    const path = pathDirectories(env, platform).map((directory) => resolve(base, directory, command)).find(isExecutable);
     return path ? { executable: path, executableArgs: [] } : null;
   }
   const extension = extname(command).toLowerCase();
@@ -85,17 +85,18 @@ export function findCommand(command, { env = process.env, cwd, platform = proces
   if (hasDirectory) {
     const path = resolve(base, command);
     if (isBatch) return isFile(path) ? batch(path, command) : null;
-    return ['', '.exe', '.com'].some((suffix) => isFile(path + suffix)) ? { executable: path, executableArgs: [] } : null;
+    const executable = ['', '.exe', '.com'].map((suffix) => path + suffix).find(isFile);
+    return executable ? { executable, executableArgs: [] } : null;
   }
-  const directories = [...(cwd ? [cwd] : []), ...pathDirectories(env, platform)];
+  const directories = [...(cwd ? [base] : []), ...pathDirectories(env, platform)];
   const suffixes = extension === '.exe' || extension === '.com' || isBatch ? [''] : ['.exe', '.com'];
   for (const directory of directories) for (const suffix of suffixes) {
-    const path = resolve(directory, command + suffix);
+    const path = resolve(base, directory, command + suffix);
     if (isFile(path)) return isBatch ? batch(path, command) : { executable: path, executableArgs: [] };
   }
   if (extension) return null;
   for (const directory of directories) for (const suffix of ['.cmd', '.bat']) {
-    const path = resolve(directory, command + suffix);
+    const path = resolve(base, directory, command + suffix);
     if (isFile(path)) return batch(path, command);
   }
   return null;

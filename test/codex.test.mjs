@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn } from 'node:child_process';
 import { run, capabilities, waitForProcessGroupExit } from '../src/adapters/codex.mjs';
+import { runTask } from '../src/runner.mjs';
 
 // This fixture is an independent JSONL server, not a mock of the adapter internals.
 const fixtureSource = String.raw`
@@ -27,6 +28,7 @@ const end = (status='completed', id=turnId) => notify('turn/completed', { thread
 createInterface({ input:process.stdin }).on('line', line => {
   const msg=JSON.parse(line); record(msg);
   if (msg.method==='initialize') {
+    if(mode==='initialize-rpc-error') {send({id:msg.id,error:{code:-123,message:'sk-fixture-secret'}});return;}
     if(mode==='hang-init') return;
     if(mode==='malformed') { process.stdout.write('not json sk-fixture-secret\n'); return; }
     if(mode==='big-line') { process.stdout.write('x'.repeat(3*1024*1024)); return; }
@@ -34,6 +36,7 @@ createInterface({ input:process.stdin }).on('line', line => {
     reply(msg.id,{userAgent:'fixture'});
   }
   if (['thread/start','thread/resume'].includes(msg.method)) {
+    if(mode==='thread-rpc-error') {send({id:msg.id,error:{code:-123,message:'sk-fixture-secret'}});return;}
     resumed=msg.method==='thread/resume';
     reply(msg.id, { thread:{id:threadId,status:{type:mode==='busy'?'active':'idle'}},model:mode==='model-mismatch'?'other-model':(msg.params.model??'model-fixture'), sandbox:{type:mode==='policy-mismatch'?'dangerFullAccess':(msg.params.sandbox==='workspace-write'?'workspaceWrite':'readOnly')},approvalPolicy:mode==='approval-policy-mismatch'?'never':msg.params.approvalPolicy,approvalsReviewer:'user' });
     if(resumed && mode!=='no-baseline') usageEvent(usage(200,100,20),usage(0,0,0),'old-turn');
@@ -45,6 +48,7 @@ createInterface({ input:process.stdin }).on('line', line => {
     reply(msg.id,{data:[{id:'picker-fixture',model:'model-fixture',supportedReasoningEfforts:(mode==='unsupported'?['high']:['low','medium','high']).map(reasoningEffort=>({reasoningEffort}))}],nextCursor:null});
   }
   if(msg.method==='turn/start') {
+    if(mode==='turn-rpc-error') {send({id:msg.id,error:{code:-123,message:'sk-fixture-secret'}});return;}
     effort=msg.params.effort;
     if(mode==='early-complete') {
       notify('item/completed',{threadId,turnId,item:{id:'a',type:'agentMessage',phase:'final_answer',text:'early answer'}});
@@ -107,6 +111,7 @@ test('Codex sends effort per turn over stdin, discovers support, and defaults to
   assert.deepEqual(result.usage, { inputTokens: 30, outputTokens: 12, cachedInputTokens: 5, costUsd: null });
   assert.equal(result.effortEvidence.kind, 'turn-request');
   assert.equal(result.effortEvidence.accepted, true);
+  assert.equal(result.effortEvidence.turnSubmitted, true);
   assert.equal(result.effortEvidence.configuredEffort, 'low');
   const log = await f.readLog();
   assert.deepEqual(log[0].argv, ['app-server', '--listen', 'stdio://']);
@@ -159,9 +164,38 @@ for (const mode of ['unsupported', 'model-mismatch', 'policy-mismatch', 'approva
     const result = await run({ ...f.options, model: 'model-fixture' });
     assert.equal(result.status, 'blocked');
     assert.equal(result.effortEvidence.accepted, false);
+    assert.equal(result.effortEvidence.turnSubmitted, false);
     assert.equal((await f.readLog()).some((message) => message.method === 'turn/start'), false);
   });
 }
+
+test('Codex distinguishes rejected preflight RPCs from unacknowledged submitted turns', async (t) => {
+  for (const [mode, method, submitted] of [['initialize-rpc-error', 'initialize', false], ['thread-rpc-error', 'thread/start', false], ['rpc-error', 'model/list', false], ['turn-rpc-error', 'turn/start', true]]) {
+    const f = await setup(t, mode);
+    const result = await run(f.options);
+    assert.equal(result.status, 'failed', mode);
+    assert.equal(result.effortEvidence.accepted, false, mode);
+    assert.equal(result.effortEvidence.turnSubmitted, submitted, mode);
+    const diagnostic = f.events.find(event => event.code === 'rpc_error');
+    assert.equal(diagnostic.method, method, mode);
+    assert.equal((await f.readLog()).some(message => message.method === 'turn/start'), submitted, mode);
+  }
+});
+
+test('automatic tasks fall back through the real Codex adapter without submitting the rejected model', async (t) => {
+  const f = await setup(t);
+  const saved = [];
+  const result = await runTask({ ...f.options, prompt: 'Rename a variable', model: 'auto', timeoutMs: 10_000 },
+    { adapter: { run, capabilities }, store: { async save(task) { saved.push(structuredClone(task)); } } });
+  assert.equal(result.task.status, 'unverified');
+  assert.equal(result.task.modelSelection, 'default-after-fallback');
+  const log = await f.readLog();
+  assert.deepEqual(log.filter(message => message.method === 'thread/start').map(message => message.params.model), ['gpt-6-luna', undefined]);
+  assert.deepEqual(log.filter(message => message.method === 'turn/start').map(message => message.params.model), ['model-fixture']);
+  const fallback = f.events.find(event => event.type === 'model_fallback');
+  assert.equal(fallback.previousModel, 'gpt-6-luna'); assert.equal(fallback.code, 'unsupported_effort');
+  assert.equal(saved.at(-1).decisions[1].type, 'model_fallback');
+});
 
 for (const mode of ['approval', 'permission', 'question']) {
   for (const allowWrite of [false, true]) test(`Codex fails closed on ${mode} requests without granting approval (allowWrite=${allowWrite})`, async (t) => {

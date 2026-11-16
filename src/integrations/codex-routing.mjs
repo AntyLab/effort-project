@@ -1,5 +1,5 @@
 import { createAutomaticRouter, validateModelMap } from '../automatic.mjs';
-import { LEVELS } from '../policy.mjs';
+import { chooseModel, LEVELS } from '../policy.mjs';
 import { repositoryFacts } from '../repository.mjs';
 
 const MAX_THREADS = 128;
@@ -52,8 +52,8 @@ function textPrompt(params) {
  * Route an opted-in Codex app-server connection. An `apply` event records an
  * outgoing request rewrite, never a provider acknowledgement or quality claim.
  * Explicit launcher effort pins win over automatic selection; the launcher
- * model pin wins over an optional tier-to-model map. The normal TUI selection
- * supplies the model when neither launcher option requests model switching.
+ * model pin wins over an optional effort-to-model map, then built-in tier models
+ * apply when discovered. Otherwise the normal TUI model selection is preserved.
  */
 export function createCodexRouting({ cwd, effort = 'auto', model, models, minEffort = 'low', maxEffort = 'high', onDecision = () => {}, request, repositoryFactsFn = repositoryFacts } = {}) {
   const router = createAutomaticRouter({ provider: 'codex', effort, minEffort, maxEffort });
@@ -143,21 +143,23 @@ export function createCodexRouting({ cwd, effort = 'auto', model, models, minEff
       const facts = await repositoryFactsFn(workspace, prompt);
       const desired = router.decide({ sessionId: params.threadId, model: model ?? previousModel, prompt, facts, supportedEfforts: LEVELS, preview: true });
       if (desired.action !== 'apply') return preserve(message, 'The router could not assess this turn.', metadata);
-      const initialModel = model ?? modelMap[desired.effort] ?? previousModel;
       await discoverModels();
+      const availableModels = [...catalog.values()].flatMap(entry => [entry.model, entry.id]);
+      const automaticModel = chooseModel('codex', desired.tier, availableModels);
+      const initialModel = model ?? modelMap[desired.effort] ?? automaticModel ?? previousModel;
       const selected = findModel(initialModel);
       if (!selected) return preserve(message, 'The selected model has no discovered effort capabilities.', metadata);
       const decision = router.decide({ sessionId: params.threadId, model: selected.model, prompt, facts, supportedEfforts: selected.supportedEfforts });
       if (decision.action !== 'apply' || !selected.supportedEfforts.includes(decision.effort)) return preserve(message, 'The router could not choose a supported effort for this model.', { ...metadata, reasons: decision.reasons ?? ['No supported effort is available.'] });
 
-      const modelSelection = model ? 'pinned' : modelMap[desired.effort] ? 'mapped' : 'unchanged';
+      const modelSelection = model ? 'pinned' : modelMap[desired.effort] ? 'mapped' : automaticModel ? 'automatic' : 'unchanged';
       const nextParams = { ...params, effort: decision.effort };
       if (modelSelection !== 'unchanged') nextParams.model = selected.model;
       // Codex's experimental schema states that collaborationMode takes
       // precedence over top-level model/effort. Keep both carriers consistent.
       if (settings) nextParams.collaborationMode = { ...params.collaborationMode, settings: { ...settings, reasoning_effort: decision.effort, ...(modelSelection !== 'unchanged' ? { model: selected.model } : {}) } };
       const rewritten = { ...message, params: nextParams };
-      emit({ sessionId: params.threadId, action: 'apply', evidence: 'turn-request-rewrite', effort: decision.effort, model: selected.model, modelSelection, reasons: decision.reasons, ...metadata });
+      emit({ sessionId: params.threadId, action: 'apply', evidence: 'turn-request-rewrite', effort: decision.effort, tier: decision.tier, model: selected.model, modelSelection, reasons: decision.reasons, ...metadata });
       return rewritten;
     } catch {
       return preserve(message, 'Automatic routing could not complete; the current selection is preserved.', metadata);

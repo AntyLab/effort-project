@@ -26,7 +26,7 @@ const READ_TOOLS = ['Read', 'Grep', 'Glob'];
 const KNOWN_BUILTIN_PLUGINS = new Set(['agents-md', 'cc-plugin-agents-md', 'cc-plugin-plugin-authoring']);
 const isKnownBuiltinPlugin = (plugin) => KNOWN_BUILTIN_PLUGINS.has(plugin?.name) && plugin?.path === 'builtin';
 const REQUIRED_FLAGS = [
-  '--print', '--output-format', '--verbose', '--effort', '--resume',
+  '--print', '--output-format', '--verbose', '--effort', '--resume', '--append-system-prompt',
   '--restricted', '--safe-mode', '--permission-mode', '--permission-prompts',
   '--tools', '--allowedTools', '--disallowedTools', '--strict-mcp-config', '--mcp-config',
   '--settings', '--setting-sources', '--disable-slash-commands', '--no-chrome',
@@ -122,6 +122,7 @@ function launchArgs(options) {
   const args = [
     '--print', '--output-format', 'stream-json', '--verbose',
     '--effort', options.effort,
+    '--append-system-prompt', `Only the ${tools.slice(0, -1).join(', ')} and ${tools.at(-1)} tools exist in this session; there is no shell and no other tool: do not request one, and do not try to run tests or commands; the caller runs its own checks.`,
     '--restricted', '--safe-mode', '--setting-sources', '',
     '--settings', JSON.stringify({ disableAllHooks: true, autoMemoryEnabled: false,
       fallbackModel: [], switchModelsOnFlag: false, ultracode: false,
@@ -154,7 +155,7 @@ function killTree(child, signal) {
   }
 }
 
-function execute({ executable, executableArgs, args, cwd, env, signal, timeoutMs, input = '', onStdout, maxBytes = MAX_OUTPUT_BYTES }) {
+export function execute({ executable, executableArgs, args, cwd, env, signal, timeoutMs, input = '', onStdout, maxBytes = MAX_OUTPUT_BYTES }) {
   return new Promise((resolve) => {
     let child;
     let ended = false;
@@ -271,14 +272,14 @@ function reportedUsage(event, resumed, steps) {
 
 function knownUnsupportedModel(model) {
   if (!model) return false;
-  return /haiku|opusplan/i.test(model) || /claude-(?:3(?:[.-]|$)|(?:sonnet|opus)-4(?:[.-](?:0|1|5)(?:[^0-9]|$)|$))/.test(model);
+  return /opusplan/i.test(model) || /claude-(?:3(?:[.-]|$)|(?:haiku|sonnet|opus)-4(?:[.-](?:0|1|5)(?:[^0-9]|$)|$))/i.test(model);
 }
 
 function modelMatches(requested, observed) {
   if (!requested || requested === 'default') return true;
   const base = requested.replace(/\[(?:1m|200k)\]$/i, '');
   const actual = observed.replace(/\[(?:1m|200k)\]$/i, '');
-  if (['opus', 'sonnet', 'fable'].includes(base)) return new RegExp(`(?:^|[./-])(?:claude-)?${base}(?:[-.]|$)`, 'i').test(observed);
+  if (['opus', 'sonnet', 'haiku', 'fable'].includes(base)) return new RegExp(`(?:^|[./-])(?:claude-)?${base}(?:[-.]|$)`, 'i').test(observed);
   return actual === base;
 }
 
@@ -335,9 +336,10 @@ export async function run(inputOptions) {
   let permissionDenied = false;
   let observedModel = null;
   let isolationDiagnostic = null;
+  let deniedTool = null;
   const evidence = {
     type: 'launch-flag', flag: '--effort', requested: options.effort,
-    environment: 'CLAUDE_CODE_EFFORT_LEVEL', launchAccepted: false,
+    environment: 'CLAUDE_CODE_EFFORT_LEVEL', launchAccepted: false, turnSubmitted: false,
     observedEffort: null, verified: false, observedModel: null,
     note: 'The flag and child environment request effort. Stream JSON does not confirm applied effort; provider or organization caps may silently lower it. This is not a measure of internal reasoning.',
   };
@@ -353,7 +355,8 @@ export async function run(inputOptions) {
       status = info[0];
       // Never include raw stderr or provider error bodies in diagnostics.
       text = detail ?? info[1];
-      emit({ type: 'error', code: failure, message: text, ...(isolationDiagnostic && failure === 'isolation_mismatch' ? { details: isolationDiagnostic } : {}) });
+      emit({ type: 'error', code: failure, message: text, ...(isolationDiagnostic && failure === 'isolation_mismatch' ? { details: isolationDiagnostic } : {}),
+        ...(deniedTool && failure === 'tool_not_allowed' ? { tool: deniedTool } : {}) });
     }
     evidence.launchAccepted = initialized;
     evidence.observedModel = observedModel;
@@ -443,7 +446,11 @@ export async function run(inputOptions) {
       if (Array.isArray(blocks)) {
         for (const block of blocks) {
           // The model's own request, unlike a configuration the CLI reported; it is still stopped.
-          if (block.type === 'tool_use' && !allowed.has(block.name)) { stop('tool_not_allowed'); return; }
+          if (block.type === 'tool_use' && !allowed.has(block.name)) {
+            // A tool name is not prompt text; naming it tells the user what the model reached for.
+            deniedTool = typeof block.name === 'string' && /^[A-Za-z0-9_*-]{1,80}$/.test(block.name) ? block.name : '[invalid-tool-name]';
+            stop('tool_not_allowed'); return;
+          }
           if (block.type === 'tool_use' && !emit({ type: 'tool', name: block.name })) { stop('callback_error'); return; }
         }
         const assistantText = blocks.filter((b) => b.type === 'text' && typeof b.text === 'string').map((b) => b.text).join('\n');
@@ -469,6 +476,8 @@ export async function run(inputOptions) {
       }
     }
   };
+  // The prompt is submitted on CLI launch, before initialization can confirm a model.
+  evidence.turnSubmitted = true;
   const execution = await execute({ ...options, env, args: launchArgs(options), input: options.prompt, timeoutMs: remaining(),
     onStdout: (chunk, stop) => {
       pending += chunk;

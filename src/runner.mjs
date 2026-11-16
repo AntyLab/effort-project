@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
-import { recommend, nextDecision, POLICY_VERSION, validateLevel, LEVELS } from './policy.mjs';
+import { recommend, chooseModel, MODELS, nextDecision, POLICY_VERSION, validateLevel, LEVELS } from './policy.mjs';
 import { verify, validateCommand } from './verify.mjs';
 import { repositoryFacts } from './repository.mjs';
 
@@ -29,18 +29,21 @@ export function checkRunOptions(options, { adapter, verifyFn = verify } = {}) {
 }
 
 export async function runTask(options, { adapter, store, verifyFn = verify } = {}) {
-  const {prompt,cwd,model,allowWrite=false,signal,onEvent=()=>{},env,executable,executableArgs} = options;
+  const {prompt,cwd,allowWrite=false,signal,onEvent=()=>{},env,executable,executableArgs} = options;
   const { maxAttempts, timeoutMs, verifyTimeoutMs, maxEffort } = checkRunOptions(options, { adapter, verifyFn });
   // An adapter can bound one turn below the task budget (Claude: 30 minutes).
   const turnLimitMs = adapter.capabilities.maxTurnTimeoutMs ?? Infinity;
   const facts = await repositoryFacts(cwd, prompt);
-  const prediction = recommend({prompt,provider:adapter.capabilities.id,facts,maxEffort});
+  const provider = adapter.capabilities.id;
+  const prediction = recommend({prompt,provider:Object.hasOwn(MODELS,provider)?provider:'generic',facts,maxEffort});
+  let model = options.model === 'auto' ? chooseModel(provider,prediction.tier) : options.model;
+  const modelSelection = options.model === 'auto' && model !== undefined ? 'automatic' : model !== undefined ? 'pinned' : 'default';
   let effort = options.effort && options.effort !== 'auto' ? validateLevel(options.effort) : prediction.effort;
   if (!adapter.capabilities.levels.includes(effort)) throw new Error('Selected adapter does not support this effort.');
   if (LEVELS.indexOf(effort) > LEVELS.indexOf(maxEffort)) throw new Error('Requested effort exceeds --max-effort.');
-  const task = {id:randomUUID(),provider:adapter.capabilities.id,model:model??null,policyVersion:POLICY_VERSION,
+  const task = {id:randomUUID(),provider,model:model??null,modelSelection,tier:prediction.tier,policyVersion:POLICY_VERSION,
     createdAt:new Date().toISOString(),updatedAt:new Date().toISOString(),initialEffort:effort,effort,status:'running',
-    features:prediction.features,repository:facts,attempts:[],decisions:[{effort,reason:options.effort && options.effort!=='auto' ? 'Explicit user selection.' : prediction.reasons.join(' ')}]};
+    features:prediction.features,repository:facts,attempts:[],decisions:[{effort,tier:prediction.tier,model:model??null,modelSelection,reason:options.effort && options.effort!=='auto' ? 'Explicit user selection.' : prediction.reasons.join(' ')}]};
   await store.save(task);
   let sessionId, currentPrompt=prompt, text='', previousFingerprint, repeatCount=0;
   const deadline = performance.now() + timeoutMs;
@@ -49,10 +52,31 @@ export async function runTask(options, { adapter, store, verifyFn = verify } = {
       if (signal?.aborted) { task.status='cancelled'; break; }
       if (performance.now() >= deadline) { task.status='blocked'; task.stopReason='Task time limit reached.'; break; }
       const start = performance.now();
-      onEvent({type:'attempt',number,effort});
-      const result = await adapter.run({prompt:currentPrompt,cwd,effort,model,sessionId,allowWrite,timeoutMs:Math.max(100,Math.min(turnLimitMs,Math.floor(deadline-performance.now()))),signal,onEvent,env,executable,executableArgs,maxTurns:options.maxTurns});
+      let rejectionCode, rejectionMethod;
+      const attemptEvent = event => {
+        if (['error','diagnostic'].includes(event.type)) { rejectionCode = event.code; rejectionMethod = event.method; }
+        onEvent(event);
+      };
+      const run = () => adapter.run({prompt:currentPrompt,cwd,effort,model,sessionId,allowWrite,timeoutMs:Math.max(100,Math.min(turnLimitMs,Math.floor(deadline-performance.now()))),signal,onEvent:attemptEvent,env,executable,executableArgs,maxTurns:options.maxTurns});
+      onEvent({type:'attempt',number,effort,tier:task.tier,model:model??null,modelSelection:task.modelSelection});
+      let result = await run();
+      // Accepted=false alone is insufficient: an unacknowledged turn/start may
+      // already have done work. Only explicit pre-submission evidence permits replay.
+      const safeCodes = provider === 'codex' ? ['model_mismatch','unsupported_effort','rpc_error'] : provider === 'claude' ? ['unsupported_effort_model'] : provider === 'gemini' ? ['model_unavailable'] : [];
+      if (number === 1 && task.modelSelection === 'automatic' && ['blocked','failed'].includes(result.status) &&
+          result.effortEvidence?.turnSubmitted === false && safeCodes.includes(rejectionCode) &&
+          (rejectionCode !== 'rpc_error' || ['thread/start','thread/resume','model/list'].includes(rejectionMethod)) &&
+          !signal?.aborted && performance.now() < deadline) {
+        const fallback = {type:'model_fallback',provider,number,effort,tier:task.tier,previousModel:model,model:null,modelSelection:'default-after-fallback',code:rejectionCode,
+          reason:'The automatic model was rejected before turn submission; retrying once with the provider default.'};
+        model = undefined; task.model = null; task.modelSelection = fallback.modelSelection;
+        task.decisions.push(fallback);
+        task.updatedAt=new Date().toISOString(); await store.save(task);
+        onEvent(fallback);
+        result = await run();
+      }
       sessionId = result.sessionId || sessionId; text = result.text || '';
-      const attempt = {number,effort,status:result.status,effortEvidence:result.effortEvidence,usage:result.usage??null,verification:{status:'not-run'},durationMs:Math.round(performance.now()-start)};
+      const attempt = {number,effort,model:model??null,modelSelection:task.modelSelection,status:result.status,effortEvidence:result.effortEvidence,usage:result.usage??null,verification:{status:'not-run'},durationMs:Math.round(performance.now()-start)};
       task.attempts.push(attempt);
       if (result.status !== 'completed') { task.status=result.status==='cancelled'?'cancelled':'blocked'; task.stopReason='Provider did not complete. Inspect the foreground provider error; no automatic effort retry.'; break; }
       if (!options.verify) { task.status='unverified'; task.stopReason='No independent verification command was supplied.'; break; }

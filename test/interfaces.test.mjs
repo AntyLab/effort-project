@@ -23,6 +23,16 @@ test('MCP negotiation, discovery, error handling, and advisory semantics',()=>{
   assert.equal(handleRpc(rpc('tools/call',{name:'effort_observe',arguments:{effort:'low',kind:'access',repeatCount:3}})).result.structuredContent.action,'stop');
   assert.equal(handleRpc(rpc('execute_shell')).error.code,-32601);
 });
+test('MCP recommends a model tier and model for gemini',()=>{
+  const tool=handleRpc(rpc('tools/list')).result.tools.find(tool=>tool.name==='effort_recommend');
+  assert.ok(tool.inputSchema.properties.provider.enum.includes('gemini'));
+  const r=handleRpc(rpc('tools/call',{name:'effort_recommend',arguments:{prompt:'Investigate security.',provider:'gemini'}}));
+  assert.equal(r.result.isError,false);
+  const result=r.result.structuredContent;
+  assert.equal(result.effort,'high');assert.equal(result.tier,'frontier');assert.equal(result.model,'gemini-4-argon');
+  assert.equal(result.control,'advisory');assert.equal(result.applied,false);
+  assert.deepEqual(JSON.parse(r.result.content[0].text),result);
+});
 test('MCP stdio works through real packaged entry point without stdout noise',async()=>{
   const entry=new URL('../bin/effort.mjs',import.meta.url);
   const result=await new Promise((resolve,reject)=>{

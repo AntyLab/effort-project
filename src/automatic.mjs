@@ -20,7 +20,7 @@ export function createAutomaticRouter({ minEffort = 'low', maxEffort = 'high', p
   };
   return {
     forget(sessionId) { sessions.delete(sessionId); },
-    decide({ sessionId, model, prompt, facts = {}, supportedEfforts = [], preview = false } = {}) {
+    decide({ sessionId, prompt, facts = {}, supportedEfforts = [], preview = false } = {}) {
       if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 512) throw new Error('A bounded conversation ID is required.');
       const supported = LEVELS.filter((level) => supportedEfforts.includes(level) && rank(level) >= rank(minEffort) && rank(level) <= rank(maxEffort));
       // The shared policy keeps a multilingual checkout from inflating a narrow
@@ -29,6 +29,7 @@ export function createAutomaticRouter({ minEffort = 'low', maxEffort = 'high', p
       const reasons = [...recommendation.reasons];
       const previous = sessions.get(sessionId);
       let desired = effort === 'auto' ? recommendation.effort : effort;
+      let tier = recommendation.tier;
       let lowerCount = 0;
       if (effort !== 'auto') reasons.push('Using the fixed effort selected for this automatic session.');
       else if (previous && rank(desired) < rank(previous.effort)) {
@@ -37,6 +38,7 @@ export function createAutomaticRouter({ minEffort = 'low', maxEffort = 'high', p
         lowerCount = ambiguous ? 0 : previous.lowerCount + 1;
         if (ambiguous || lowerCount < 2) {
           desired = previous.effort;
+          tier = previous.tier;
           reasons.push(ambiguous
             ? 'Keeping the previous effort because this may continue the same task.'
             : 'Waiting for a second simpler request before lowering effort; changing settings can disrupt provider caching.');
@@ -50,12 +52,12 @@ export function createAutomaticRouter({ minEffort = 'low', maxEffort = 'high', p
         ? supported.find((level) => level === desired)
         : supported.find((level) => rank(level) >= rank(desired));
       if (!selected) return {
-        action: 'preserve', effort: null, model: model ?? null, recommendation, reasons: [...reasons, 'This model advertises no suitable effort within the configured bounds; preserve its request.'],
+        action: 'preserve', effort: null, tier, recommendation, reasons: [...reasons, 'This model advertises no suitable effort within the configured bounds; preserve its request.'],
         policyVersion: 'automatic-0.1', confidence: 'low',
       };
       if (selected !== desired) reasons.push(`The model supports ${selected} as its next available effort above ${desired}.`);
-      if (!preview) keep(sessionId, { effort: selected, lowerCount });
-      return { action: 'apply', effort: selected, model: model ?? null, recommendation, reasons,
+      if (!preview) keep(sessionId, { effort: selected, tier, lowerCount });
+      return { action: 'apply', effort: selected, tier, recommendation, reasons,
         policyVersion: 'automatic-0.1', confidence: 'low' };
     },
   };

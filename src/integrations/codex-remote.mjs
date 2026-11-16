@@ -3,6 +3,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createCodexRouting } from './codex-routing.mjs';
 import { providerCommand } from '../provider-cli.mjs';
+import { WebSocketServer as BuiltInWebSocketServer } from './ws-server.mjs';
 
 const MAX_BYTES = 8 * 1024 * 1024;
 const delay = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -25,15 +26,7 @@ async function terminate(child) {
 /** A private, single-client transport; no model call occurs until the TUI submits a turn. */
 export async function startCodexRemote({ cwd, executable, executableArgs = [], env = process.env,
   signal, onDecision = () => {}, WebSocketServerClass, ...routingOptions } = {}) {
-  // Loaded only by this integration. The rest of Effort does not need WebSocket support.
-  let WebSocketServer = WebSocketServerClass;
-  if (!WebSocketServer) {
-    try { WebSocketServer = (await import('ws')).WebSocketServer; }
-    catch (error) {
-      if (error.code !== 'ERR_MODULE_NOT_FOUND') throw error;
-      throw new Error('The experimental Codex terminal transport requires the ws package. It has not been enabled in this build; see docs/automatic.md.');
-    }
-  }
+  const WebSocketServer = WebSocketServerClass ?? BuiltInWebSocketServer;
   if (signal?.aborted) throw new Error('Automatic session was cancelled.');
   const command = providerCommand('codex', { executable, executableArgs, env });
   const token = randomBytes(32).toString('hex');

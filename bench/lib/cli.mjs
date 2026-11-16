@@ -5,7 +5,7 @@ import { join, relative, resolve } from 'node:path';
 import { recommend } from '../../src/policy.mjs';
 import { repositoryFacts } from '../../src/repository.mjs';
 import { BENCH_DIR, DEFAULT_MANIFEST, findPython, loadCorpus, selectTasks, selfTestTask } from './corpus.mjs';
-import { ARMS, DEFAULT_ARMS, PROVIDERS, SpendGuardError, buildSchedule, checkSpendGuard, maxProviderTurns, parseList } from './plan.mjs';
+import { ARMS, DEFAULT_ARMS, DEFAULT_PROVIDERS, PROVIDERS, SpendGuardError, buildSchedule, checkSpendGuard, maxProviderTurns, parseList } from './plan.mjs';
 import { readRecords, runBenchmark } from './execute.mjs';
 import { aggregate, writeReport } from './report.mjs';
 
@@ -17,7 +17,7 @@ export const HELP = `Effort benchmark harness
   node bench/run.mjs self-test           Check every task: hidden check fails at start, passes on the solution
 
 Selection
-  --providers codex,claude    Providers to run (default: both)
+  --providers a,b             codex, claude, gemini (default: codex,claude)
   --arms a,b                  ${Object.keys(ARMS).join(', ')}
                               (default: ${DEFAULT_ARMS.join(', ')})
   --tasks id,id | all         Task ids from the manifest (default: all)
@@ -38,14 +38,16 @@ Execution
   --verbose                   Also print each attempt as it starts
 
 Real providers (billed or plan-limited usage)
-  --live                      Required to start any real Codex or Claude turn
+  --live                      Required to start any real Codex, Claude or Gemini turn
   --max-runs N                Required with --live: refuse plans with more than N runs
   --codex-model ID            Pin the Codex model (recommended)
   --claude-model ID           Pin the Claude model (recommended)
+  --gemini-model ID           Pin the Gemini model (recommended)
   --codex-bin PATH            Codex executable or JavaScript entry point (default: EFFORT_CODEX_BIN, else codex)
   --claude-bin PATH           Claude executable or JavaScript entry point (default: EFFORT_CLAUDE_BIN, else claude)
+  --gemini-bin PATH           Antigravity executable or JavaScript entry point (default: EFFORT_GEMINI_BIN, else agy)
 
-Without --live, both providers are replaced by local fake CLIs (bench/fake/) that
+Without --live, all selected providers use local fake CLIs (bench/fake/) that
 need no credentials and produce synthetic results. See bench/README.md.
 `;
 
@@ -72,8 +74,10 @@ const OPTIONS = {
   json: { type: 'boolean' },
   'codex-model': { type: 'string' },
   'claude-model': { type: 'string' },
+  'gemini-model': { type: 'string' },
   'codex-bin': { type: 'string' },
   'claude-bin': { type: 'string' },
+  'gemini-bin': { type: 'string' },
 };
 
 class UsageError extends Error {}
@@ -89,10 +93,10 @@ const stamp = () => new Date().toISOString().replace(/\..+$/, '').replace(/[-:]/
 /** Turn parsed flags into validated benchmark settings. Nothing is executed here. */
 export async function resolveSettings(values) {
   const live = Boolean(values.live);
-  for (const name of ['codex-bin', 'claude-bin']) if (values[name] && !live) throw new UsageError(`--${name} only applies with --live.`);
+  for (const name of ['codex-bin', 'claude-bin', 'gemini-bin']) if (values[name] && !live) throw new UsageError(`--${name} only applies with --live.`);
   const corpus = await loadCorpus(values.manifest ? resolve(values.manifest) : DEFAULT_MANIFEST);
   const tasks = selectTasks(corpus.tasks, { ids: values.tasks, language: values.language });
-  const providers = parseList(values.providers ?? PROVIDERS.join(','), PROVIDERS, 'provider');
+  const providers = parseList(values.providers ?? DEFAULT_PROVIDERS.join(','), PROVIDERS, 'provider');
   const arms = parseList(values.arms ?? DEFAULT_ARMS.join(','), Object.keys(ARMS), 'arm');
   const repeats = values.repeats === undefined ? 1 : integer(values.repeats, '--repeats', { min: 1, max: 100 });
   const seconds = values.timeout === undefined ? (live ? 600 : 60) : Number(values.timeout);
@@ -116,8 +120,9 @@ export async function resolveSettings(values) {
     outDir: resolve(values.out ?? join(BENCH_DIR, 'results', `${stamp()}-${live ? 'live' : 'fake'}`)),
     resume: Boolean(values.resume),
     keepWorkspaces: Boolean(values['keep-workspaces']),
-    models: { codex: values['codex-model'], claude: values['claude-model'] },
-    bins: { codex: values['codex-bin'] && resolve(values['codex-bin']), claude: values['claude-bin'] && resolve(values['claude-bin']) },
+    models: { codex: values['codex-model'], claude: values['claude-model'], ...(providers.includes('gemini') ? { gemini: values['gemini-model'] } : {}) },
+    bins: { codex: values['codex-bin'] && resolve(values['codex-bin']), claude: values['claude-bin'] && resolve(values['claude-bin']),
+      ...(providers.includes('gemini') ? { gemini: values['gemini-bin'] && resolve(values['gemini-bin']) } : {}) },
   };
 }
 

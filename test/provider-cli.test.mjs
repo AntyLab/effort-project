@@ -44,6 +44,20 @@ test('Windows also reads older npm shims and a case-insensitive Path', windows, 
   assert.deepEqual(resolveProviderCommand('claude', { env: { Path: `C:\\does-not-exist;"${dir}"` } }).executableArgs, [entry]);
 });
 
+test('Windows resolves Gemini through the agy npm shim', windows, async (t) => {
+  const { dir, entry } = await prefix(t, 'agy');
+  assert.deepEqual(resolveProviderCommand('gemini', { env: { PATH: dir } }), { executable: process.execPath, executableArgs: [entry], source: 'npm-shim' });
+  assert.deepEqual(resolveProviderCommand('gemini', { env: { effort_gemini_bin: join(dir, 'agy.cmd') } }), { executable: process.execPath, executableArgs: [entry], source: 'override' });
+});
+
+test('Gemini Windows lookup selects agy.exe rather than gemini.exe', async (t) => {
+  const dir = await mkdtemp(join(tmpdir(), 'effort-agy-native-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  await writeFile(join(dir, 'agy.exe'), '');
+  await writeFile(join(dir, 'gemini.exe'), '');
+  assert.deepEqual(resolveProviderCommand('gemini', { env: { PATH: dir }, platform: 'win32' }), { executable: join(dir, 'agy.exe'), executableArgs: [], source: 'path' });
+});
+
 test('Windows prefers a native .exe anywhere on PATH over an npm shim', windows, async (t) => {
   const { dir: shims } = await prefix(t, 'claude');
   const native = await mkdtemp(join(tmpdir(), 'effort-cli-native-'));
@@ -57,13 +71,16 @@ test('Windows explains batch files that are not usable npm shims', windows, asyn
   t.after(() => rm(dir, { recursive: true, force: true }));
   await writeFile(join(dir, 'codex.cmd'), '@echo off\r\nstart codex-helper %*\r\n');
   await writeFile(join(dir, 'claude.cmd'), npmShim('node_modules\\missing\\cli.js'));
+  await writeFile(join(dir, 'agy.cmd'), '@echo off\r\nstart agy-helper %*\r\n');
   for (const name of ['codex', 'claude']) assert.throws(() => resolveProviderCommand(name, { env: { PATH: dir } }), new RegExp(`${name} is a batch file .* cannot run without a shell`));
+  assert.throws(() => resolveProviderCommand('gemini', { env: { PATH: dir } }), /agy is a batch file .* cannot run without a shell/);
+  assert.throws(() => resolveProviderCommand('gemini', { env: { EFFORT_GEMINI_BIN: join(dir, 'agy.cmd') } }), /Set it to the agy \.exe/);
   assert.throws(() => resolveProviderCommand('codex', { env: { PATH: dir, EFFORT_CODEX_BIN: join(dir, 'codex.cmd') } }), /EFFORT_CODEX_BIN names a batch file that is not an npm shim/);
   const { dir: shims, entry } = await prefix(t, 'codex');
   assert.deepEqual(resolveProviderCommand('codex', { env: { effort_codex_bin: join(shims, 'codex.cmd') } }), { executable: process.execPath, executableArgs: [entry], source: 'override' });
 });
 
-test('EFFORT_CODEX_BIN and EFFORT_CLAUDE_BIN override PATH on every platform', async (t) => {
+test('provider binary overrides select an executable on every platform', async (t) => {
   const dir = await mkdtemp(join(tmpdir(), 'effort-cli-override-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const script = join(dir, 'codex entry.mjs'), native = join(dir, 'claude-native'), relativeScript = join(dir, 'cli.cjs');
@@ -71,19 +88,25 @@ test('EFFORT_CODEX_BIN and EFFORT_CLAUDE_BIN override PATH on every platform', a
   assert.deepEqual(resolveProviderCommand('codex', { env: { PATH: dir, EFFORT_CODEX_BIN: script } }), { executable: process.execPath, executableArgs: [script], source: 'override' });
   assert.deepEqual(resolveProviderCommand('codex', { env: { EFFORT_CODEX_BIN: ` "${script}" ` } }).executableArgs, [script]);
   assert.deepEqual(resolveProviderCommand('claude', { env: { EFFORT_CLAUDE_BIN: native } }), { executable: native, executableArgs: [], source: 'override' });
+  assert.deepEqual(resolveProviderCommand('gemini', { env: { EFFORT_GEMINI_BIN: script } }), { executable: process.execPath, executableArgs: [script], source: 'override' });
+  assert.deepEqual(providerCommand('gemini', { env: { EFFORT_GEMINI_BIN: script }, executableArgs: ['--flag'] }), { executable: process.execPath, executableArgs: [script, '--flag'] });
   // A relative override is fixed to one absolute file, so doctor and every adapter run the same one.
   assert.deepEqual(resolveProviderCommand('claude', { env: { EFFORT_CLAUDE_BIN: relative(process.cwd(), relativeScript) } }).executableArgs, [relativeScript]);
   assert.deepEqual(resolveProviderCommand('claude', { env: { EFFORT_CLAUDE_BIN: relative(process.cwd(), native) } }).executable, native);
   // Missing files and unknown command names fail with what is wrong.
   assert.throws(() => resolveProviderCommand('codex', { env: { EFFORT_CODEX_BIN: join(dir, 'missing.mjs') } }), /EFFORT_CODEX_BIN points to .*missing\.mjs, which does not exist/);
   assert.throws(() => resolveProviderCommand('claude', { env: { PATH: dir, EFFORT_CLAUDE_BIN: 'effort-missing-claude' } }), /EFFORT_CLAUDE_BIN names effort-missing-claude, which was not found on PATH/);
+  assert.throws(() => resolveProviderCommand('gemini', { env: { EFFORT_GEMINI_BIN: join(dir, 'missing-agy.mjs') } }), /EFFORT_GEMINI_BIN points to .*missing-agy\.mjs, which does not exist/);
+  assert.throws(() => resolveProviderCommand('gemini', { env: { PATH: dir, EFFORT_GEMINI_BIN: 'effort-missing-agy' } }), /EFFORT_GEMINI_BIN names effort-missing-agy, which was not found on PATH/);
   assert.equal(resolveProviderCommand('claude', { env: { EFFORT_CLAUDE_BIN: '  ' } }).source, 'default');
-  assert.throws(() => resolveProviderCommand('opencode', { env: {} }), /codex or claude/);
+  assert.throws(() => resolveProviderCommand('opencode', { env: {} }), /codex, claude, or gemini/);
 });
 
 test('POSIX leaves default lookup to spawn, and explicit executables stay literal', async (t) => {
   const { dir, entry } = await prefix(t, 'codex');
   assert.deepEqual(resolveProviderCommand('codex', { env: { PATH: dir }, platform: 'linux' }), { executable: 'codex', executableArgs: [], source: 'default' });
+  assert.deepEqual(resolveProviderCommand('gemini', { env: { PATH: dir }, platform: 'linux' }), { executable: 'agy', executableArgs: [], source: 'default' });
+  assert.deepEqual(resolveProviderCommand('gemini', { env: { PATH: dir }, platform: 'win32' }), { executable: 'agy', executableArgs: [], source: 'default' });
   assert.equal(resolveProviderCommand('codex', { env: { effort_codex_bin: 'x' }, platform: 'linux' }).source, 'default');
   assert.deepEqual(providerCommand('codex', { executable: '/opt/codex', executableArgs: ['--flag'], env: { EFFORT_CODEX_BIN: 'other' } }), { executable: '/opt/codex', executableArgs: ['--flag'] });
   assert.deepEqual(providerCommand('codex', { executableArgs: ['--flag'], env: { EFFORT_CODEX_BIN: entry } }), { executable: process.execPath, executableArgs: [entry, '--flag'] });
