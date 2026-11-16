@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#faf9f5">
+<title>Models · Claude · Model guide</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Ccircle cx=%278%27 cy=%278%27 r=%276%27 fill=%27%23d97757%27/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lora:wght@500;600&family=Poppins:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/src/style.css">
+</head>
+<body data-world="claude">
+<a class="skip" href="#main">Skip to content</a>
+<header class="top">
+  <div class="top-in">
+    <div class="header-compact">
+      <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span class="compact-family" id="compactFamily">Claude</span></div>
+      <button type="button" id="headerMenu" data-act="header-menu" aria-label="Chapter menu" aria-expanded="false" aria-controls="worlds chapters">1 Models</button>
+    </div>
+    <div class="top-row">
+      <div class="brand"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Model guide <a class="by-effort" href="#claude-choose" data-act="ch" data-v="choose">by Effort</a></span></div>
+      <label class="field-pick" for="fieldSel"><span class="fp-lab">Examples for</span><select id="fieldSel"></select></label>
+    </div>
+    <div class="worlds" id="worlds" role="group" aria-label="Model family"></div>
+    <nav class="chapters" id="chapters" aria-label="Chapters"></nav>
+    <button type="button" class="present-button" data-act="present" aria-pressed="false" aria-label="Present story fullscreen">Present</button>
+  </div>
+</header>
+<main id="main" tabindex="-1"><noscript><p style="padding:24px 0">This guide needs JavaScript to show the models.</p></noscript></main>
+<footer class="foot" id="foot"></footer>
+<button type="button" class="motion-toggle" data-act="motion" aria-pressed="false">Pause motion</button>
+<p class="sr-only" id="storyStatus" role="status"></p>
+<div class="sheet" id="sheet" hidden><div class="sheet-bg" data-act="sheet-close"></div><div class="sheet-card" data-lenis-prevent role="dialog" aria-modal="true" aria-labelledby="sheetTitle"><button type="button" class="sheet-x" data-act="sheet-close" aria-label="Close details">&times;</button><div id="sheetBody"></div></div></div>
+<script type="module" src="/src/main.ts"></script>
+</body></html>

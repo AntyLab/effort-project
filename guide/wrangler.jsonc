@@ -1,0 +1,7 @@
+{
+  // Static site on Cloudflare Pages (free address effortproject.pages.dev): `npm run deploy` uploads dist/ as-is.
+  // A paid name such as guide.effortproject.dev can be attached later in the Pages project's Custom domains tab.
+  "name": "effortproject",
+  "compatibility_date": "2026-11-01",
+  "pages_build_output_dir": "./dist"
+}

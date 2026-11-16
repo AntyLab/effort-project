@@ -1,0 +1,422 @@
+{
+  "style": "Victorian natural-history lithograph plate, hand-colored engraving, fine ink cross-hatching, muted watercolor palette of sage, ochre, rust, slate blue and cream, single subject centered, isolated on a flat plain #EFE5CF background, no text, no border, no signature, no logo.",
+  "styleBleed": "Victorian natural-history lithograph plate, hand-colored engraving, fine ink cross-hatching, muted watercolor palette of sage, ochre, rust, slate blue and cream on #EFE5CF paper, the scene fills the whole image edge to edge, no text, no border, no signature, no logo.",
+  "layers": [
+    {
+      "scene": "sky",
+      "layer": "cloud_1",
+      "format": "wide landscape",
+      "cut": "paper",
+      "subject": "one single wide cumulus cloud drawn as an engraving with fine horizontal hatching and soft slate-blue shading, nothing else"
+    },
+    {
+      "scene": "sky",
+      "layer": "cloud_2",
+      "format": "wide landscape",
+      "cut": "paper",
+      "subject": "one single small puffy cloud drawn as an engraving with fine horizontal hatching and soft slate-blue shading, nothing else"
+    },
+    {
+      "scene": "sky",
+      "layer": "cloud_3",
+      "format": "wide landscape",
+      "cut": "paper",
+      "subject": "one single long thin band of stratus cloud drawn as an engraving with fine horizontal hatching, nothing else"
+    },
+    {
+      "scene": "sky",
+      "layer": "swallow_body",
+      "format": "wide landscape",
+      "cut": "subject",
+      "subject": "a barn swallow in flight seen from the side, body, head and forked tail only, with NO wings (the wings are drawn separately), facing right"
+    },
+    {
+      "scene": "sky",
+      "layer": "swallow_wing_near",
+      "format": "tall portrait",
+      "cut": "subject",
+      "subject": "one single detached outstretched wing of a barn swallow with dark slate-blue flight feathers, the wing root at the bottom center of the image and the pointed wing tip reaching straight up, no bird body, nothing else"
+    },
+    {
+      "scene": "sky",
+      "layer": "swallow_wing_far",
+      "format": "tall portrait",
+      "cut": "subject",
+      "subject": "one single detached outstretched wing of a barn swallow seen from underneath, paler grey-blue flight feathers, the wing root at the bottom center of the image and the pointed wing tip reaching straight up, no bird body, nothing else"
+    },
+    {
+      "scene": "room",
+      "layer": "wall_window",
+      "format": "tall portrait",
+      "cut": "magenta",
+      "bleed": true,
+      "subject": "the interior wall of a cottage seen straight on with a tall arched window in the center, linen curtains drawn open to each side, a small potted plant on the window sill. The window opening between the curtains is filled with flat solid pure magenta #FF00FF with no glazing bars and no view"
+    },
+    {
+      "scene": "room",
+      "layer": "desk",
+      "format": "wide landscape",
+      "cut": "none",
+      "bleed": true,
+      "subject": "the empty top of a wooden writing desk seen from above, engraved wood grain running left to right"
+    },
+    {
+      "scene": "room",
+      "layer": "candle",
+      "format": "tall portrait",
+      "cut": "subject",
+      "subject": "a lit beeswax candle in a small brass chamberstick holder with a small flame"
+    },
+    {
+      "scene": "room",
+      "layer": "inkwell",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a glass inkwell filled with dark ink, its brass lid open"
+    },
+    {
+      "scene": "room",
+      "layer": "quill_1",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a hand holding a plain grey goose-feather quill pen in a writing position, the nib pointing down to the lower left, the wrist entering from the lower right corner"
+    },
+    {
+      "scene": "room",
+      "layer": "quill_2",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a hand holding a cream feather quill pen with a blue-tinted vane in a writing position, the nib pointing down to the lower left, the wrist entering from the lower right corner"
+    },
+    {
+      "scene": "room",
+      "layer": "quill_3",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a hand holding a deep blue feather quill pen in a writing position, the nib pointing down to the lower left, the wrist entering from the lower right corner"
+    },
+    {
+      "scene": "room",
+      "layer": "quill_4",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a hand holding a deep blue feather quill pen with a gold nib and a gold-edged vane in a writing position, the nib pointing down to the lower left, the wrist entering from the lower right corner"
+    },
+    {
+      "scene": "room",
+      "layer": "quill_5",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a hand holding a fully gilded golden feather quill pen in a writing position, the nib pointing down to the lower left, the wrist entering from the lower right corner"
+    },
+    {
+      "scene": "room",
+      "layer": "wax_seal",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a round red wax seal seen from above, stamped with a simple leaf motif"
+    },
+    {
+      "scene": "pond",
+      "layer": "pond_base",
+      "format": "square",
+      "cut": "none",
+      "bleed": true,
+      "subject": "a small pond seen from a high angle: still water with fine engraved ripple lines fills most of the image, an earthy mossy bank runs along the bottom edge, no animals and no plants on the water"
+    },
+    {
+      "scene": "pond",
+      "layer": "pebble",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 4,
+      "subject": "four different smooth speckled river pebbles in a single row with wide clear space between them, in ochre, slate, rust and sage"
+    },
+    {
+      "scene": "pond",
+      "layer": "pebble_b",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 4,
+      "subject": "four different smooth speckled river pebbles in a single row with wide clear space between them, in grey, mauve, cream-brown and dark slate"
+    },
+    {
+      "scene": "pond",
+      "layer": "lily_pad",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 3,
+      "subject": "three different green water lily pads seen from above in a single row with wide clear space between them, each with a notch"
+    },
+    {
+      "scene": "pond",
+      "layer": "lily_bud",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a closed water lily bud, pink-white, seen from a high angle"
+    },
+    {
+      "scene": "pond",
+      "layer": "lily_open",
+      "format": "square",
+      "cut": "subject",
+      "subject": "an open water lily flower, white and pale pink with a yellow center, seen from a high angle"
+    },
+    {
+      "scene": "pond",
+      "layer": "frog_sit",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a green pond frog sitting, side view, facing right"
+    },
+    {
+      "scene": "pond",
+      "layer": "frog_hop",
+      "format": "wide landscape",
+      "cut": "subject",
+      "subject": "a green pond frog in mid-leap with its hind legs fully stretched out behind it, side view, facing right"
+    },
+    {
+      "scene": "pond",
+      "layer": "reeds",
+      "format": "tall portrait",
+      "cut": "subject",
+      "subject": "a clump of pond reeds and cattails growing up from the bottom of the image"
+    },
+    {
+      "scene": "pond",
+      "layer": "dragonfly",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a dragonfly seen from directly above with its four wings spread, slate blue body"
+    },
+    {
+      "scene": "meadow",
+      "layer": "butterfly_1",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a butterfly specimen seen from directly above, wings fully spread and perfectly symmetrical, body vertical in the exact center of the image, pale cream wings with fine grey veins and a thin dark ink outline"
+    },
+    {
+      "scene": "meadow",
+      "layer": "butterfly_2",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a butterfly specimen seen from directly above, wings fully spread and perfectly symmetrical, body vertical in the exact center of the image, warm yellow wings with dark margins"
+    },
+    {
+      "scene": "meadow",
+      "layer": "butterfly_3",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a butterfly specimen seen from directly above, wings fully spread and perfectly symmetrical, body vertical in the exact center of the image, orange wings with blue spots and dark margins"
+    },
+    {
+      "scene": "meadow",
+      "layer": "butterfly_4",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a butterfly specimen seen from directly above, wings fully spread and perfectly symmetrical, body vertical in the exact center of the image, iridescent blue wings with black margins"
+    },
+    {
+      "scene": "meadow",
+      "layer": "butterfly_5",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a butterfly specimen seen from directly above, wings fully spread and perfectly symmetrical, body vertical in the exact center of the image, shimmering gold wings with fine dark veins"
+    },
+    {
+      "scene": "meadow",
+      "layer": "small",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 4,
+      "subject": "four different small butterflies and moths in a single row with wide clear space between them, each seen from directly above with wings spread symmetrically, in mauve, sage, ochre and slate blue"
+    },
+    {
+      "scene": "meadow",
+      "layer": "grass",
+      "format": "wide landscape",
+      "cut": "subject",
+      "subject": "a wide horizontal strip of meadow grass and wildflowers growing up from the bottom edge across the full width, the upper half of the image left empty"
+    },
+    {
+      "scene": "night",
+      "layer": "book",
+      "format": "square",
+      "cut": "subject",
+      "subject": "a closed antique leather-bound book in deep blue-green leather lying flat, seen from above at a slight angle, with gilt corner pieces and a clasp fastened by a small brass padlock, no lettering"
+    },
+    {
+      "scene": "valley",
+      "layer": "plate_wide",
+      "format": "wide landscape 16:9",
+      "cut": "none",
+      "bleed": true,
+      "ref": true,
+      "edge": 1672,
+      "subject": "Redraw from the attached valley plate in exactly the same hand-colored engraving style, palette and paper. The same wide panorama with the same composition, hills, tower on its hill, pond at lower left and wildflower meadow at lower right, but with NO animals at all: no swallows or birds in the sky, no frog, no butterflies, and no water lily flower on the pond (keep the lily pads, reeds, pebbles, clouds and the tower with its lit window)"
+    },
+    {
+      "scene": "valley",
+      "layer": "plate_tower",
+      "format": "tall portrait",
+      "cut": "none",
+      "bleed": true,
+      "ref": true,
+      "edge": 1672,
+      "subject": "Redraw from the attached valley plate in exactly the same hand-colored engraving style, palette and paper. A close view of the upper part of the same slender stone tower filling the image: the conical tiled roof at the top, ivy on the stone, and the large arched window in the center. Inside the window, seen from outside, the old wizard in a blue robe and pointed hat sits at a wooden desk in side view writing on parchment with a feather quill, a lit candle beside him, bookshelves and an armillary sphere behind. Sky and paper around the tower"
+    },
+    {
+      "scene": "valley",
+      "layer": "plate_pond",
+      "format": "wide landscape",
+      "cut": "none",
+      "bleed": true,
+      "ref": true,
+      "edge": 1672,
+      "subject": "Redraw from the attached valley plate in exactly the same hand-colored engraving style, palette and paper. A close view of the same pond filling the image, seen from a low side angle: still water with fine ripple lines and soft reflections, reeds and cattails on the left, a large flat rock at the lower left, pebbles along the near bank, grassy far bank and a strip of meadow and sky above. NO frog, NO lily pads, NO flowers on the water and no animals: the water surface is empty"
+    },
+    {
+      "scene": "valley",
+      "layer": "plate_meadow",
+      "format": "wide landscape",
+      "cut": "none",
+      "bleed": true,
+      "ref": true,
+      "edge": 1672,
+      "subject": "Redraw from the attached valley plate in exactly the same hand-colored engraving style, palette and paper. A close view of the same wildflower meadow filling the lower two thirds of the image: clover, daisies, poppies, bellflowers and lavender-colored spikes among grasses, with soft hills and open sky in the upper third. NO butterflies and no animals"
+    },
+    {
+      "scene": "valley",
+      "layer": "lily_pad_side",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 3,
+      "ref": true,
+      "subject": "three different green water lily pads floating flat, each seen from a low side angle as a thin foreshortened ellipse, in a single row with wide clear space between them"
+    },
+    {
+      "scene": "valley",
+      "layer": "frog_croak",
+      "format": "square",
+      "cut": "subject",
+      "ref": true,
+      "subject": "a green pond frog sitting, side view, facing right, croaking with its pale vocal sac fully inflated like a balloon under its chin"
+    },
+    {
+      "scene": "valley",
+      "layer": "chrysalis",
+      "format": "tall portrait",
+      "cut": "subject",
+      "ref": true,
+      "subject": "one large golden butterfly chrysalis hanging from the tip of an arching foxglove flower stem, the faint outline of folded butterfly wings visible through its translucent shell"
+    },
+    {
+      "scene": "valley",
+      "layer": "plate_tower_still",
+      "format": "tall portrait",
+      "cut": "none",
+      "bleed": true,
+      "ref": true,
+      "edge": 1672,
+      "subject": "Redraw from the attached plate in exactly the same hand-colored engraving style, palette and paper. The identical close view of the same stone tower, roof, ivy, arched window, bookshelves, armillary sphere, candle and old wizard in a blue robe and pointed hat seated at his desk in side view, with one change only: his writing arm is tucked out of sight inside his robe, so there is NO forearm, NO hand and NO quill over the desk, and the parchment on the desk is completely blank"
+    },
+    {
+      "scene": "valley",
+      "layer": "wizard_arm",
+      "format": "wide landscape",
+      "cut": "subject",
+      "ref": true,
+      "subject": "only the detached right forearm of the same old wizard: a loose blue robe sleeve entering from the upper right corner, an aged hand at the lower left holding a white feather quill with its nib pointing down to the left, in the same drawing style and colors as the attached plate, no body, no desk, nothing else"
+    },
+    {
+      "scene": "valley",
+      "layer": "frog_front",
+      "format": "square",
+      "cut": "subject",
+      "ref": true,
+      "subject": "a green pond frog sitting, seen from the front in three-quarter view, facing the viewer and slightly to the left, same species and colors as the frog in the attached plate"
+    },
+    {
+      "scene": "valley",
+      "layer": "frog_back",
+      "format": "square",
+      "cut": "subject",
+      "ref": true,
+      "subject": "a green pond frog sitting, seen from behind in three-quarter view, looking away toward the upper left, same species and colors as the frog in the attached plate"
+    },
+    {
+      "scene": "meadow",
+      "layer": "flyer",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 3,
+      "ref": true,
+      "subject": "three different butterflies in flight in a single row with wide clear space between them, each seen from the side in three-quarter view with both wings raised above the body mid-flap, facing right, one orange with dark borders, one pale yellow, one slate blue"
+    },
+    {
+      "scene": "valley",
+      "layer": "frog_leap",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 3,
+      "ref": true,
+      "subject": "the same green pond frog shown three times in a single row with wide clear space between them, each seen from the side and facing right: first crouched low and coiled, ready to jump; second in mid-leap with the body stretched out and the hind legs fully extended behind; third landing, front legs reaching down and hind legs folding in; same species and colors as the frog in the attached plate, no water, no lily pads"
+    },
+    {
+      "scene": "meadow",
+      "layer": "flyer_down",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 3,
+      "ref": true,
+      "subject": "the same three butterflies as in the attached image, in the same order, sizes and colors (orange with dark borders, pale yellow, slate blue), in a single row with wide clear space between them, each seen from the side in three-quarter view and facing right, but now with both wings swept down below the body at the bottom of a wing beat"
+    },
+    {
+      "scene": "meadow",
+      "layer": "perch_a",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 3,
+      "ref": true,
+      "subject": "the same butterfly as in the attached image, with the same wing colors and pattern, shown three times in a single row with wide clear space between them, each seen from the side and facing right, standing on its six thin legs with its proboscis uncoiled downward as if drinking nectar: first with the wings closed upright and pressed together above the body; second with the wings half open in a V; third with the wings spread wide and almost flat, basking; no flower, no stem, nothing else"
+    },
+    {
+      "scene": "meadow",
+      "layer": "perch_b",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 3,
+      "ref": true,
+      "subject": "the same butterfly as in the attached image, with the same wing colors and pattern, shown three times in a single row with wide clear space between them, each seen from the side and facing right, standing on its six thin legs with its proboscis uncoiled downward as if drinking nectar: first with the wings closed upright and pressed together above the body; second with the wings half open in a V; third with the wings spread wide and almost flat, basking; no flower, no stem, nothing else"
+    },
+    {
+      "scene": "meadow",
+      "layer": "perch_c",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 3,
+      "ref": true,
+      "subject": "the same butterfly as in the attached image, with the same wing colors and pattern, shown three times in a single row with wide clear space between them, each seen from the side and facing right, standing on its six thin legs with its proboscis uncoiled downward as if drinking nectar: first with the wings closed upright and pressed together above the body; second with the wings half open in a V; third with the wings spread wide and almost flat, basking; no flower, no stem, nothing else"
+    },
+    {
+      "scene": "meadow",
+      "layer": "perch_d",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 3,
+      "ref": true,
+      "subject": "the same butterfly as in the attached image, with the same wing colors and pattern, shown three times in a single row with wide clear space between them, each seen from the side and facing right, standing on its six thin legs with its proboscis uncoiled downward as if drinking nectar: first with the wings closed upright and pressed together above the body; second with the wings half open in a V; third with the wings spread wide and almost flat, basking; no flower, no stem, nothing else"
+    },
+    {
+      "scene": "meadow",
+      "layer": "perch_e",
+      "format": "wide landscape",
+      "cut": "subject",
+      "split": 3,
+      "ref": true,
+      "subject": "the same butterfly as in the attached image, with the same wing colors and pattern, shown three times in a single row with wide clear space between them, each seen from the side and facing right, standing on its six thin legs with its proboscis uncoiled downward as if drinking nectar: first with the wings closed upright and pressed together above the body; second with the wings half open in a V; third with the wings spread wide and almost flat, basking; no flower, no stem, nothing else"
+    }
+  ]
+}

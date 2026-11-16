@@ -1,0 +1,5 @@
+<!doctype html><meta charset="utf-8"><title>Claude-world art contact sheet</title>
+<style>body{margin:0;font:12px system-ui;background:#efe5cf}main{display:grid;grid-template-columns:repeat(8,1fr);gap:6px;padding:6px}
+figure{margin:0;padding:4px;background:linear-gradient(90deg,#efe5cf 50%,#1b1f2e 50%);border:1px solid #2b2620}
+img{width:100%;height:110px;object-fit:contain;display:block}figcaption{background:#efe5cf;color:#2b2620;padding:2px;overflow:hidden;white-space:nowrap}</style>
+<main id="m"></main><script>fetch('layers.json').then(r=>r.json()).then(ls=>{m.innerHTML=ls.map(l=>`<figure><img src="${l.file}"><figcaption>${l.file.replace('.webp','')} ${l.w}x${l.h}</figcaption></figure>`).join('')})</script>
