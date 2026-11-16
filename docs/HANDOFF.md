@@ -24,7 +24,7 @@ See [validation](validation.md) for the full record and local checks. Ordinary t
 
 ## What remains
 
-- Drive the official Codex terminal UI by hand, including its handshake.
+- Type a prompt into the official Codex terminal UI started by `effort auto codex` and confirm the routed turn there. The UI connects and draws its start screen through the router; the routed turn was confirmed with a WebSocket client only.
 - Perform OpenCode live acceptance.
 - Support Google's own Gemini CLI and a native Antigravity plugin.
 - Add a benchmark arm that also routes the model.

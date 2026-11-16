@@ -22,7 +22,7 @@ A separate probe used a non-forked skill with `effort: low`. It moved the main c
 
 ### Codex router
 
-A WebSocket client drove the real `codex app-server` behind Effort's router and built-in WebSocket server. The session default was `gpt-6.1-sol` at max effort. A typo prompt was rewritten to `gpt-6-luna` at low with `modelSelection: automatic`, and the turn completed. Codex's own session record showed `gpt-6-luna` / low. The official terminal UI itself was not driven by this check; its handshake still needs a manual check.
+A WebSocket client drove the real `codex app-server` behind Effort's router and built-in WebSocket server. The session default was `gpt-6.1-sol` at max effort. A typo prompt was rewritten to `gpt-6-luna` at low with `modelSelection: automatic`, and the turn completed. Codex's own session record showed `gpt-6-luna` / low. The official terminal UI itself was not driven by this check; its start-up through the router is recorded under the managed-run matrix below.
 
 ### Gemini through Antigravity
 
@@ -30,7 +30,25 @@ A WebSocket client drove the real `codex app-server` behind Effort's router and 
 
 ### Managed-run matrix
 
-Results are recorded below.
+Nine `effort run` tasks, three per provider, each in a disposable workspace with `--allow-write` and `node test.mjs` as the verification command. Every test failed before the run. Nothing pinned the model or the effort.
+
+| Provider | Task | Chosen model | Effort | Evidence of what ran | Result |
+| --- | --- | --- | --- | --- | --- |
+| Codex | Rename a misspelled export | `gpt-6-luna` (fast) | low | Thread readback: `gpt-6-luna`, low | verified, 1 attempt |
+| Codex | Add `slugify` | `gpt-6.1-sol` (daily) | medium | Thread readback: `gpt-6.1-sol`, medium | verified, 1 attempt |
+| Codex | Fix a lost-update race | `gpt-6-astra` (frontier) | high | Thread readback: `gpt-6-astra`, high | verified, 1 attempt |
+| Claude | Rename a misspelled export | `haiku` (fast) | low | Stream reported `claude-haiku-5-5`; effort is a launch flag, not reported back | verified in 3 of 7 runs before the fix below, 6 of 6 after |
+| Claude | Add `slugify` | `opus` (daily) | medium | Stream reported `claude-opus-5-5` | verified, 1 attempt, about $0.03 |
+| Claude | Fix a lost-update race | `fable` (frontier) | high | Stream reported `claude-fable-5-1` | verified, 1 attempt, about $0.17 |
+| Gemini | Rename a misspelled export | `gemini-4-hydrogen` (fast) | low | Log label "Gemini 4 Hydrogen (Low)", 154 thinking tokens | verified, 1 attempt |
+| Gemini | Add `slugify` | `gemini-4-argon` (daily) | medium | Log label "Gemini 4 Argon (Medium)", 376 thinking tokens | verified, 1 attempt |
+| Gemini | Fix a lost-update race | `gemini-4-argon` (frontier) | high | Log label "Gemini 4 Argon (High)", 1,015 thinking tokens | verified, 1 attempt |
+
+The Claude rename task first ended `blocked` in 4 of 7 runs: Haiku made the edit, then asked for `Bash` to run the test, and the adapter stops a turn that requests a tool it does not offer. The adapter now appends a fixed system note listing the tools that exist and saying the caller runs its own checks, and its error event names the refused tool. After that change the same task was verified in 6 of 6 runs. Six runs do not show the request can no longer happen.
+
+The official Codex terminal UI was also started through `effort auto codex`. It connected through the built-in server and drew its normal start screen. No prompt was typed into it, so a routed turn in the terminal UI itself has not been observed; the WebSocket client check above covers the routing.
+
+These runs show that the chosen model and effort were requested and, where the provider reports it, applied, and that each small task passed its own test. They do not compare quality or cost between tiers.
 
 ## Automatic integration prototype, 2026-09-26
 

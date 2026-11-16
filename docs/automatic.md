@@ -10,7 +10,7 @@ This experimental integration chooses a model and effort locally before each sub
 | Claude Code plugin | Asks Claude to invoke routing skills when a prompt rule fires; ordinary prompts stay unchanged | Depends on Claude following the hook. Fork skills change their worker model; earlier conversation must be passed along. |
 | Claude Code through `effort auto claude` | Chooses model and effort for each prompt and resumes the same Claude conversation | Uses Effort's text interface and restricted CLI adapter. Does not attach to the stock Claude terminal or desktop UI. |
 | Gemini through `effort auto gemini` | Chooses model and effort and resumes the same Antigravity conversation | Requires `agy`. File permissions are session-only; shell commands are never allowed. Token usage, but no cost, is reported. |
-| Codex through `effort auto codex` | Routes `turn/start` model and effort through a local connection to the normal Codex terminal UI | Built-in WebSocket server; no extra package. Real app-server routing checked; the official terminal UI handshake still needs a manual check. Does not attach to Codex desktop. |
+| Codex through `effort auto codex` | Routes `turn/start` model and effort through a local connection to the normal Codex terminal UI | Built-in WebSocket server; no extra package. Real app-server routing checked; the official terminal UI connects and starts through it; a prompt typed there still needs a manual check. Does not attach to Codex desktop. |
 | Other MCP hosts | Recommendations through the existing MCP tools | MCP tools do not control the host's active model or effort. |
 
 The ordinary website remains a local recommendation and run-history dashboard. Opening it does not enable background access to other applications.
@@ -93,7 +93,7 @@ The router discovers `model/list` capabilities and sets `turn/start.effort`, inc
 
 The router selects a built-in tier model by default, subject to discovered capabilities. `--model` and an explicit routing table override that choice. Approval requests, approval responses, sandbox policies, and unrelated protocol messages pass through. The official terminal UI owns permissions and cancellation; `--allow-write` and Effort's managed timeout flag are rejected for this mode. The router never approves requests on the user's behalf.
 
-A live WebSocket client check drove the real `codex app-server` through this router and confirmed a typo turn changed from the session default gpt-6.1-sol/max to gpt-6-luna/low. Codex's own session record matched. This did not drive the official terminal UI; its handshake and interactive flow still need a manual check.
+A live WebSocket client check drove the real `codex app-server` through this router and confirmed a typo turn changed from the session default gpt-6.1-sol/max to gpt-6-luna/low. Codex's own session record matched. The official terminal UI was separately started through the router and drew its start screen; a prompt typed into it has not been observed.
 
 ## Model routing
 

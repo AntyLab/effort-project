@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/effort-banner.png" alt="effort. Spend reasoning where it helps: a local CLI that picks a model and reasoning effort for each coding-agent prompt, checks the result, and shows its work. Works with Claude Code, Codex, Gemini, OpenCode and MCP." width="880">
+  <img src=".github/assets/effort-banner.png" alt="effort. Spend reasoning where it helps: a local CLI that picks a model and reasoning effort for each coding-agent prompt, checks the result, and shows its work. Works with Claude Code, Codex, Gemini, OpenCode and MCP." width="880">
 </p>
 
 # The Effort Project
@@ -10,7 +10,7 @@
 
 **Spend reasoning where it helps.** Effort picks a model and effort (low, medium or high) for coding-agent prompts, checks results with your tests, and explains each choice. It runs locally with no runtime dependencies, supporting Claude Code, Codex, Gemini, OpenCode and local MCP hosts.
 
-> **Status: experimental (0.1).** Model and effort routing has functional live checks, but lower cost at equal quality is unproven. See [Limits](#limits).
+> **Status: experimental (0.2).** Model and effort routing has functional live checks, but lower cost at equal quality is unproven. See [Limits](#limits).
 
 ## Why
 
@@ -112,7 +112,7 @@ To have effort change on its own before every prompt:
 
 - **OpenCode:** the plugin above already does this.
 - **Claude Code:** the plugin routes through skills in Claude's interface. `effort auto claude --cwd .` is an alternative text session that resumes the conversation with the chosen model and effort.
-- **Codex:** `effort auto codex` routes the normal terminal through a local router using its built-in WebSocket server. No extra package is needed; driving the official terminal UI by hand remains a check.
+- **Codex:** `effort auto codex` routes the normal terminal through a local router using its built-in WebSocket server. No extra package is needed; the terminal UI connects and starts through it; typing a routed prompt there by hand remains a check.
 - **Gemini:** `effort auto gemini --cwd .` resumes an Antigravity conversation in Effort's text interface.
 
 See [automatic routing](docs/automatic.md).
