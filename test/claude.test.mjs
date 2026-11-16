@@ -92,6 +92,7 @@ test('passes a literal prompt on stdin and isolates default read-only turns', as
   assert.deepEqual(sourceEnv, before);
   assert.equal(result.effortEvidence.type, 'launch-flag');
   assert.equal(result.effortEvidence.launchAccepted, true);
+  assert.equal(result.effortEvidence.turnSubmitted, true);
   assert.equal(result.effortEvidence.observedEffort, null);
   assert.equal(result.effortEvidence.verified, false);
   assert.match(result.effortEvidence.note, /caps/);
@@ -203,6 +204,7 @@ test('unknown isolation flags block before a provider turn', async (t) => {
   assert.equal(result.status, 'blocked');
   assert.equal(events.at(-1).code, 'unsupported_cli');
   assert.equal(result.effortEvidence.launchAccepted, false);
+  assert.equal(result.effortEvidence.turnSubmitted, false);
   assert.equal(await exists(f.log), false);
 });
 
@@ -238,12 +240,50 @@ test('EFFORT_CLAUDE_BIN selects the Claude CLI when no executable is given', asy
 
 test('known unsupported effort models block before invoking the CLI', async (t) => {
   const f = await fixture(t);
-  for (const model of ['haiku', 'claude-haiku-4-5', 'claude-sonnet-4-5', 'claude-opus-4-1', 'opusplan']) {
-    const result = await run({ ...f.options, model });
+  for (const model of ['claude-3-haiku-20240307', 'claude-3-7-sonnet', 'claude-haiku-4-5', 'claude-sonnet-4', 'claude-sonnet-4-0', 'claude-sonnet-4-5', 'claude-opus-4-1', 'opusplan']) {
+    const events = [];
+    const result = await run({ ...f.options, model, onEvent: (event) => events.push(event) });
     assert.equal(result.status, 'blocked', model);
     assert.match(result.text, /does not support/);
+    assert.equal(events.at(-1).code, 'unsupported_effort_model');
+    assert.equal(result.effortEvidence.turnSubmitted, false);
   }
   assert.equal(await exists(f.log), false);
+});
+
+test('Haiku aliases and 5.x model IDs support effort and match the observed model', async (t) => {
+  const f = await fixture(t, 'emit({ ...initial, model: "claude-haiku-5-5" }); emit({ type: "assistant", message: { model: "claude-haiku-5-5", content: [{ type: "text", text: "Done." }] } }); emit(success);', { startup: false });
+  for (const model of ['haiku', 'claude-haiku-5-5']) {
+    const result = await run({ ...f.options, model, effort: 'low' });
+    assert.equal(result.status, 'completed', model);
+    assert.equal(result.effortEvidence.observedModel, 'claude-haiku-5-5');
+    assert.equal(result.effortEvidence.turnSubmitted, true);
+    const { argv } = JSON.parse(await readFile(f.log, 'utf8'));
+    assert.equal(argValue(argv, '--model'), model);
+    assert.equal(argValue(argv, '--effort'), 'low');
+  }
+});
+
+test('aliases resolving to unsupported generations are blocked after prompt submission', async (t) => {
+  for (const [model, observed] of [['haiku', 'claude-haiku-4-5'], ['sonnet', 'claude-sonnet-4-5'], ['opus', 'claude-opus-4-1']]) {
+    const f = await fixture(t, `emit({ ...initial, model: ${JSON.stringify(observed)} }); emit(success);`, { startup: false });
+    const events = [];
+    const result = await run({ ...f.options, model, onEvent: (event) => events.push(event) });
+    assert.equal(result.status, 'blocked', model);
+    assert.equal(events.at(-1).code, 'unsupported_effort_model');
+    assert.equal(result.effortEvidence.launchAccepted, false);
+    assert.equal(result.effortEvidence.turnSubmitted, true);
+  }
+});
+
+test('model unavailability reported by the CLI is after prompt submission even without initialization', async (t) => {
+  const f = await fixture(t, 'emit({ ...success, subtype: "error_during_execution", is_error: true, result: "model_not_found" }); process.exitCode = 1;', { startup: false });
+  const events = [];
+  const result = await run({ ...f.options, model: 'haiku', onEvent: (event) => events.push(event) });
+  assert.equal(result.status, 'blocked');
+  assert.equal(events.at(-1).code, 'model_unavailable');
+  assert.equal(result.effortEvidence.launchAccepted, false);
+  assert.equal(result.effortEvidence.turnSubmitted, true);
 });
 
 test('provider errors and stderr do not leak credential values', async (t) => {
@@ -355,6 +395,7 @@ test('checks session, model, tools, plugins, hooks and permission evidence', asy
     const result = await run({ ...f.options, model: 'sonnet', sessionId: SESSION, onEvent: (e) => events.push(e) });
     assert.notEqual(result.status, 'completed');
     assert.equal(events.at(-1).code, code);
+    assert.equal(result.effortEvidence.turnSubmitted, true);
   }
 });
 

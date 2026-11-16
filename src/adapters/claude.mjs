@@ -271,14 +271,14 @@ function reportedUsage(event, resumed, steps) {
 
 function knownUnsupportedModel(model) {
   if (!model) return false;
-  return /haiku|opusplan/i.test(model) || /claude-(?:3(?:[.-]|$)|(?:sonnet|opus)-4(?:[.-](?:0|1|5)(?:[^0-9]|$)|$))/.test(model);
+  return /opusplan/i.test(model) || /claude-(?:3(?:[.-]|$)|(?:haiku|sonnet|opus)-4(?:[.-](?:0|1|5)(?:[^0-9]|$)|$))/i.test(model);
 }
 
 function modelMatches(requested, observed) {
   if (!requested || requested === 'default') return true;
   const base = requested.replace(/\[(?:1m|200k)\]$/i, '');
   const actual = observed.replace(/\[(?:1m|200k)\]$/i, '');
-  if (['opus', 'sonnet', 'fable'].includes(base)) return new RegExp(`(?:^|[./-])(?:claude-)?${base}(?:[-.]|$)`, 'i').test(observed);
+  if (['opus', 'sonnet', 'haiku', 'fable'].includes(base)) return new RegExp(`(?:^|[./-])(?:claude-)?${base}(?:[-.]|$)`, 'i').test(observed);
   return actual === base;
 }
 
@@ -337,7 +337,7 @@ export async function run(inputOptions) {
   let isolationDiagnostic = null;
   const evidence = {
     type: 'launch-flag', flag: '--effort', requested: options.effort,
-    environment: 'CLAUDE_CODE_EFFORT_LEVEL', launchAccepted: false,
+    environment: 'CLAUDE_CODE_EFFORT_LEVEL', launchAccepted: false, turnSubmitted: false,
     observedEffort: null, verified: false, observedModel: null,
     note: 'The flag and child environment request effort. Stream JSON does not confirm applied effort; provider or organization caps may silently lower it. This is not a measure of internal reasoning.',
   };
@@ -469,6 +469,8 @@ export async function run(inputOptions) {
       }
     }
   };
+  // The prompt is submitted on CLI launch, before initialization can confirm a model.
+  evidence.turnSubmitted = true;
   const execution = await execute({ ...options, env, args: launchArgs(options), input: options.prompt, timeoutMs: remaining(),
     onStdout: (chunk, stop) => {
       pending += chunk;
