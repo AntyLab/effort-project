@@ -247,3 +247,12 @@ test('review comments are not a mechanical edit', () => {
   }
   assert.equal(recommend({ prompt: 'Add a comment to parseDuration' }).effort, 'low');
 });
+
+test('a doc comment that describes behavior is not a comment edit', () => {
+  for (const prompt of ['Fix parseDuration so it follows its doc comment.', 'Make it follow the rules in its doc comment.', 'Implement the docstring contract.']) {
+    assert.equal(recommend({ prompt }).features.mechanical, false, prompt);
+  }
+  for (const prompt of ['Add a comment to parseDuration', 'Update the docstring for retry_delays', 'Fix the inline comment typo']) {
+    assert.equal(recommend({ prompt }).features.mechanical, true, prompt);
+  }
+});

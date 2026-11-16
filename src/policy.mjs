@@ -36,8 +36,8 @@ const complexWords = keywordPattern([
 ]);
 const mechanicalWords = keywordPattern([
   String.raw`rename|typo|spelling|format|translate|summarize|capitaliz\w*`,
-  // Review comments can be real work; only plain comment edits are mechanical.
-  String.raw`(?<!(?:review|PR|pull\s+request)\s+)comments?|docstrings?|lint|indent(?:ation)?|bump\s+the\s+version|version\s+bump|wording|reword|whitespace|sort\s+imports`,
+  // Only a comment edit is mechanical: "follow its doc comment" or review comments are real work.
+  String.raw`(?:add|write|fix|update|remove|delete|reword|improve)\s+(?:a\s+|an\s+|the\s+|some\s+|its\s+)?(?:code\s+|inline\s+)?(?:comments?|docstrings?)|lint|indent(?:ation)?|bump\s+the\s+version|version\s+bump|wording|reword|whitespace|sort\s+imports`,
   String.raw`errata|falta\s+de\s+ortografía|ortografía|renombrar|traducir|formatear`,
   String.raw`faute\s+de\s+frappe|orthographe|renommer|traduire|formater`,
   String.raw`Tippfehler|Rechtschreibung|umbenennen|übersetzen|formatieren`,
