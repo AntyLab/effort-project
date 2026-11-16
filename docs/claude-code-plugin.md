@@ -1,26 +1,41 @@
 # Claude Code plugin
 
-The Effort Project routes a prompt to a lighter or stronger model and effort through its own skills when a local prompt rule fires, and stays silent otherwise. You do not need to type `/effort` to apply the recommendation.
+The Effort Project shows a short model and effort suggestion for every eligible prompt: non-empty, at most 100,000 characters, and not starting with `/` or `!`. By default, it returns only a user-visible message: Claude keeps its current settings, and no skill or fork is started.
 
-| Prompt | What happens |
+| Prompt | Default suggestion |
 | --- | --- |
-| Short mechanical request, such as fixing a typo | Claude invokes `effort-project:route-fast`, which carries out the request in a fork on Haiku at low effort, then Claude relays the result |
-| Risky or investigative request | Claude first invokes `effort-project:route-hard`, which sets high effort for the rest of the turn, then carries out the request in the main conversation |
-| Both risky and tangled, such as investigating an intermittent auth race condition | Claude invokes `effort-project:route-frontier`, which works in a fork on Fable at high effort, then Claude relays the findings and changes |
-| Anything else | The hook stays silent and leaves the turn alone |
+| Short mechanical request, such as fixing a typo | `Effort suggests haiku · low effort for this prompt (/model haiku, /effort low).` |
+| Ordinary request without a clear rule signal | `Effort suggests sonnet · medium effort for this prompt (/model sonnet, /effort medium).` |
+| Risky or investigative request | `Effort suggests sonnet · high effort for this prompt (/model sonnet, /effort high).` |
+| Both risky and tangled, such as investigating an intermittent auth race condition | `Effort suggests fable · high effort for this prompt (/model fable, /effort high).` |
+| Short follow-up without a clear rule signal | Inherits a recent earlier request's recommendation when available, with ` Based on your earlier request.` appended |
 
-A hook cannot set model or effort directly. It adds an instruction for Claude to invoke the appropriate skill and shows a short line such as `Effort: haiku at low effort for this prompt.` The fork skills select their worker's model and effort; the main-conversation skill sets effort only. `UserPromptSubmit` carries no current effort level, so the hook does not compare against one.
+The model is the alias for the recommended tier: Haiku for fast, Sonnet for daily, and Fable for frontier. You can apply a suggestion with the commands shown in the line. The hook never includes the prompt text in its output. `UserPromptSubmit` carries no current effort level, so the hook does not compare against one.
 
-Headless functional checks on Claude Code 2.1.310 verified the fast and frontier fork routes and an ordinary prompt left on the session's settings. A separate probe verified a non-forked skill's effort change. The November 16 record below describes these checks; the older checks describe the earlier advisory implementation.
+Automatic routing is opt-in. In Claude Code's `settings.json`, add or merge:
+
+```json
+{
+  "env": {
+    "EFFORT_AUTO_ROUTE": "1"
+  }
+}
+```
+
+The values `1`, `true`, `yes` and `on` enable it, case-insensitively. With routing enabled, low effort asks Claude to invoke `effort-project:route-fast` in a fork on Haiku at low effort. High effort with the frontier tier asks for `effort-project:route-frontier` in a fork on Fable at high effort; other high recommendations ask for `effort-project:route-hard`, which sets high effort for the rest of the turn in the main conversation. Claude relays the fork's result. Medium still shows only the suggestion line.
+
+A hook cannot set model or effort directly. Opt-in routing adds an instruction for Claude to invoke the appropriate skill and retains the routing message, such as `Effort: haiku at low effort for this prompt.` The fork skills select their worker's model and effort; the main-conversation skill sets effort only.
+
+Historical headless functional checks on Claude Code 2.1.310 verified the fast and frontier fork routes and an ordinary prompt left on the session's settings. A separate probe verified a non-forked skill's effort change. The November 16 record below describes these checks; the older checks describe the earlier advisory implementation. These records predate the current suggestion-only default and transcript follow-up support.
 
 ## What the plugin adds
 
 | Component | What it does | Context cost |
 | --- | --- | --- |
-| `UserPromptSubmit` hook | Runs prompt rules, adds a skill invocation instruction when a rule fires, and shows one short user message | A short routing instruction in `additionalContext` when a rule fires |
+| `UserPromptSubmit` hook | Shows one short model and effort suggestion for each eligible prompt; skill routing is opt-in | None by default; a short instruction in `additionalContext` for low/high when routing is enabled |
 | `effort` MCP server | Effort's existing stdio server (`bin/effort.mjs mcp`) with the read-only `effort_recommend`, `effort_observe` and `effort_capabilities` tools | Tool definitions, which Claude Code defers through MCP tool search on supported models |
 | Routing skills | `route-fast` and `route-frontier` run the request in a fork; `route-hard` sets effort in the main conversation | Skill descriptions, the invoked body, and any context Claude passes to a fork |
-| `explain` skill | Run `/effort-project:explain [task text]`, or ask why Effort chose a route. Claude calls `effort_recommend` and explains the model, effort and reasons | Skill description and the invoked body |
+| `explain` skill | Run `/effort-project:explain [task text]`, or ask why Effort made a suggestion. Claude calls `effort_recommend` and explains the model, effort and reasons | Skill description and the invoked body |
 
 ## Install
 
@@ -45,21 +60,20 @@ The marketplace is a third-party marketplace. Like any plugin, the hook and the 
 
 ## How the hook decides
 
-1. Claude Code passes the submitted prompt to the hook as JSON on stdin.
-2. The hook calls `recommend({ prompt, provider: 'claude', maxEffort: 'high' })`, with no repository facts. It reads no files and ignores both event effort and `$CLAUDE_EFFORT`.
-3. Low effort selects `route-fast`. High effort with the frontier tier selects `route-frontier`; other high recommendations select `route-hard`. Medium is the uncertain default and stays silent.
-4. For either fork route, `hookSpecificOutput.additionalContext` tells Claude to invoke the Skill tool with the named skill, pass the user's request verbatim plus any earlier context the worker needs, and relay the result. For `route-hard`, it tells Claude to invoke the skill before doing anything else, then carry out the request.
-5. The hook returns one JSON object with `hookSpecificOutput.hookEventName` set to `UserPromptSubmit`, the routing instruction in `hookSpecificOutput.additionalContext`, and a short `systemMessage` for the user. The prompt itself is never copied into this output. The hook always exits 0.
+1. Claude Code passes the submitted prompt and a `transcript_path` to the hook as JSON on stdin.
+2. The hook calls `recommend({ prompt, provider: 'claude', maxEffort: 'high' })`, with no repository facts. It ignores both event effort and `$CLAUDE_EFFORT`.
+3. If the trimmed prompt is at most 80 characters and has no critical, complex or mechanical rule signal, the hook can inherit context. It reads at most the last 64 KiB of the transcript, drops any first partial line, and looks at up to three earlier eligible user prompts for the most recent one with a signal. It uses text parts only, skips tool results, metadata and command wrappers, and skips text equal to the current prompt. The path must be absolute; missing, relative or unreadable paths and other read errors fall back to the current prompt's own recommendation.
+4. By default, the hook returns only `systemMessage`, containing the recommended model alias, effort and commands. Inherited suggestions append ` Based on your earlier request.` Effort never exceeds high.
+5. When `EFFORT_AUTO_ROUTE` enables routing, low selects `route-fast`. High with the frontier tier selects `route-frontier`; other high recommendations select `route-hard`. These responses also include `hookSpecificOutput.hookEventName: "UserPromptSubmit"` and a fixed instruction in `hookSpecificOutput.additionalContext`. Medium returns only the suggestion line. For fork routes, the instruction asks Claude to pass the request and needed earlier context to the skill and relay the result; `route-hard` runs before Claude carries out the request in the main conversation.
 
 It prints nothing and exits 0 in these cases:
 
-- No rule fired, so the suggestion is the medium default. Short follow-ups such as `continue` are in this group.
 - The prompt starts with `/` or `!`. Commands and skills reach the hook as typed (`/name arguments`), and `!` lines run a shell. Neither describes the task.
 - The prompt is empty or longer than 100,000 characters, the limit of Effort's rules.
 - The hook input is malformed, larger than 1 MiB, or has not arrived within 3 seconds.
 - Anything else fails. The hook catches every error. Claude Code treats hook failures as non-blocking as well, and `hooks/hooks.json` sets a 5-second timeout.
 
-Claude Code also runs `UserPromptSubmit` hooks when a scheduled task fires, when a background subagent reports back, and when another session sends a message. A routing instruction can appear on those turns too.
+Claude Code also runs `UserPromptSubmit` hooks when a scheduled task fires, when a background subagent reports back, and when another session sends a message. A suggestion, or an opt-in routing instruction, can appear on those turns too.
 
 ## Rule confidence
 
@@ -68,16 +82,16 @@ The rules are a transparent keyword and length heuristic with low confidence. Th
 ## Privacy and safety
 
 - The prompt stays in the hook's memory. It is not written to disk, logged, echoed in the output or sent anywhere. The hook makes no network requests and starts no processes.
-- The hook reads no files. It does not scan the working directory, so a stalled, unreadable or linked folder cannot delay or silence it.
-- The output contains a fixed routing instruction in `hookSpecificOutput.additionalContext` and a short `systemMessage`. Neither contains the prompt. Claude passes the request and any needed earlier context to the skill after reading the instruction.
+- For short follow-ups only, the hook reads at most the last 64 KiB of the absolute `transcript_path` supplied by Claude Code. This local read is read-only; transcript text is never stored, logged, copied into output or sent anywhere. The hook does not scan the working directory.
+- The default output contains only a short `systemMessage`. Opt-in routing adds a fixed instruction in `hookSpecificOutput.additionalContext` for low/high. Neither contains prompt text. With routing enabled, Claude passes the request and any needed earlier context to the skill after reading the instruction.
 - After an unexpected internal error the hook writes one fixed line to stderr, `effort-project: prompt advice skipped after an internal error.`, which appears only in Claude Code's debug log. It never prints error details, because parser errors can quote the input.
 - The plugin stores nothing of its own and does not use `${CLAUDE_PLUGIN_DATA}`. The MCP server is Effort's existing advisory server. See [desktop integration](desktop.md).
 
-`test/claude-plugin.test.mjs` checks these properties. It walks the hook's module graph for network, process and filesystem modules, file writes and logging calls, and it runs the hook with the home, temp and plugin-data directories pointed at an empty folder, then checks that the folder is still empty and that the prompt appears in no output.
+`test/claude-plugin.test.mjs` checks these properties. It walks the hook's module graph for network and process modules, file writes and logging calls while allowing read-only filesystem access, and it runs the hook with the home, temp and plugin-data directories pointed at an empty folder, then checks that the folder is still empty and that the prompt appears in no output.
 
 ## Performance
 
-On the Windows 11 development machine with Node 24.19, a complete hook run took a median of 65 ms over 20 runs (90th percentile 71 ms), and starting Node with an empty script took 52 ms. Inside Claude Code 2.1.299 on the same machine, the hook finished in 73 to 79 ms after a cold first run of 358 ms. Those numbers were taken while the hook still scanned the working directory, which took about 1 ms. Now the advice is a few regular expressions over the prompt, and Node's startup time is nearly all of the cost. Node usually starts faster on macOS and Linux.
+On the Windows 11 development machine with Node 24.19, a complete hook run took a median of 65 ms over 20 runs (90th percentile 71 ms), and starting Node with an empty script took 52 ms. Inside Claude Code 2.1.299 on the same machine, the hook finished in 73 to 79 ms after a cold first run of 358 ms. Those numbers were taken while the hook still scanned the working directory, which took about 1 ms. The current hook applies a few regular expressions to the prompt and can read a bounded transcript tail for short follow-ups. The timing measurements above predate that transcript read. Node usually starts faster on macOS and Linux.
 
 ## Packaging: the plugin root is the repository root
 
@@ -103,7 +117,7 @@ Historical installation checks used the Claude Code 2.1.299 CLI bundled with the
 - `claude --plugin-dir . plugin list` reported `effort-project@inline` as loaded.
 - `claude --plugin-dir . plugin details effort-project` listed the `explain` skill, the `UserPromptSubmit` hook and the `effort` MCP server.
 
-`npm test` runs `test/claude-plugin.test.mjs`. It feeds the hook realistic `UserPromptSubmit` JSON and checks the routing output, silence when no rule fires, skill frontmatter, fail-open behavior and timing. It also checks the manifests against the documented formats, starts the MCP server from the plugin configuration, and runs the hook and server from a copied plugin root, as Claude Code does after an install.
+`npm test` runs `test/claude-plugin.test.mjs`. It feeds the hook realistic `UserPromptSubmit` JSON and checks default suggestions, opt-in routing, bounded follow-up context, skill frontmatter, fail-open behavior and timing. It also checks the manifests against the documented formats, starts the MCP server from the plugin configuration, and runs the hook and server from a copied plugin root, as Claude Code does after an install.
 
 ### Live routing acceptance (November 16, 2026)
 
@@ -155,9 +169,9 @@ Disable the plugin in `/plugin`, or run `claude plugin disable effort-project@ef
 
 ## Limits
 
-- Fork routes run without the earlier conversation unless Claude passes the needed context along. The hook asks it to do so.
-- The main conversation model still reads the prompt and relays the worker's answer. A skill's `model` field changes the fork's model, not the main conversation's model.
-- Routing depends on Claude following the hook's instruction to invoke the named skill. Disable the plugin to turn routing off.
-- The rules are a keyword and length heuristic with low confidence. The hook uses no repository facts; `effort recommend --cwd` can recommend a different route when the request names many files.
+- With opt-in routing, fork routes run without the earlier conversation unless Claude passes the needed context along. The hook asks it to do so.
+- With fork routing enabled, the main conversation model still reads the prompt and relays the worker's answer. A skill's `model` field changes the fork's model, not the main conversation's model.
+- Opt-in routing depends on Claude following the hook's instruction to invoke the named skill. Remove `EFFORT_AUTO_ROUTE` or set it to `0` to return to suggestions only; disable the plugin to stop suggestions too.
+- The rules are a keyword and length heuristic with low confidence. Short follow-ups can inherit a recent signal from the bounded transcript tail; other conversation context is not assessed. The hook uses no repository facts; `effort recommend --cwd` can recommend a different route when the request names many files.
 - Prompts starting with `/` or `!` are skipped, including a prompt that starts with an absolute path.
 - `node` must be on the `PATH` that Claude Code uses to start hooks and MCP servers.
