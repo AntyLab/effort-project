@@ -24,8 +24,6 @@ See [validation](validation.md) for the full record and local checks. Ordinary t
 
 ## What remains
 
-- Type a prompt into the official Codex terminal UI started by `effort auto codex` and confirm the routed turn there. The UI connects and draws its start screen through the router; the routed turn was confirmed with a WebSocket client only.
-- Perform OpenCode live acceptance.
 - Support Google's own Gemini CLI and a native Antigravity plugin.
 - Add a benchmark arm that also routes the model. The 55-run pilots on Codex (`gpt-6.1-sol`) and Gemini (`gemini-4-argon`) are recorded in [bench/PILOT.md](../bench/PILOT.md): every arm passed 11 of 11, so they are inconclusive like the Claude pilot, and they pinned one model per provider.
 - Gather savings and quality evidence on a held-out corpus.

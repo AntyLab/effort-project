@@ -112,7 +112,7 @@ To have effort change on its own before every prompt:
 
 - **OpenCode:** the plugin above already does this.
 - **Claude Code:** the plugin routes through skills in Claude's interface. `effort auto claude --cwd .` is an alternative text session that resumes the conversation with the chosen model and effort.
-- **Codex:** `effort auto codex` routes the normal terminal through a local router using its built-in WebSocket server. No extra package is needed; the terminal UI connects and starts through it; typing a routed prompt there by hand remains a check.
+- **Codex:** `effort auto codex` routes the normal terminal through a local router using its built-in WebSocket server. No extra package is needed, and a prompt typed into the official terminal UI has been routed live.
 - **Gemini:** `effort auto gemini --cwd .` resumes an Antigravity conversation in Effort's text interface.
 
 See [automatic routing](docs/automatic.md).
