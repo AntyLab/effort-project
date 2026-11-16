@@ -1,23 +1,16 @@
-import { LEVELS, recommend } from '../policy.mjs';
+import { MODELS, recommend } from '../policy.mjs';
 
-// Claude Code UserPromptSubmit hook for the advisory plugin. Hooks cannot set
-// effort, so the only output is a systemMessage line shown to the user. The
-// prompt stays in memory: it is never written, logged, echoed or sent anywhere.
+// Claude Code UserPromptSubmit hook for skill-based routing. Hooks cannot set
+// model or effort directly: additionalContext asks Claude to invoke a routing
+// skill, and systemMessage shows the user one line. The prompt stays in memory:
+// it is never written, logged, echoed or sent anywhere by the hook.
 // https://code.claude.com/docs/en/hooks#userpromptsubmit
 const CEILING = 'high'; // Effort's rules never suggest more than high.
 const MAX_PROMPT_CHARACTERS = 100_000;
 export const MAX_INPUT_BYTES = 1_048_576;
-const rank = level => LEVELS.indexOf(level);
-const levelOf = value => {
-  const level = typeof value === 'string' ? value.trim().toLowerCase() : '';
-  return LEVELS.includes(level) ? level : '';
-};
-// The two suggestions a prompt rule can make, each worded for the sessions it could
-// help. Medium has no entry: it is the uncertain default, so no rule fired.
-const DIRECTION = { high: 'lower', low: 'higher' };
 
 /**
- * Advice for one UserPromptSubmit event: { systemMessage }, or null to stay silent.
+ * Routing instructions and a user message for one UserPromptSubmit, or null.
  *
  * Only Effort's prompt rules count. recommend() gets the prompt alone and no
  * repository metadata: the breadth of a checkout says nothing about one request,
@@ -25,13 +18,8 @@ const DIRECTION = { high: 'lower', low: 'higher' };
  * metadata, a result other than medium means a prompt rule fired. The hook also
  * reads no files, so a stalled drive cannot hold it past its timeout.
  *
- * Claude Code documents the session's effort level (the event's effort.level and
- * $CLAUDE_EFFORT) only for events inside a tool-use context, and 2.1.299 passes
- * neither to UserPromptSubmit hooks. So only the event's level counts: a
- * $CLAUDE_EFFORT value seen here was inherited from another process, such as a
- * shell started by another Claude Code session, and says nothing about this one.
- * Known level: speak only when the suggestion differs from it. Unknown level:
- * never claim one.
+ * UserPromptSubmit carries no effort level. Routing depends only on the prompt's
+ * recommendation, never on event.effort or an inherited $CLAUDE_EFFORT.
  */
 export function promptAdvice(event) {
   if (!event || typeof event !== 'object' || Array.isArray(event)) return null;
@@ -42,14 +30,17 @@ export function promptAdvice(event) {
   // neither describes the task the next requests will work on.
   if (/^\s*[/!]/.test(prompt)) return null;
   let suggested;
-  try { suggested = recommend({ prompt, provider: 'claude', maxEffort: CEILING }).effort; } catch { return null; }
-  const direction = DIRECTION[suggested];
-  if (!direction) return null;
-  const current = levelOf(event.effort?.level);
-  if (!current) return { systemMessage: `Effort suggests ${suggested} for this prompt. If you're on a ${direction} level, apply it with /effort ${suggested}` };
-  // A suggestion at the ceiling means "high or more", which xhigh and max satisfy.
-  if (suggested === current || (suggested === CEILING && rank(current) > rank(CEILING))) return null;
-  return { systemMessage: `Effort suggests ${suggested} for this prompt (you're on ${current}). Apply with /effort ${suggested}` };
+  try { suggested = recommend({ prompt, provider: 'claude', maxEffort: CEILING }); } catch { return null; }
+  if (suggested.effort !== 'low' && suggested.effort !== 'high') return null;
+  const tier = suggested.effort === 'low' ? 'fast' : suggested.tier === 'frontier' ? 'frontier' : null;
+  const skill = `effort-project:route-${tier ?? 'hard'}`;
+  const additionalContext = tier
+    ? `Effort Project hook: Do not carry out the request yourself. Invoke the Skill tool with skill "${skill}", passing the user's request verbatim as its arguments plus any earlier conversation context the worker needs. Then relay the result to the user.`
+    : `Effort Project hook: Before anything else, invoke the Skill tool with skill "${skill}", then carry out the user's request as written.`;
+  const systemMessage = tier
+    ? `Effort: ${MODELS.claude[tier]} at ${suggested.effort} effort for this prompt.`
+    : 'Effort: high effort for this prompt.';
+  return { hookSpecificOutput: { hookEventName: 'UserPromptSubmit', additionalContext }, systemMessage };
 }
 
 function readEvent(stream, timeoutMs) {
@@ -79,7 +70,7 @@ function readEvent(stream, timeoutMs) {
 const write = (stream, text) => new Promise((done, fail) => stream.write(text, error => (error ? fail(error) : done())));
 
 /**
- * Read one hook event from stdin and print {"systemMessage": ...} or nothing.
+ * Read one hook event and print routing context plus a user message, or nothing.
  * Never throws, blocks, or rewrites the prompt; the caller always exits 0.
  */
 export async function runPromptHook({

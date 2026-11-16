@@ -1,7 +1,7 @@
 {
   "name": "effort-project",
   "displayName": "The Effort Project",
-  "description": "Shows a one-line effort suggestion from Effort's local, rule-based recommendation before a prompt runs, and adds Effort's read-only MCP tools. Advisory: hooks cannot set effort, so you apply a level with /effort.",
+  "description": "Routes prompts to a lighter or stronger model and effort through its own skills when a local rule fires, and stays silent otherwise. Includes Effort's read-only MCP tools.",
   "author": {
     "name": "The Effort Project contributors",
     "url": "https://github.com/AntyLab/effort-project"
@@ -9,7 +9,7 @@
   "homepage": "https://github.com/AntyLab/effort-project/blob/main/docs/claude-code-plugin.md",
   "repository": "https://github.com/AntyLab/effort-project",
   "license": "MIT",
-  "keywords": ["effort", "reasoning-effort", "advisory", "hooks", "mcp"],
+  "keywords": ["effort", "reasoning-effort", "routing", "hooks", "mcp"],
   "mcpServers": {
     "effort": {
       "command": "node",

@@ -9,6 +9,7 @@ import { PassThrough, Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { MAX_INPUT_BYTES, promptAdvice, runPromptHook } from '../src/integrations/claude-code-hook.mjs';
 import { toolDefinitions } from '../src/mcp.mjs';
+import { MODELS } from '../src/policy.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const hookEntry = join(root, 'hooks', 'prompt-advice.mjs');
@@ -16,9 +17,32 @@ const readJson = async (path) => JSON.parse(await readFile(join(root, path), 'ut
 const RACE = 'Investigate the intermittent race condition in the auth token refresh';
 const TYPO = 'Fix a typo in the README heading';
 const PLAIN = 'Add a settings page with a dark mode toggle';
-const message = (suggested, current) => `Effort suggests ${suggested} for this prompt (you're on ${current}). Apply with /effort ${suggested}`;
-const RAISE = "Effort suggests high for this prompt. If you're on a lower level, apply it with /effort high";
-const LOWER = "Effort suggests low for this prompt. If you're on a higher level, apply it with /effort low";
+const HARD = 'Review the authentication permissions';
+const INVESTIGATE = 'Investigate the intermittent rendering regression';
+const messages = {
+  fast: `Effort: ${MODELS.claude.fast} at low effort for this prompt.`,
+  frontier: `Effort: ${MODELS.claude.frontier} at high effort for this prompt.`,
+  hard: 'Effort: high effort for this prompt.',
+};
+
+function assertRoute(advice, route) {
+  assert.deepEqual(Object.keys(advice).sort(), ['hookSpecificOutput', 'systemMessage']);
+  assert.equal(advice.systemMessage, messages[route]);
+  const output = advice.hookSpecificOutput;
+  assert.deepEqual(Object.keys(output).sort(), ['additionalContext', 'hookEventName']);
+  assert.equal(output.hookEventName, 'UserPromptSubmit');
+  assert.ok(output.additionalContext.includes(`skill "effort-project:route-${route}"`));
+  assert.match(output.additionalContext, /Effort Project hook:.*invoke the Skill tool/i);
+  if (route === 'hard') {
+    assert.match(output.additionalContext, /Before anything else/);
+    assert.match(output.additionalContext, /then carry out the user's request as written/);
+  } else {
+    assert.match(output.additionalContext, /Do not carry out the request yourself/);
+    assert.match(output.additionalContext, /user's request verbatim as its arguments/);
+    assert.match(output.additionalContext, /plus any earlier conversation context the worker needs/);
+    assert.match(output.additionalContext, /Then relay the result/);
+  }
+}
 
 // The payload shape from https://code.claude.com/docs/en/hooks#userpromptsubmit-input
 const hookEvent = (prompt, cwd, extra = {}) => ({
@@ -117,7 +141,7 @@ test('plugin.json and marketplace.json follow the documented Claude Code formats
   assert.ok(existsSync(join(resolve(root, entry.source), '.claude-plugin', 'plugin.json')));
 });
 
-test('hooks.json registers one advisory exec-form UserPromptSubmit hook', async () => {
+test('hooks.json registers one routing exec-form UserPromptSubmit hook', async () => {
   const config = await readJson('hooks/hooks.json');
   assert.deepEqual(Object.keys(config), ['hooks'], 'a hooks file wraps the event map in "hooks"');
   assert.deepEqual(Object.keys(config.hooks), ['UserPromptSubmit']);
@@ -143,71 +167,73 @@ test('the explain skill pre-approves only the bundled recommendation tool', asyn
   const tool = 'effort_recommend';
   assert.ok(toolDefinitions.some((definition) => definition.name === tool && definition.annotations.readOnlyHint));
   assert.equal(fields['allowed-tools'], `mcp__plugin_${plugin.name}_${server}__${tool}`, 'plugin MCP tools are named mcp__plugin_<plugin>_<server>__<tool>');
-  assert.ok(body.includes(fields['allowed-tools']) && body.includes('$ARGUMENTS') && body.includes('/effort <level>'));
+  assert.ok(body.includes(fields['allowed-tools']) && body.includes('$ARGUMENTS') && body.includes('effort-project:route-fast') && body.includes('effort-project:route-frontier') && body.includes('effort-project:route-hard'));
 });
 
-test('advice names the suggested level only when a rule fired and it differs from the session level', async () => {
-  const advise = (prompt, level) => promptAdvice(hookEvent(prompt, root, { effort: { level } }));
-  assert.deepEqual(await advise(RACE, 'low'), { systemMessage: message('high', 'low') });
-  assert.deepEqual(await advise(RACE, 'medium'), { systemMessage: message('high', 'medium') });
-  assert.equal(await advise(RACE, 'high'), null);
-  assert.deepEqual(await advise(TYPO, 'medium'), { systemMessage: message('low', 'medium') });
-  assert.equal(await advise(TYPO, 'low'), null);
-  // Medium is the uncertain default: no rule fired, so a known level gets no line either.
-  for (const prompt of [PLAIN, 'continue', 'yes, go ahead']) {
-    for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) assert.equal(await advise(prompt, effort), null, `${prompt} on ${effort}`);
-  }
-  assert.equal(await advise(RACE, ' HIGH '), null, 'level names are normalized');
-  // Effort's rules stop at high, so high already covers xhigh and max sessions.
-  assert.equal(await advise(RACE, 'xhigh'), null);
-  assert.equal(await advise(RACE, 'max'), null);
-  assert.deepEqual(await advise(TYPO, 'max'), { systemMessage: message('low', 'max') });
-});
-
-test('the level comes only from the event, never from $CLAUDE_EFFORT', async (t) => {
-  // Claude Code documents effort.level and $CLAUDE_EFFORT for tool-use events only, and 2.1.299 sends
-  // neither to UserPromptSubmit hooks, so an event level guards a future change.
-  assert.deepEqual(await promptAdvice(hookEvent(RACE, root, { effort: { level: 'LOW ' } })), { systemMessage: message('high', 'low') });
-  assert.equal(await promptAdvice(hookEvent(TYPO, root, { effort: { level: 'low' } })), null);
-  for (const effort of ['high', 7, null, [], {}, { level: 3 }, { level: 'turbo' }]) {
-    assert.deepEqual(await promptAdvice(hookEvent(RACE, root, { effort })), { systemMessage: RAISE }, `effort ${JSON.stringify(effort)} is not a level`);
-  }
-  // An inherited CLAUDE_EFFORT, as in a shell started by another Claude Code session, describes that session.
-  const cwd = await tempProject(t);
-  const env = { CLAUDE_EFFORT: 'max' };
-  const typo = await runHook(hookEvent(TYPO, cwd), { env, cwd });
-  assert.deepEqual(JSON.parse(typo.stdout), { systemMessage: LOWER }, 'no level taken from the environment');
-  const race = await runHook(hookEvent(RACE, cwd), { env, cwd });
-  assert.deepEqual(JSON.parse(race.stdout), { systemMessage: RAISE }, 'not silenced by the inherited max');
-  const fromEvent = await runHook(hookEvent(TYPO, cwd, { effort: { level: 'high' } }), { env, cwd });
-  assert.deepEqual(JSON.parse(fromEvent.stdout), { systemMessage: message('low', 'high') });
-});
-
-test('advice without a known level is shown only for rule-based suggestions and never claims a level', async () => {
-  const advise = (prompt, level) => promptAdvice(hookEvent(prompt, root, level === undefined ? {} : { effort: { level } }));
-  // Claude Code 2.1.299 passes UserPromptSubmit hooks no level, so an unset, empty or unrecognized value is the usual case.
-  for (const effort of [undefined, null, '', '  ', 'auto', 'ultra', 7]) {
-    assert.deepEqual(await advise(RACE, effort), { systemMessage: RAISE }, `race prompt, effort ${effort}`);
-    assert.deepEqual(await advise(TYPO, effort), { systemMessage: LOWER }, `typo prompt, effort ${effort}`);
-    assert.equal(await advise(PLAIN, effort), null, `no rule fired, effort ${effort}`);
-  }
-  for (const text of [RAISE, LOWER]) assert.doesNotMatch(text, /you're on (?:low|medium|high|xhigh|max)\b/, 'the level is unknown, so the line does not state one');
-});
-
-test('advice stays silent without a task description and ignores the workspace', async () => {
-  for (const effort of ['low', undefined]) { // a known level and an unknown one
-    for (const prompt of ['', '   ', '/effort-project:explain', '  /deploy staging', '!npm test', 'x'.repeat(100_001), 42, null]) {
-      assert.equal(await promptAdvice(hookEvent(prompt, root, effort ? { effort: { level: effort } } : {})), null, `prompt ${String(prompt).slice(0, 20)}, effort ${effort}`);
+test('route skills declare the policy models, effort and exactly two forks', async () => {
+  for (const [route, tier, effort] of [['fast', 'fast', 'low'], ['frontier', 'frontier', 'high'], ['hard', null, 'high']]) {
+    const { fields, body } = frontmatter(await readFile(join(root, 'skills', `route-${route}`, 'SKILL.md'), 'utf8'));
+    assert.equal(fields.name, `route-${route}`);
+    assert.match(fields.description, /Invoke only when an Effort Project hook message asks for this skill/);
+    assert.equal(fields.effort, effort);
+    assert.deepEqual(Object.keys(fields).sort(), tier
+      ? ['context', 'description', 'effort', 'model', 'name'] : ['description', 'effort', 'name']);
+    assert.equal(fields.model, tier ? MODELS.claude[tier] : undefined);
+    assert.equal(fields.context, tier ? 'fork' : undefined);
+    if (tier) {
+      assert.match(body, /Carry out the request below exactly as written/);
+      assert.match(body, /\n\n\$ARGUMENTS\s*$/);
+      assert.match(body, route === 'fast' ? /report what was changed in one or two lines/ : /short report of findings and changes/);
+    } else {
+      assert.match(body, /high for the rest of this turn/);
+      assert.match(body, /user's latest request as written/);
+      assert.match(body, /Do not mention this step/);
     }
-    for (const event of [null, [], 'prompt', { ...hookEvent(RACE, root), hook_event_name: 'PreToolUse' }]) assert.equal(await promptAdvice(event), null);
-  }
-  // Only the prompt counts, so a missing, unreadable or stalled workspace cannot silence or delay the line.
-  for (const cwd of [join(root, 'no-such-directory'), undefined, 42]) {
-    assert.deepEqual(await promptAdvice(hookEvent(RACE, cwd)), { systemMessage: RAISE });
   }
 });
 
-test('runPromptHook prints only systemMessage JSON and fails open on bad input', async (t) => {
+test('prompt rules select a skill and user message without echoing the prompt', () => {
+  for (const [prompt, route] of [[TYPO, 'fast'], [HARD, 'hard'], [INVESTIGATE, 'hard'], [RACE, 'frontier']]) {
+    const advice = promptAdvice(hookEvent(prompt, root));
+    assertRoute(advice, route);
+    assert.ok(!JSON.stringify(advice).includes(prompt), 'the prompt is absent from all hook output');
+    const privatePrompt = `${prompt} PRIVATE_PROMPT_MARKER_5772`;
+    assert.deepEqual(promptAdvice(hookEvent(privatePrompt, root)), advice, 'output depends on the route, not the prompt text');
+    assert.ok(!JSON.stringify(advice).includes('PRIVATE_PROMPT_MARKER_5772'));
+  }
+  assertRoute(promptAdvice({ prompt: TYPO }), 'fast', 'a missing event name remains accepted');
+});
+
+test('routing ignores event effort and inherited $CLAUDE_EFFORT', async (t) => {
+  for (const effort of [undefined, 'high', 7, null, [], {}, { level: 3 }, { level: 'turbo' },
+    ...['low', 'medium', 'high', 'xhigh', 'max', ' HIGH '].map(level => ({ level }))]) {
+    assertRoute(promptAdvice(hookEvent(RACE, root, { effort })), 'frontier');
+    assertRoute(promptAdvice(hookEvent(TYPO, root, { effort })), 'fast');
+    assertRoute(promptAdvice(hookEvent(HARD, root, { effort })), 'hard');
+    for (const prompt of [PLAIN, 'continue', 'yes, go ahead']) assert.equal(promptAdvice(hookEvent(prompt, root, { effort })), null);
+  }
+  const cwd = await tempProject(t);
+  for (const [prompt, route] of [[TYPO, 'fast'], [HARD, 'hard'], [RACE, 'frontier']]) {
+    const result = await runHook(hookEvent(prompt, cwd), { env: { CLAUDE_EFFORT: 'max' }, cwd });
+    assert.equal(result.code, 0);
+    assertRoute(JSON.parse(result.stdout), route);
+  }
+});
+
+test('advice stays silent without a task description and ignores the workspace', () => {
+  for (const prompt of ['', '   ', '/effort-project:explain', '  /deploy staging', '!npm test', '  !echo hello', 'x'.repeat(100_001), 42, null, undefined]) {
+    assert.equal(promptAdvice(hookEvent(prompt, root)), null);
+  }
+  for (const event of [undefined, null, [], 'prompt', 42, {}, { ...hookEvent(RACE, root), hook_event_name: 'PreToolUse' }]) {
+    assert.equal(promptAdvice(event), null);
+  }
+  // Only the prompt counts, so a missing, unreadable or stalled workspace cannot silence or delay routing.
+  for (const cwd of [join(root, 'no-such-directory'), undefined, 42]) {
+    assertRoute(promptAdvice(hookEvent(RACE, cwd)), 'frontier');
+  }
+});
+
+test('runPromptHook prints routing context and systemMessage JSON and fails open on bad input', async (t) => {
   const capture = () => {
     const sink = new Writable({ write(chunk, encoding, callback) { sink.text += chunk; callback(); } });
     sink.text = '';
@@ -215,8 +241,8 @@ test('runPromptHook prints only systemMessage JSON and fails open on bad input',
   };
   const options = {};
   let stdout = capture(), stderr = capture();
-  assert.deepEqual(await runPromptHook({ ...options, stdin: Readable.from([JSON.stringify(hookEvent(RACE, root))]), stdout, stderr }), { systemMessage: RAISE });
-  assert.deepEqual(JSON.parse(stdout.text), { systemMessage: RAISE });
+  assertRoute(await runPromptHook({ ...options, stdin: Readable.from([JSON.stringify(hookEvent(RACE, root))]), stdout, stderr }), 'frontier');
+  assertRoute(JSON.parse(stdout.text), 'frontier');
   assert.ok(stdout.text.endsWith('}\n') && !stdout.text.slice(0, -1).includes('\n'), 'one JSON object, nothing around it');
   assert.equal(stderr.text, '');
 
@@ -249,36 +275,32 @@ test('runPromptHook prints only systemMessage JSON and fails open on bad input',
   assert.ok(!stderr.text.includes(marker));
 });
 
-test('the hook process prints advice JSON, stays silent on matches, and always exits 0', async (t) => {
+test('the hook process prints routing JSON, stays silent on skipped prompts, and always exits 0', async (t) => {
   const cwd = await tempProject(t);
-  const differing = await runHook(hookEvent(RACE, cwd, { effort: { level: 'medium' } }), { cwd });
-  assert.deepEqual({ code: differing.code, stderr: differing.stderr }, { code: 0, stderr: '' });
-  assert.deepEqual(JSON.parse(differing.stdout), { systemMessage: message('high', 'medium') });
-
-  // Claude Code 2.1.299 sets no CLAUDE_EFFORT for UserPromptSubmit hooks, so this is the usual case:
-  // a rule-based suggestion that does not claim a level.
-  const unknown = await runHook(hookEvent(RACE, cwd), { cwd });
-  assert.deepEqual({ code: unknown.code, stderr: unknown.stderr }, { code: 0, stderr: '' });
-  assert.deepEqual(JSON.parse(unknown.stdout), { systemMessage: RAISE });
-  const fromEvent = await runHook(hookEvent(RACE, cwd, { effort: { level: 'low' } }), { cwd });
-  assert.deepEqual(JSON.parse(fromEvent.stdout), { systemMessage: message('high', 'low') });
+  for (const [prompt, route] of [[TYPO, 'fast'], [HARD, 'hard'], [INVESTIGATE, 'hard'], [RACE, 'frontier']]) {
+    const result = await runHook(hookEvent(prompt, cwd), { cwd });
+    assert.deepEqual({ code: result.code, stderr: result.stderr }, { code: 0, stderr: '' });
+    assertRoute(JSON.parse(result.stdout), route);
+    assert.ok(!result.stdout.includes(prompt));
+  }
   const noWorkspace = await runHook(hookEvent(RACE, join(cwd, 'deleted')), { cwd });
-  assert.deepEqual(JSON.parse(noWorkspace.stdout), { systemMessage: RAISE }, 'the workspace is never read');
+  assertRoute(JSON.parse(noWorkspace.stdout), 'frontier');
 
   const silent = [
-    ['matching level', hookEvent(RACE, cwd, { effort: { level: 'high' } }), {}],
-    ['matching low level', hookEvent(TYPO, cwd, { effort: { level: 'low' } }), {}],
-    ['unknown level, no rule fired', hookEvent(PLAIN, cwd), {}],
-    ['known level, no rule fired', hookEvent('continue', cwd, { effort: { level: 'high' } }), {}],
-    ['event level matches', hookEvent(RACE, cwd, { effort: { level: 'max' } }), {}],
-    ['malformed JSON', '{"hook_event_name":"UserPromptSubmit","prompt":"PRIVATE_PROMPT_MARKER_2718', {}],
-    ['not an object', '["UserPromptSubmit"]', {}],
-    ['empty input', '', {}],
-    ['oversized input', JSON.stringify(hookEvent('z'.repeat(2 * MAX_INPUT_BYTES), cwd)), {}],
-    ['another event', { ...hookEvent(RACE, cwd), hook_event_name: 'Stop' }, {}],
+    ['no rule fired', hookEvent(PLAIN, cwd)],
+    ['follow-up', hookEvent('continue', cwd)],
+    ['slash command', hookEvent('  /effort high', cwd)],
+    ['bang command', hookEvent('  !npm test', cwd)],
+    ['empty prompt', hookEvent('  ', cwd)],
+    ['oversized prompt', hookEvent('typo ' + 'z'.repeat(100_001), cwd)],
+    ['malformed JSON', '{"hook_event_name":"UserPromptSubmit","prompt":"PRIVATE_PROMPT_MARKER_2718'],
+    ['not an object', '["UserPromptSubmit"]'],
+    ['empty input', ''],
+    ['oversized input', JSON.stringify(hookEvent('z'.repeat(2 * MAX_INPUT_BYTES), cwd))],
+    ['another event', { ...hookEvent(RACE, cwd), hook_event_name: 'Stop' }],
   ];
-  for (const [name, event, env] of silent) {
-    const result = await runHook(event, { env, cwd });
+  for (const [name, event] of silent) {
+    const result = await runHook(event, { cwd });
     assert.deepEqual({ code: result.code, signal: result.signal, stdout: result.stdout, stderr: result.stderr }, { code: 0, signal: null, stdout: '', stderr: '' }, name);
   }
 });
@@ -288,7 +310,7 @@ test('repository breadth does not change the line: many languages or named files
   const cwd = await tempProject(t);
   for (const file of ['a.py', 'b.go', 'c.ts', 'd.rs', 'e.js']) await writeFile(join(cwd, file), '\n');
   const cases = [
-    ['Fix the typo in the README', LOWER],
+    ['Fix the typo in the README', 'fast'],
     ['continue', null],
     ['yes, go ahead', null],
     ['Fix the broken link in the README', null],
@@ -296,12 +318,13 @@ test('repository breadth does not change the line: many languages or named files
     ['Change the button color from blue to green', null],
     [PLAIN, null],
     ['Update a.py, b.go, c.ts, d.rs and e.js to the new logger', null],
-    [RACE, RAISE],
+    [RACE, 'frontier'],
   ];
   for (const [prompt, expected] of cases) {
     const result = await runHook(hookEvent(prompt, cwd), { cwd });
     assert.equal(result.code, 0, prompt);
-    assert.deepEqual(result.stdout ? JSON.parse(result.stdout) : null, expected && { systemMessage: expected }, prompt);
+    if (expected) assertRoute(JSON.parse(result.stdout), expected);
+    else assert.equal(result.stdout, '', prompt);
   }
 });
 
@@ -315,7 +338,7 @@ test('the hook adds little to Node startup and never stores, logs or sends the p
   const before = (await readdir(cwd)).sort();
   const result = await runHook(hookEvent(`${RACE} ${marker}`, cwd), { env, cwd });
   assert.equal(result.code, 0);
-  assert.deepEqual(JSON.parse(result.stdout), { systemMessage: RAISE });
+  assertRoute(JSON.parse(result.stdout), 'frontier');
   assert.ok(!(result.stdout + result.stderr).includes(marker), 'the prompt is never echoed or logged');
   assert.deepEqual(await readdir(sandbox, { recursive: true }), [], 'nothing written to home, temp or plugin data');
   assert.deepEqual((await readdir(cwd)).sort(), before, 'nothing written to the workspace');
@@ -396,7 +419,7 @@ test('an installed copy of the plugin root runs without the rest of the checkout
   const hook = await runProcess(config.args.map((arg) => substitute(arg, installed)),
     { input: JSON.stringify(hookEvent(TYPO, cwd, { effort: { level: 'high' } })), cwd });
   assert.equal(hook.code, 0, hook.stderr);
-  assert.deepEqual(JSON.parse(hook.stdout), { systemMessage: message('low', 'high') });
+  assertRoute(JSON.parse(hook.stdout), 'fast');
   const server = JSON.parse(await readFile(join(installed, '.claude-plugin', 'plugin.json'), 'utf8')).mcpServers.effort;
   const mcp = await runProcess(server.args.map((arg) => substitute(arg, installed)),
     { input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) + '\n', cwd });
