@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, open, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { PassThrough, Readable, Writable } from 'node:stream';
@@ -25,9 +25,16 @@ const messages = {
   hard: 'Effort: high effort for this prompt.',
 };
 
-function assertRoute(advice, route) {
+function assertSuggestion(advice, tier, effort, inherited = false) {
+  const model = MODELS.claude[tier];
+  assert.deepEqual(advice, {
+    systemMessage: `Effort suggests ${model} · ${effort} effort for this prompt (/model ${model}, /effort ${effort}).${inherited ? ' Based on your earlier request.' : ''}`,
+  });
+}
+
+function assertRoute(advice, route, inherited = false) {
   assert.deepEqual(Object.keys(advice).sort(), ['hookSpecificOutput', 'systemMessage']);
-  assert.equal(advice.systemMessage, messages[route]);
+  assert.equal(advice.systemMessage, messages[route] + (inherited ? ' Based on your earlier request.' : ''));
   const output = advice.hookSpecificOutput;
   assert.deepEqual(Object.keys(output).sort(), ['additionalContext', 'hookEventName']);
   assert.equal(output.hookEventName, 'UserPromptSubmit');
@@ -62,7 +69,7 @@ async function tempProject(t) {
 function runProcess(args, { input = '', env = {}, cwd = root } = {}) {
   return new Promise((done, fail) => {
     const started = performance.now();
-    const child = spawn(process.execPath, args, { cwd, env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const child = spawn(process.execPath, args, { cwd, env: { ...process.env, EFFORT_AUTO_ROUTE: '', ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let stdout = '', stderr = '';
     child.stdout.setEncoding('utf8').on('data', (data) => { stdout += data; });
     child.stderr.setEncoding('utf8').on('data', (data) => { stderr += data; });
@@ -192,31 +199,145 @@ test('route skills declare the policy models, effort and exactly two forks', asy
   }
 });
 
-test('prompt rules select a skill and user message without echoing the prompt', () => {
-  for (const [prompt, route] of [[TYPO, 'fast'], [HARD, 'hard'], [INVESTIGATE, 'hard'], [RACE, 'frontier']]) {
+test('default advice is only a suggestion for every eligible effort and never echoes the prompt', () => {
+  for (const [prompt, tier, effort] of [[TYPO, 'fast', 'low'], [PLAIN, 'daily', 'medium'],
+    [HARD, 'daily', 'high'], [INVESTIGATE, 'daily', 'high'], [RACE, 'frontier', 'high']]) {
     const advice = promptAdvice(hookEvent(prompt, root));
-    assertRoute(advice, route);
-    assert.ok(!JSON.stringify(advice).includes(prompt), 'the prompt is absent from all hook output');
-    const privatePrompt = `${prompt} PRIVATE_PROMPT_MARKER_5772`;
-    assert.deepEqual(promptAdvice(hookEvent(privatePrompt, root)), advice, 'output depends on the route, not the prompt text');
-    assert.ok(!JSON.stringify(advice).includes('PRIVATE_PROMPT_MARKER_5772'));
+    assertSuggestion(advice, tier, effort);
+    assert.ok(!JSON.stringify(advice).includes(prompt));
+    assert.deepEqual(promptAdvice(hookEvent(`${prompt} PRIVATE_PROMPT_MARKER_5772`, root)), advice);
   }
-  assertRoute(promptAdvice({ prompt: TYPO }), 'fast', 'a missing event name remains accepted');
+  assertSuggestion(promptAdvice({ prompt: TYPO }), 'fast', 'low');
+});
+
+test('auto-route explicitly opts into the old low/high routes and a plain medium suggestion', () => {
+  for (const value of ['1', 'true', 'yes', 'on', 'TRUE', 'Yes', 'oN']) {
+    const options = { env: { EFFORT_AUTO_ROUTE: value } };
+    for (const [prompt, route] of [[TYPO, 'fast'], [HARD, 'hard'], [INVESTIGATE, 'hard'], [RACE, 'frontier']]) {
+      const advice = promptAdvice(hookEvent(prompt, root), options);
+      assertRoute(advice, route);
+      assert.ok(!JSON.stringify(advice).includes(prompt));
+    }
+    assertSuggestion(promptAdvice(hookEvent(PLAIN, root), options), 'daily', 'medium');
+  }
+  for (const value of [undefined, '', '0', 'false', 'no', 'off', 'enabled', '11']) {
+    assertSuggestion(promptAdvice({ prompt: RACE }, { env: { EFFORT_AUTO_ROUTE: value } }), 'frontier', 'high');
+  }
 });
 
 test('routing ignores event effort and inherited $CLAUDE_EFFORT', async (t) => {
   for (const effort of [undefined, 'high', 7, null, [], {}, { level: 3 }, { level: 'turbo' },
     ...['low', 'medium', 'high', 'xhigh', 'max', ' HIGH '].map(level => ({ level }))]) {
-    assertRoute(promptAdvice(hookEvent(RACE, root, { effort })), 'frontier');
-    assertRoute(promptAdvice(hookEvent(TYPO, root, { effort })), 'fast');
-    assertRoute(promptAdvice(hookEvent(HARD, root, { effort })), 'hard');
-    for (const prompt of [PLAIN, 'continue', 'yes, go ahead']) assert.equal(promptAdvice(hookEvent(prompt, root, { effort })), null);
+    for (const [prompt, route, tier, level] of [[RACE, 'frontier', 'frontier', 'high'],
+      [TYPO, 'fast', 'fast', 'low'], [HARD, 'hard', 'daily', 'high']]) {
+      assertSuggestion(promptAdvice(hookEvent(prompt, root, { effort })), tier, level);
+      assertRoute(promptAdvice(hookEvent(prompt, root, { effort }), { env: { EFFORT_AUTO_ROUTE: '1' } }), route);
+    }
+    for (const prompt of [PLAIN, 'continue', 'yes, go ahead']) {
+      assertSuggestion(promptAdvice(hookEvent(prompt, root, { effort })), 'daily', 'medium');
+    }
   }
   const cwd = await tempProject(t);
   for (const [prompt, route] of [[TYPO, 'fast'], [HARD, 'hard'], [RACE, 'frontier']]) {
-    const result = await runHook(hookEvent(prompt, cwd), { env: { CLAUDE_EFFORT: 'max' }, cwd });
+    const result = await runHook(hookEvent(prompt, cwd), { env: { CLAUDE_EFFORT: 'max', EFFORT_AUTO_ROUTE: '1' }, cwd });
     assert.equal(result.code, 0);
     assertRoute(JSON.parse(result.stdout), route);
+  }
+  const medium = await runHook(hookEvent(PLAIN, cwd), { env: { EFFORT_AUTO_ROUTE: '1' }, cwd });
+  assertSuggestion(JSON.parse(medium.stdout), 'daily', 'medium');
+});
+
+const userLine = (content, extra = {}) => ({ type: 'user', message: { role: 'user', content }, ...extra });
+
+async function transcript(t, entries) {
+  const dir = await tempProject(t);
+  const path = join(dir, 'session.jsonl');
+  await writeFile(path, entries.map(entry => typeof entry === 'string' ? entry : JSON.stringify(entry)).join('\n') + '\n');
+  return path;
+}
+
+test('short follow-ups inherit the most recent signal within three earlier user prompts', async (t) => {
+  for (const [earlier, tier, effort, route] of [[TYPO, 'fast', 'low', 'fast'], [RACE, 'frontier', 'high', 'frontier'], [HARD, 'daily', 'high', 'hard']]) {
+    const transcript_path = await transcript(t, [userLine(earlier), userLine('ok'), userLine('continue')]);
+    for (const auto of [false, true]) {
+      const result = await runHook(hookEvent('continue', root, { transcript_path }), { env: { EFFORT_AUTO_ROUTE: auto ? '1' : '' } });
+      assert.equal(result.code, 0);
+      assert.equal(result.stderr, '');
+      const advice = JSON.parse(result.stdout);
+      if (auto) assertRoute(advice, route, true);
+      else assertSuggestion(advice, tier, effort, true);
+      assert.ok(!result.stdout.includes(earlier) && !result.stdout.includes('continue'));
+    }
+  }
+  const options = { previousPrompts: ['ok', 'yes', RACE, TYPO] };
+  assertSuggestion(promptAdvice({ prompt: 'continue' }, options), 'frontier', 'high', true);
+  assertSuggestion(promptAdvice({ prompt: 'continue' }, { previousPrompts: ['ok', 'yes', 'go ahead', RACE] }), 'daily', 'medium');
+  assertSuggestion(promptAdvice({ prompt: 'continue' }, { previousPrompts: [TYPO, RACE] }), 'fast', 'low', true);
+  assertSuggestion(promptAdvice({ prompt: 'x'.repeat(80) }, options), 'frontier', 'high', true);
+  assertSuggestion(promptAdvice({ prompt: 'x'.repeat(81) }, options), 'daily', 'medium');
+  assertSuggestion(promptAdvice({ prompt: '  ' + 'x'.repeat(80) + '  ' }, options), 'frontier', 'high', true);
+  assertSuggestion(promptAdvice({ prompt: TYPO }, options), 'fast', 'low');
+  assertSuggestion(promptAdvice({ prompt: HARD }, { previousPrompts: [TYPO] }), 'daily', 'high');
+});
+
+test('transcript context ignores tool results, meta entries, commands, malformed lines and the current prompt', async (t) => {
+  const marker = 'PRIVATE_TRANSCRIPT_MARKER_9531';
+  const transcript_path = await transcript(t, [
+    userLine([{ type: 'text', text: TYPO }, { type: 'tool_result', content: RACE }, { type: 'text', text: marker }]),
+    userLine('ok'), userLine('yes'),
+    userLine(RACE, { isMeta: true }),
+    userLine([{ type: 'tool_result', content: RACE }]),
+    userLine('/investigate auth'), userLine('  !debug auth'), userLine('<command-name>debug auth</command-name>'),
+    { type: 'assistant', message: { role: 'user', content: RACE } },
+    { type: 'user', message: { role: 'assistant', content: RACE } },
+    userLine(null), userLine([{ type: 'text', text: 42 }]),
+    '{malformed', 'null', userLine('continue'),
+  ]);
+  const result = await runHook(hookEvent('continue', root, { transcript_path }));
+  assertSuggestion(JSON.parse(result.stdout), 'fast', 'low', true);
+  assert.ok(!(result.stdout + result.stderr).includes(marker));
+
+  const tooFar = await transcript(t, [userLine(RACE), userLine('one'), userLine('two'), userLine('three')]);
+  assertSuggestion(JSON.parse((await runHook(hookEvent('continue', root, { transcript_path: tooFar }))).stdout), 'daily', 'medium');
+});
+
+test('transcript reads are bounded to the last 64 KiB and discard the first partial line', async (t) => {
+  const transcript_path = await transcript(t, [userLine(RACE), JSON.stringify({ padding: 'x'.repeat(70_000) }), userLine(TYPO)]);
+  const handle = await open(transcript_path, 'r');
+  const { size } = await handle.stat();
+  const prototype = Object.getPrototypeOf(handle);
+  const original = prototype.read;
+  await handle.close();
+  const reads = [];
+  t.mock.method(prototype, 'read', function(buffer, offset, length, position) {
+    reads.push({ length, position });
+    return original.call(this, buffer, offset, length, position);
+  });
+  const sink = new Writable({ write(chunk, encoding, callback) { callback(); } });
+  const advice = await runPromptHook({ stdin: Readable.from([JSON.stringify(hookEvent('continue', root, { transcript_path }))]), stdout: sink, env: {} });
+  assertSuggestion(advice, 'fast', 'low', true);
+  assert.deepEqual(reads, [{ length: 65_536, position: size - 65_536 }]);
+  for (const prompt of [RACE, TYPO, 'x'.repeat(81)]) {
+    await runPromptHook({ stdin: Readable.from([JSON.stringify(hookEvent(prompt, root, { transcript_path }))]), stdout: sink, env: {} });
+  }
+  assert.equal(reads.length, 1, 'only short prompts without a signal read context');
+
+  // The truncated first line ends with a valid user object; it must not count.
+  const partial = await transcript(t, []);
+  const first = JSON.stringify(userLine(RACE)) + '\n';
+  const last = '\n' + JSON.stringify(userLine('ok')) + '\n';
+  await writeFile(partial, 'x'.repeat(70_000) + first + ' '.repeat(65_536 - Buffer.byteLength(first + last)) + last);
+  const result = await runHook(hookEvent('continue', root, { transcript_path: partial }));
+  assertSuggestion(JSON.parse(result.stdout), 'daily', 'medium');
+});
+
+test('missing, relative, unreadable and directory transcript paths fall back silently', async (t) => {
+  const dir = await tempProject(t);
+  for (const transcript_path of [undefined, null, 42, {}, 'session.jsonl', join(dir, 'missing'), join(dir, 'index.js', 'session.jsonl'), dir, dir + '\0']) {
+    const result = await runHook(hookEvent('continue', root, { transcript_path }));
+    assert.equal(result.code, 0);
+    assert.equal(result.stderr, '');
+    assertSuggestion(JSON.parse(result.stdout), 'daily', 'medium');
   }
 });
 
@@ -229,7 +350,7 @@ test('advice stays silent without a task description and ignores the workspace',
   }
   // Only the prompt counts, so a missing, unreadable or stalled workspace cannot silence or delay routing.
   for (const cwd of [join(root, 'no-such-directory'), undefined, 42]) {
-    assertRoute(promptAdvice(hookEvent(RACE, cwd)), 'frontier');
+    assertSuggestion(promptAdvice(hookEvent(RACE, cwd)), 'frontier', 'high');
   }
 });
 
@@ -239,7 +360,7 @@ test('runPromptHook prints routing context and systemMessage JSON and fails open
     sink.text = '';
     return sink;
   };
-  const options = {};
+  const options = { env: { EFFORT_AUTO_ROUTE: '1' } };
   let stdout = capture(), stderr = capture();
   assertRoute(await runPromptHook({ ...options, stdin: Readable.from([JSON.stringify(hookEvent(RACE, root))]), stdout, stderr }), 'frontier');
   assertRoute(JSON.parse(stdout.text), 'frontier');
@@ -277,18 +398,17 @@ test('runPromptHook prints routing context and systemMessage JSON and fails open
 
 test('the hook process prints routing JSON, stays silent on skipped prompts, and always exits 0', async (t) => {
   const cwd = await tempProject(t);
-  for (const [prompt, route] of [[TYPO, 'fast'], [HARD, 'hard'], [INVESTIGATE, 'hard'], [RACE, 'frontier']]) {
+  for (const [prompt, tier, effort] of [[TYPO, 'fast', 'low'], [PLAIN, 'daily', 'medium'],
+    ['continue', 'daily', 'medium'], [HARD, 'daily', 'high'], [INVESTIGATE, 'daily', 'high'], [RACE, 'frontier', 'high']]) {
     const result = await runHook(hookEvent(prompt, cwd), { cwd });
     assert.deepEqual({ code: result.code, stderr: result.stderr }, { code: 0, stderr: '' });
-    assertRoute(JSON.parse(result.stdout), route);
+    assertSuggestion(JSON.parse(result.stdout), tier, effort);
     assert.ok(!result.stdout.includes(prompt));
   }
   const noWorkspace = await runHook(hookEvent(RACE, join(cwd, 'deleted')), { cwd });
-  assertRoute(JSON.parse(noWorkspace.stdout), 'frontier');
+  assertSuggestion(JSON.parse(noWorkspace.stdout), 'frontier', 'high');
 
   const silent = [
-    ['no rule fired', hookEvent(PLAIN, cwd)],
-    ['follow-up', hookEvent('continue', cwd)],
     ['slash command', hookEvent('  /effort high', cwd)],
     ['bang command', hookEvent('  !npm test', cwd)],
     ['empty prompt', hookEvent('  ', cwd)],
@@ -323,8 +443,7 @@ test('repository breadth does not change the line: many languages or named files
   for (const [prompt, expected] of cases) {
     const result = await runHook(hookEvent(prompt, cwd), { cwd });
     assert.equal(result.code, 0, prompt);
-    if (expected) assertRoute(JSON.parse(result.stdout), expected);
-    else assert.equal(result.stdout, '', prompt);
+    assertSuggestion(JSON.parse(result.stdout), expected ?? 'daily', expected === 'fast' ? 'low' : expected === 'frontier' ? 'high' : 'medium');
   }
 });
 
@@ -338,7 +457,7 @@ test('the hook adds little to Node startup and never stores, logs or sends the p
   const before = (await readdir(cwd)).sort();
   const result = await runHook(hookEvent(`${RACE} ${marker}`, cwd), { env, cwd });
   assert.equal(result.code, 0);
-  assertRoute(JSON.parse(result.stdout), 'frontier');
+  assertSuggestion(JSON.parse(result.stdout), 'frontier', 'high');
   assert.ok(!(result.stdout + result.stderr).includes(marker), 'the prompt is never echoed or logged');
   assert.deepEqual(await readdir(sandbox, { recursive: true }), [], 'nothing written to home, temp or plugin data');
   assert.deepEqual((await readdir(cwd)).sort(), before, 'nothing written to the workspace');
@@ -351,11 +470,9 @@ test('the hook adds little to Node startup and never stores, logs or sends the p
   assert.deepEqual([...graph.packages], [], 'no third-party packages');
   const networked = ['node:http', 'node:https', 'node:http2', 'node:net', 'node:tls', 'node:dgram', 'node:dns', 'node:child_process', 'node:worker_threads'];
   assert.deepEqual([...graph.builtins].filter((name) => networked.includes(name)), [], 'no network or process modules');
-  // A stalled filesystem call would keep the process alive after process.exit() on Windows.
-  assert.deepEqual([...graph.builtins].filter((name) => /^node:fs\b/.test(name)), [], 'no filesystem modules');
   for (const [file, source] of graph.files) {
     assert.doesNotMatch(source, /\b(?:fetch|WebSocket|EventSource|XMLHttpRequest)\s*\(/, `${file} makes no requests`);
-    assert.doesNotMatch(source, /\b(?:writeFile|appendFile|createWriteStream|mkdir|mkdtemp|copyFile|writeFileSync|appendFileSync)\s*\(|\bconsole\.\w+\s*\(/, `${file} neither writes files nor logs`);
+    assert.doesNotMatch(source, /\b(?:writeFile|appendFile|createWriteStream|mkdir|mkdtemp|rm|unlink|rename|copyFile)(?:Sync)?\s*\(|\bconsole\.\w+\s*\(/, `${file} neither writes files nor logs`);
   }
 
   // Timing: Node startup dominates; the advice itself is a few regular expressions.
@@ -419,7 +536,7 @@ test('an installed copy of the plugin root runs without the rest of the checkout
   const hook = await runProcess(config.args.map((arg) => substitute(arg, installed)),
     { input: JSON.stringify(hookEvent(TYPO, cwd, { effort: { level: 'high' } })), cwd });
   assert.equal(hook.code, 0, hook.stderr);
-  assertRoute(JSON.parse(hook.stdout), 'fast');
+  assertSuggestion(JSON.parse(hook.stdout), 'fast', 'low');
   const server = JSON.parse(await readFile(join(installed, '.claude-plugin', 'plugin.json'), 'utf8')).mcpServers.effort;
   const mcp = await runProcess(server.args.map((arg) => substitute(arg, installed)),
     { input: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) + '\n', cwd });
