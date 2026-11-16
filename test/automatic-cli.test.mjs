@@ -56,6 +56,13 @@ test('automatic dry runs work without a TTY or provider executables and disclose
   await assert.rejects(access(f.metadata), { code: 'ENOENT' });
 });
 
+test('Claude automatic timeouts round decimal seconds to whole milliseconds', async (t) => {
+  const f = await fixture(t);
+  const result = f.invoke(['auto', 'claude', '--timeout', '16.1', '--dry-run']);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(JSON.parse(result.stdout).timeoutMs, 16_100);
+});
+
 test('auto commands require a terminal before launching any live integration', async (t) => {
   const f = await fixture(t);
   for (const provider of ['codex', 'claude']) {
@@ -121,13 +128,22 @@ test('explicit CLI bounds and model retain precedence over validated routing con
   await assert.rejects(access(f.metadata), { code: 'ENOENT' });
 });
 
-test('config opencode generates an importable native plugin from an installation path containing spaces and percent characters', async (t) => {
+test('config generators preserve installation paths containing spaces and percent characters', async (t) => {
   const f = await fixture(t);
   const installed = join(f.cwd, 'installed project 100%');
   await mkdir(installed);
   await cp(join(root, 'bin'), join(installed, 'bin'), { recursive: true });
   await cp(join(root, 'src'), join(installed, 'src'), { recursive: true });
-  const generated = f.invoke(['config', 'opencode'], join(installed, 'bin', 'effort.mjs'));
+  const entry = join(installed, 'bin', 'effort.mjs');
+  const claude = f.invoke(['config', 'claude'], entry);
+  assert.equal(claude.status, 0, claude.stderr);
+  assert.deepEqual(JSON.parse(claude.stdout), {
+    mcpServers: { effort: { command: process.execPath, args: [entry, 'mcp'] } },
+  });
+  const codex = f.invoke(['config', 'codex'], entry);
+  assert.equal(codex.status, 0, codex.stderr);
+  assert.equal(codex.stdout, `[mcp_servers.effort]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [${JSON.stringify(entry)}, "mcp"]\n`);
+  const generated = f.invoke(['config', 'opencode'], entry);
   assert.equal(generated.status, 0, generated.stderr);
   assert.equal(generated.stderr, '');
   const wrapper = join(f.cwd, 'generated-plugin.mjs');

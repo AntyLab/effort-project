@@ -280,11 +280,24 @@ test('a passing check settles when it exits, even if a descendant keeps stdout o
     try{process.kill(Number(await readFile(join(cwd,'child.pid'),'utf8')),'SIGKILL');}catch{}
   }
 });
-test('verification timeout reaps descendants holding stdout open',{skip:process.platform==='win32'},async()=>{
+test('verification timeout reaps descendants holding stdout open',{skip:process.platform==='win32'},async(t)=>{
   const cwd=await mkdtemp(join(tmpdir(),'effort-tree-'));
-  const script=`const {spawn}=require('node:child_process'); const fs=require('node:fs'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000)'],{stdio:['ignore','inherit','inherit']}); fs.writeFileSync('pid',String(c.pid));setInterval(()=>{},1000);`;
-  const start=Date.now();const result=await verify([process.execPath,'-e',script],{cwd,timeoutMs:150});
-  assert.equal(result.kind,'timeout');assert.ok(Date.now()-start<2200);
+  const script=`const {spawn}=require('node:child_process'); const fs=require('node:fs'); const c=spawn(process.execPath,['-e','process.on("SIGTERM",()=>{});setInterval(()=>{},1000);process.send("ready")'],{stdio:['ignore','inherit','inherit','ipc']}); c.once('message',()=>fs.writeFileSync('pid',String(c.pid)));setInterval(()=>{},1000);`;
+  // Real process startup is independent of the short timeout being exercised.
+  const realTimeout=globalThis.setTimeout;
+  t.mock.timers.enable({apis:['setTimeout']});
+  const controller=new AbortController();let timersActive=true;
+  t.after(()=>{controller.abort();if(timersActive){t.mock.timers.tick(500);t.mock.timers.reset();}});
+  const running=verify([process.execPath,'-e',script],{cwd,timeoutMs:150,signal:controller.signal});
+  const startup=performance.now();
+  while(true){
+    try{await readFile(join(cwd,'pid'),'utf8');break;}catch(error){if(error.code!=='ENOENT')throw error;}
+    assert.ok(performance.now()-startup<10_000,'fixture did not become ready');
+    await new Promise(done=>realTimeout(done,20));
+  }
+  const start=performance.now();t.mock.timers.tick(150);t.mock.timers.tick(500);
+  const result=await running;t.mock.timers.reset();timersActive=false;
+  assert.equal(result.kind,'timeout');assert.ok(performance.now()-start<2200);
   const pid=Number(await readFile(join(cwd,'pid'),'utf8'));assert.throws(()=>process.kill(pid,0));
 });
 async function fixture(run){

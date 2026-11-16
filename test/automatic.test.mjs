@@ -64,3 +64,56 @@ test('model routing tables accept only explicit effort-to-ID mappings', () => {
   assert.throws(() => validateModelMap({ high: '--flag value' }), /model ID/);
   assert.throws(() => validateModelMap([]), /models/);
 });
+
+test('preview neither creates a session nor consumes a simpler-request count', () => {
+  const router = createAutomaticRouter();
+  request(router, 'Debug a regression.', { preview: true });
+  assert.equal(request(router, 'Fix a typo.').effort, 'low');
+  request(router, 'Debug a regression.');
+  assert.equal(request(router, 'Fix a typo.', { preview: true }).effort, 'high');
+  assert.equal(request(router, 'Fix a typo.').effort, 'high');
+  assert.equal(request(router, 'Fix a typo.').effort, 'low');
+});
+
+test('continuations and renewed complexity reset a pending downgrade', () => {
+  for (const reset of ['yes', 'Debug the regression again.']) {
+    const router = createAutomaticRouter();
+    request(router, 'Investigate a race condition.');
+    request(router, 'Fix a typo.');
+    assert.equal(request(router, reset).effort, 'high');
+    assert.equal(request(router, 'Fix a typo.').effort, 'high');
+    assert.equal(request(router, 'Fix a typo.').effort, 'low');
+  }
+});
+
+test('preserving an unsupported request keeps the prior session state', () => {
+  const router = createAutomaticRouter();
+  request(router, 'Debug a regression.');
+  assert.equal(request(router, 'Fix a typo.', { supportedEfforts: ['low'] }).action, 'preserve');
+  assert.equal(request(router, 'Fix a typo.').effort, 'high');
+  assert.equal(request(router, 'Fix a typo.').effort, 'low');
+  assert.equal(request(createAutomaticRouter({ effort: 'medium' }), 'Fix a typo.', { supportedEfforts: ['high'] }).action, 'preserve');
+});
+
+test('routing evicts the least recently used session after 256 applied sessions', () => {
+  const router = createAutomaticRouter();
+  for (let i = 0; i < 256; i++) request(router, 'Debug a regression.', { sessionId: String(i) });
+  request(router, 'continue', { sessionId: '0' });
+  request(router, 'Debug a regression.', { sessionId: '256' });
+  assert.equal(request(router, 'Fix a typo.', { sessionId: '0' }).effort, 'high');
+  assert.equal(request(router, 'Fix a typo.', { sessionId: '1' }).effort, 'low');
+});
+
+test('routing validates bounded IDs, effort levels and plain model maps', () => {
+  for (const sessionId of [undefined, '', 1, 'x'.repeat(513)]) {
+    assert.throws(() => request(createAutomaticRouter(), 'Fix a typo.', { sessionId }), /conversation ID/);
+  }
+  assert.equal(request(createAutomaticRouter(), 'Fix a typo.', { sessionId: 'x'.repeat(512) }).action, 'apply');
+  for (const options of [{ minEffort: 'invalid' }, { maxEffort: 'invalid' }, { effort: 'invalid' }]) {
+    assert.throws(() => createAutomaticRouter(options), /Unsupported effort/);
+  }
+  assert.equal(validateModelMap(undefined), undefined);
+  for (const models of [null, 'model', Object.create(null), { high: '' }, { high: 'x'.repeat(201) }]) {
+    assert.throws(() => validateModelMap(models));
+  }
+});

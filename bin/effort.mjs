@@ -97,7 +97,7 @@ async function main(){
     if(options.model!==undefined)validateModelMap({low:options.model});
     if(provider==='claude'){
       options.allowWrite=values['allow-write']??false;
-      options.timeoutMs=number(values.timeout,120)*1000;
+      options.timeoutMs=milliseconds(values.timeout,120);
       if(!Number.isSafeInteger(options.timeoutMs)||options.timeoutMs<1||options.timeoutMs>1_800_000)throw new Error('Claude timeout must be between 0.001 and 1800 seconds.');
       if(options.effort!=='auto'&&!getAdapter('claude').capabilities.levels.includes(options.effort))throw new Error('The Claude adapter supports low, medium, or high effort.');
     }

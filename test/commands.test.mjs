@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm, chmod } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import { findCommand, variable } from '../src/commands.mjs';
 import { verify, resolveVerification } from '../src/verify.mjs';
 import { runTask } from '../src/runner.mjs';
@@ -82,6 +82,39 @@ test('POSIX finds executables on PATH and checks paths relative to the working d
   assert.deepEqual(findCommand('check.sh', { env: { PATH: dir } }), { executable: join(dir, 'check.sh'), executableArgs: [] });
   assert.deepEqual(findCommand('./check.sh', { cwd: dir }), { executable: './check.sh', executableArgs: [] });
   assert.equal(findCommand('./missing.sh', { cwd: dir }), null);
+});
+
+test('POSIX resolves relative PATH entries from the child working directory', { skip: process.platform === 'win32' }, async (t) => {
+  const dir = await directory(t, 'effort-commands-relative-');
+  await mkdir(join(dir, 'bin'));
+  await writeFile(join(dir, 'bin', 'check'), '#!/bin/sh\nexit 0\n');
+  await chmod(join(dir, 'bin', 'check'), 0o755);
+  const env = { PATH: 'bin' };
+  assert.deepEqual(findCommand('check', { cwd: dir, env }), { executable: join(dir, 'bin', 'check'), executableArgs: [] });
+  assert.equal((await verify(['check'], { cwd: dir, env })).status, 'passed');
+});
+
+test('Windows resolves relative PATH entries from the child working directory', async (t) => {
+  const dir = await directory(t, 'effort-commands-relative-win-');
+  await mkdir(join(dir, 'bin'));
+  await writeFile(join(dir, 'bin', 'check.exe'), 'fake executable');
+  for (const cwd of [dir, relative(process.cwd(), dir)]) {
+    assert.deepEqual(findCommand('check', { cwd, env: { PATH: 'bin' }, platform: 'win32' }),
+      { executable: join(dir, 'bin', 'check.exe'), executableArgs: [] });
+    assert.deepEqual(findCommand('check', { cwd: join(cwd, 'bin'), env: { PATH: '' }, platform: 'win32' }),
+      { executable: join(dir, 'bin', 'check.exe'), executableArgs: [] });
+  }
+});
+
+test('Windows returns the existing extension when resolving an explicit executable path', async (t) => {
+  const dir = await directory(t, 'effort-commands-extension-win-');
+  await mkdir(join(dir, 'bin'));
+  for (const extension of ['.exe', '.com']) {
+    await writeFile(join(dir, 'bin', `check${extension}`), 'fake executable');
+    assert.deepEqual(findCommand('./bin/check', { cwd: dir, platform: 'win32' }),
+      { executable: join(dir, 'bin', `check${extension}`), executableArgs: [] });
+    await rm(join(dir, 'bin', `check${extension}`));
+  }
 });
 
 test('a verification command that cannot start stops the run before any provider turn', async (t) => {
