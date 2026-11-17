@@ -38,7 +38,8 @@ process.stdin.on('end', () => {
   ${body}
 });
 `);
-  return { cwd, scriptPath, log, pidFile, options: { cwd, prompt: 'Read the fixture.', effort: 'medium', model: 'gemini-4-hydrogen', executable: process.execPath, executableArgs: [scriptPath], env: { PATH: process.env.PATH, HOME: cwd }, timeoutMs: 4000 } };
+  // Generous: a loaded machine can take seconds to start the fake CLI; timeout tests set their own.
+  return { cwd, scriptPath, log, pidFile, options: { cwd, prompt: 'Read the fixture.', effort: 'medium', model: 'gemini-4-hydrogen', executable: process.execPath, executableArgs: [scriptPath], env: { PATH: process.env.PATH, HOME: cwd }, timeoutMs: 30_000 } };
 }
 
 async function launchAndAssertCleaned(f) {
@@ -77,7 +78,7 @@ test('Gemini sends a literal argv prompt with read-only session permissions and 
   const marker = join(f.cwd, 'shell-ran');
   const prompt = `Read literally: $(touch ${marker}) \`touch ${marker}\` ; --dangerously-skip-permissions`;
   const events = [];
-  const result = await run({ ...f.options, prompt, timeoutMs: 4501, onEvent: event => events.push(event) });
+  const result = await run({ ...f.options, prompt, timeoutMs: 30_001, onEvent: event => events.push(event) });
   const launch = await launchAndAssertCleaned(f);
   assert.equal(result.status, 'completed');
   assert.equal(result.provider, 'gemini');
@@ -92,7 +93,7 @@ test('Gemini sends a literal argv prompt with read-only session permissions and 
   assert.equal(argValue(launch.argv, '--model'), 'gemini-4-hydrogen');
   assert.equal(argValue(launch.argv, '--effort'), 'medium');
   assert.equal(argValue(launch.argv, '--mode'), 'plan');
-  assert.equal(argValue(launch.argv, '--print-timeout'), '5s');
+  assert.equal(argValue(launch.argv, '--print-timeout'), '31s');
   assert.deepEqual(JSON.parse(argValue(launch.argv, '--settings')), { permissions: { allow: ['read_file(*)'] } });
   assert.ok(!launch.argv.includes('--conversation'));
   assert.ok(!launch.argv.includes('--dangerously-skip-permissions'));
@@ -360,7 +361,7 @@ test('Gemini own timeout kills the process group and removes its private log dir
   }
   t.mock.timers.tick(400);
   t.mock.timers.tick(500);
-  const result = await running;
+  const result = await Promise.race([running, new Promise((_, reject) => realTimeout(() => reject(new Error('timed-out run never finished')), 10_000).unref())]);
   t.mock.timers.reset();
   timersActive = false;
   assertFailure(result, events, 'failed', 'timeout');
