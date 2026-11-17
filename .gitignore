@@ -7,5 +7,3 @@ work/
 .env
 .env.*
 *.log
-# Anthony's Model Guide site lives here but is deployed separately (Cloudflare Pages).
-guide/
