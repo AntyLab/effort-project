@@ -1,6 +1,6 @@
 import { plainReport, reportsTestFailure, suiteBlocker } from './test-reports.mjs';
 
-export const POLICY_VERSION = 'rules-0.3';
+export const POLICY_VERSION = 'rules-0.4';
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const MODELS = Object.freeze({
   claude: Object.freeze({ fast: 'haiku', daily: 'sonnet', frontier: 'fable' }),
@@ -19,11 +19,13 @@ function keywordPattern(terms) {
 const criticalWords = keywordPattern([
   String.raw`auth(?:entication|orization)?|permission|cryptograph\w*|encrypt\w*|payments?|migrations?|race condition|deadlock|data loss|security|vulnerability`,
   String.raw`logins?|log\s+in|sign[- ]?in|sign[- ]?up|passwords?|tokens?|secrets?|credentials?|billing|invoices?|(?:production|prod)\s+outage|drop\s+table|truncate|wipe|delet(?:e[sd]?|ing)\s+(?:[\p{L}\p{N}_-]+\s+){0,6}data|PII|privacy`,
-  String.raw`seguridad|autenticación|pagos?|migración|pérdida\s+de\s+datos|contraseñas?`,
-  String.raw`sécurité|authentification|paiements?|migration|perte\s+de\s+données|mot\s+de\s+passe`,
-  String.raw`Sicherheit|Authentifizierung|Zahlung|Migration|Datenverlust|Passwort`,
-  String.raw`segurança|autenticação|pagamentos?|migração|perda\s+de\s+dados|senhas?`,
-  String.raw`sicurezza|autenticazione|pagamento|migrazione|perdita\s+di\s+dati|password`,
+  // Money movement. "transfer" alone is too often files or ownership, so it needs a money word.
+  String.raw`funds|balances?|ledgers?|refunds?|payouts?|withdrawals?|deposits?|(?:money|funds?|bank|wire|account)\s+transfers?|transfer(?:s|ring)?\s+(?:of\s+)?(?:money|funds)`,
+  String.raw`seguridad|saldos?|fondos|reembolsos?|transferencias?\s+bancarias|libro\s+mayor|autenticación|pagos?|migración|pérdida\s+de\s+datos|contraseñas?`,
+  String.raw`sécurité|soldes?|virements?|remboursements?|grand\s+livre|authentification|paiements?|migration|perte\s+de\s+données|mot\s+de\s+passe`,
+  String.raw`Sicherheit|Guthaben|Kontostand|Überweisung(?:en)?|Rückerstattung(?:en)?|Hauptbuch|Authentifizierung|Zahlung|Migration|Datenverlust|Passwort`,
+  String.raw`segurança|saldos?|fundos|reembolsos?|transferências?\s+bancárias|livro[- ]razão|autenticação|pagamentos?|migração|perda\s+de\s+dados|senhas?`,
+  String.raw`sicurezza|saldi|saldo|bonific[oi]|rimborsi?|libro\s+mastro|autenticazione|pagamento|migrazione|perdita\s+di\s+dati|password`,
 ]);
 const complexWords = keywordPattern([
   String.raw`architect\w*|investigate|diagnos\w*|refactor|concurren\w*|intermittent|distributed|across|root cause|regression|debug`,

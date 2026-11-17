@@ -104,7 +104,7 @@ test('recommend names the built-in model and tier for providers with a model tab
   assert.equal(text.status, 0, text.stderr);
   assert.match(text.stdout, /Model: sonnet · tier: daily/);
   const json = JSON.parse(f.invoke([...daily, '--json']).stdout);
-  assert.equal(json.model, 'sonnet'); assert.equal(json.policyVersion, 'rules-0.3');
+  assert.equal(json.model, 'sonnet'); assert.equal(json.policyVersion, 'rules-0.4');
   assert.doesNotMatch(f.invoke(['recommend', 'Rename a variable']).stdout, /Model:/);
 });
 
