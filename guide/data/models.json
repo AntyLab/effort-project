@@ -1,0 +1,675 @@
+{
+  "checkedOn": "2026-11-15",
+  "units": "API list prices in USD per 1M tokens",
+  "effortLevels": {
+    "none": {
+      "label": "Instant",
+      "desc": "Answers right away with no extra reasoning. For lookups, rewrites and simple replies."
+    },
+    "low": {
+      "label": "Low",
+      "desc": "Quick responses with a little thinking. The least time and usage, for clear and simple asks."
+    },
+    "medium": {
+      "label": "Medium",
+      "desc": "Balanced thinking. A solid starting point for most everyday work."
+    },
+    "high": {
+      "label": "High",
+      "desc": "Deeper reasoning for multi-step problems where a slip would matter."
+    },
+    "xhigh": {
+      "label": "Extra high",
+      "desc": "Careful research and planning. For demanding, high-stakes work."
+    },
+    "max": {
+      "label": "Max",
+      "desc": "The strongest single-model effort. Slow and costly, so save it for the hardest problems."
+    },
+    "ultra": {
+      "label": "Ultra",
+      "desc": "Maximum effort plus subagents that work on parts of the job in parallel."
+    }
+  },
+  "effortCostMultipliersVsMedium": {
+    "claude": {
+      "low": 0.63,
+      "medium": 1,
+      "high": 1.29,
+      "xhigh": 2.22,
+      "max": 3.67
+    },
+    "openai": {
+      "low": 0.63,
+      "medium": 1,
+      "high": 1.29,
+      "xhigh": 2.22,
+      "max": 3.67
+    },
+    "gemini": {
+      "low": 0.59,
+      "medium": 1,
+      "high": 1.41
+    }
+  },
+  "taskPresets": {
+    "quick": {
+      "label": "Quick question",
+      "inT": 2000,
+      "outT": 600,
+      "desc": "about 2K tokens in and 600 out at Medium"
+    },
+    "paper": {
+      "label": "Summarize a paper",
+      "inT": 15000,
+      "outT": 2000,
+      "desc": "a 10-page paper in, a structured summary out (15K in, 2K out at Medium)"
+    },
+    "data": {
+      "label": "Analyze a dataset",
+      "inT": 60000,
+      "outT": 6000,
+      "desc": "a large file in, a full write-up out (60K in, 6K out at Medium)"
+    }
+  },
+  "families": {
+    "claude": {
+      "label": "Claude",
+      "h1": "Which Claude model should you use?",
+      "lede": "Start with Opus 5.5 on Medium. Move up to Fable for the hardest work, and down to Sonnet or Haiku when the work is simple.",
+      "naming": "The names grow with the work: a haiku is three lines, a sonnet fourteen, an opus a major piece, a fable a whole story and a mythos a world.",
+      "effortNote": "Opus 5.5 defaults to Medium. Most other Claude models default to High. Every current model offers Low through Max.",
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "start": {
+        "model": "opus",
+        "effort": "medium"
+      },
+      "theme": "#faf9f5",
+      "cmp": [
+        [
+          "opus",
+          "low"
+        ],
+        [
+          "sonnet",
+          "xhigh"
+        ]
+      ],
+      "models": [
+        {
+          "id": "mythos",
+          "name": "Mythos 5.2",
+          "short": "Mythos",
+          "role": "frontier",
+          "status": "restricted",
+          "color": "#6b655c",
+          "tagline": "The most capable tier, held back from the public for now.",
+          "note": "Mythos 5.2 shares its underlying model with Fable 5.2, without Fable’s extra safeguards for biology and cybersecurity. A small group of trusted organizations use it through Project Glasswing.",
+          "price": {
+            "inP": 8,
+            "outP": 40,
+            "note": "Same rates as Fable 5.2, invitation only"
+          },
+          "efforts": [],
+          "access": [
+            {"id": "defense", "label": "Defense Access", "desc": "Security operations, incident response, malware analysis and vulnerability triage. Organizations and individuals can apply."},
+            {"id": "redteam", "label": "Red Team Access", "desc": "Authorized penetration testing, red teaming and exploit development. Organizations only."},
+            {"id": "specialized", "label": "Specialized Access", "desc": "Authorized testing of critical infrastructure, with the fewest blocks. A limited set of verified organizations."}
+          ],
+          "where": "Not available to the public."
+        },
+        {
+          "id": "fable",
+          "name": "Fable 5.2",
+          "short": "Fable",
+          "role": "frontier",
+          "status": "available",
+          "color": "#6f9a85",
+          "tagline": "For your toughest challenges: open-ended technical and research work.",
+          "note": "Fable thinks problems through before answering. Responses take longer and are the heaviest on your usage.",
+          "price": {
+            "inP": 8,
+            "outP": 40
+          },
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "start": "high",
+          "best": [
+            "Open-ended research questions with no clear answer",
+            "Hard technical work in the sciences, finance and code",
+            "Jobs where a wrong answer is expensive"
+          ],
+          "skip": "Routine writing and quick questions. You pay more and wait longer for the same answer.",
+          "where": "Claude apps and API. Released 9 Nov 2026."
+        },
+        {
+          "id": "opus",
+          "name": "Opus 5.5",
+          "short": "Opus",
+          "role": "daily",
+          "status": "available",
+          "startHere": true,
+          "color": "#d97757",
+          "tagline": "Your daily driver for complex coding and knowledge work.",
+          "note": "Opus uses more of your limit than Sonnet, but often finishes harder work in fewer turns. Its default effort is Medium.",
+          "price": {
+            "inP": 4,
+            "outP": 20
+          },
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "start": "medium",
+          "best": [
+            "Most real work: analysis, writing, planning and code",
+            "Tasks with several steps, files or sources",
+            "Any time you are unsure which model to pick"
+          ],
+          "skip": "Thousands of tiny repeat jobs. Haiku does those for a fraction of the cost.",
+          "where": "Claude apps and API. Released 22 Sep 2026."
+        },
+        {
+          "id": "sonnet",
+          "name": "Sonnet 5.5",
+          "short": "Sonnet",
+          "role": "balanced",
+          "status": "available",
+          "color": "#6a9bcc",
+          "tagline": "For simpler, well-scoped work.",
+          "note": "Sonnet answers faster and uses less of your limit than Opus, with some tradeoff in quality on harder work.",
+          "price": {
+            "inP": 2,
+            "outP": 10
+          },
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "start": "high",
+          "best": [
+            "Clear tasks with a known shape: summaries, drafts, rewrites",
+            "Everyday coding from a clear spec",
+            "When Opus is breezing through your work"
+          ],
+          "skip": "Messy problems with hidden traps. Move up to Opus.",
+          "where": "Claude apps and API."
+        },
+        {
+          "id": "haiku",
+          "name": "Haiku 5.5",
+          "short": "Haiku",
+          "role": "fast",
+          "status": "available",
+          "color": "#b86e85",
+          "tagline": "The fastest and cheapest. A supporting player, not a daily driver.",
+          "note": "Haiku is less effective on complex work. Its price rises five-fold for prompts over 100,000 tokens.",
+          "price": {
+            "inP": 0.1,
+            "outP": 0.5,
+            "note": "Prompts up to 100K tokens; $0.50 / $2.50 above"
+          },
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "start": "high",
+          "best": [
+            "High-volume jobs: tagging, extracting, formatting",
+            "Quick lookups and short rewrites",
+            "Helper agents inside bigger workflows"
+          ],
+          "skip": "Anything that needs judgment, nuance or long reasoning.",
+          "where": "Mainly the Claude API, for building apps and helpers."
+        }
+      ]
+    },
+    "openai": {
+      "label": "OpenAI",
+      "h1": "Which OpenAI model should you use?",
+      "lede": "Start with GPT-6.1 Sol on Medium. Move up to Astra when Sol falls short, and down to Luna for fast, high-volume work.",
+      "naming": "Each tier is a bigger body in the sky: the Moon, the Earth, the Sun and then the stars.",
+      "effortNote": "In ChatGPT’s Chat tab you pick Instant, Medium, High or Extra High (run by GPT-6 Sol), or Pro (run by Astra). ChatGPT Work and Codex add Max and Ultra. The API calls the levels none, low, medium, high, xhigh and max.",
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max",
+        "ultra"
+      ],
+      "start": {
+        "model": "sol",
+        "effort": "medium"
+      },
+      "theme": "#000000",
+      "api": {
+        "none": "API: none · Instant in ChatGPT",
+        "low": "API: low · Light in ChatGPT Work",
+        "medium": "API: medium",
+        "high": "API: high",
+        "xhigh": "API: xhigh · Extra High in ChatGPT",
+        "max": "API: max",
+        "ultra": "ChatGPT Work and Codex"
+      },
+      "cmp": [
+        [
+          "astra",
+          "low"
+        ],
+        [
+          "sol",
+          "xhigh"
+        ]
+      ],
+      "models": [
+        {
+          "id": "astra",
+          "name": "GPT-6 Astra",
+          "short": "Astra",
+          "role": "frontier",
+          "status": "available",
+          "color": "#a78bfa",
+          "tagline": "For the toughest, most creative, long-horizon tasks.",
+          "note": "In ChatGPT’s Chat tab it appears as GPT-6 Pro (Pro, Business and Enterprise plans). Plus plans get Astra in ChatGPT Work and Codex. It always reasons, so there is no Instant setting.",
+          "price": {
+            "inP": 10,
+            "outP": 50
+          },
+          "efforts": [
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "start": "medium",
+          "best": [
+            "Long projects that run for hours",
+            "The hardest research, math and science tasks",
+            "Work where a mistake is costly"
+          ],
+          "skip": "Everyday work. GPT-6.1 Sol gets close for a fifth of the price.",
+          "where": "API, ChatGPT Work and Codex, and GPT-6 Pro in Chat. Released 3 Sep 2026."
+        },
+        {
+          "id": "sol",
+          "name": "GPT-6.1 Sol",
+          "short": "Sol",
+          "role": "daily",
+          "status": "available",
+          "startHere": true,
+          "color": "#f5a524",
+          "tagline": "Near-Astra intelligence for important everyday work, at a fifth of the price.",
+          "note": "GPT-6.1 Sol runs in ChatGPT Work, Codex and the API. In the Chat tab, GPT-6 Sol powers Instant through Extra High.",
+          "price": {
+            "inP": 2,
+            "outP": 10
+          },
+          "efforts": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "start": "medium",
+          "best": [
+            "Most daily work: writing, analysis and code",
+            "Multi-step tasks and agents on a budget",
+            "Your default when unsure"
+          ],
+          "skip": "The very hardest science problems. OpenAI still points those to Astra.",
+          "where": "Released 29 Sep 2026."
+        },
+        {
+          "id": "terra",
+          "name": "GPT-5.6 Terra",
+          "short": "Terra",
+          "role": "balanced",
+          "status": "available",
+          "legacy": true,
+          "color": "#3fb27f",
+          "tagline": "The balanced middle tier from the GPT-5.6 family.",
+          "note": "GPT-6 has no Terra. GPT-6.1 Sol now costs less per output token, so Terra mainly matters for tools already built on it.",
+          "price": {
+            "inP": 2,
+            "outP": 12
+          },
+          "efforts": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "start": "medium",
+          "best": [
+            "Workflows already tuned on GPT-5.6",
+            "Balanced cost and quality on routine work"
+          ],
+          "skip": "New projects. Start with GPT-6.1 Sol instead.",
+          "where": "API and the ChatGPT Work model list."
+        },
+        {
+          "id": "luna",
+          "name": "GPT-6 Luna",
+          "short": "Luna",
+          "role": "fast",
+          "status": "available",
+          "color": "#cbd5e1",
+          "tagline": "The fastest and cheapest, built for high-volume work.",
+          "note": "Luna is optimized for fast responses at volume. Sol has more reasoning capability.",
+          "price": {
+            "inP": 0.1,
+            "outP": 0.5
+          },
+          "efforts": [
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max"
+          ],
+          "start": "low",
+          "best": [
+            "Sorting, tagging and extracting at scale",
+            "Quick replies and simple rewrites",
+            "Helper agents under Sol or Astra"
+          ],
+          "skip": "Anything that needs careful judgment.",
+          "where": "API, ChatGPT and Codex. Released 22 Sep 2026."
+        }
+      ]
+    },
+    "gemini": {
+      "label": "Gemini",
+      "h1": "Which Gemini model should you use?",
+      "lede": "Start with Gemini 4 Argon on Medium. Drop to 3.8 Flash for quick, high-volume work.",
+      "naming": "Gemini 4 models are named after elements, and the names are not a ranking: Carbon (6) sits above Argon (18).",
+      "effortNote": "Gemini has three thinking levels: Low, Medium (the default) and High. Need more depth than High? Move up a model.",
+      "efforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "start": {
+        "model": "argon",
+        "effort": "medium"
+      },
+      "theme": "#f8fafd",
+      "cmp": [
+        [
+          "argon",
+          "low"
+        ],
+        [
+          "flash",
+          "high"
+        ]
+      ],
+      "models": [
+        {
+          "id": "carbon",
+          "name": "Gemini 4 Carbon",
+          "short": "Carbon",
+          "role": "frontier",
+          "status": "restricted",
+          "color": "#d96570",
+          "el": {
+            "sym": "C",
+            "num": "6",
+            "mass": "12.011",
+            "name": "Carbon",
+            "shells": [
+              2,
+              4
+            ]
+          },
+          "tagline": "Google’s most capable model, built on Gemini 4 Argon.",
+          "note": "Announced 28 Oct 2026. For now only cyber defenders and trusted partners in Google’s Fairwind program can use it, and there is no public API.",
+          "price": {
+            "inP": 2,
+            "outP": 10,
+            "note": "Announced intro price; no public API yet"
+          },
+          "efforts": [],
+          "where": "Limited access."
+        },
+        {
+          "id": "argon",
+          "name": "Gemini 4 Argon",
+          "short": "Argon",
+          "role": "daily",
+          "status": "available",
+          "startHere": true,
+          "color": "#9b72cb",
+          "el": {
+            "sym": "Ar",
+            "num": "18",
+            "mass": "39.95",
+            "name": "Argon",
+            "shells": [
+              2,
+              8,
+              8
+            ]
+          },
+          "tagline": "Google’s flagship you can use today, for hard reasoning, science and long outputs.",
+          "note": "Generally available since 13 Oct 2026, with a 1M-token context window. Its default thinking level is Medium.",
+          "price": {
+            "inP": 2,
+            "outP": 10,
+            "note": "Intro price until 30 Nov; $4 / $20 from 1 Dec",
+            "later": {
+              "inP": 4,
+              "outP": 20
+            }
+          },
+          "efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "start": "medium",
+          "best": [
+            "Complex analysis of long documents",
+            "Science and math reasoning",
+            "Very long outputs"
+          ],
+          "skip": "Simple high-volume jobs. 3.8 Flash is cheaper and faster.",
+          "where": "Gemini API, AI Studio and the Gemini app for eligible Google AI subscribers."
+        },
+        {
+          "id": "hydrogen",
+          "name": "Gemini 4 Hydrogen",
+          "short": "Hydrogen",
+          "role": "fast",
+          "status": "testing",
+          "color": "#4285f4",
+          "el": {
+            "sym": "H",
+            "num": "1",
+            "mass": "1.008",
+            "name": "Hydrogen",
+            "shells": [
+              1
+            ]
+          },
+          "tagline": "A fast Gemini 4 Flash model, reported to be in internal testing.",
+          "note": "Not released. Business Insider reported on 11 Nov 2026 that Google staff are testing it. No price or date yet.",
+          "price": null,
+          "efforts": [],
+          "where": "Not released."
+        },
+        {
+          "id": "flash",
+          "name": "Gemini 3.8 Flash",
+          "short": "Flash",
+          "role": "fast",
+          "status": "available",
+          "color": "#f4b400",
+          "tagline": "Google’s most intelligent Flash: a fast, low-cost workhorse.",
+          "note": "In the Gemini app for Google AI Pro and Ultra subscribers, in AI Mode and in Sheets. For the very cheapest calls, Gemini 3.5 Flash-Lite costs $0.30 / $2.50.",
+          "price": {
+            "inP": 0.75,
+            "outP": 3.75,
+            "note": "Intro price until 31 Dec; $1.50 / $7.50 from 1 Jan 2027",
+            "later": {
+              "inP": 1.5,
+              "outP": 7.5
+            }
+          },
+          "efforts": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "start": "medium",
+          "best": [
+            "Everyday tasks at speed",
+            "Coding and agent loops at scale",
+            "Helpers inside spreadsheets and documents"
+          ],
+          "skip": "The hardest reasoning. Step up to Argon.",
+          "where": "Released 2 Sep 2026."
+        }
+      ]
+    }
+  },
+  "fields": {
+    "nutrition": {
+      "label": "Nutrition & dietetics",
+      "role": {
+        "fast": "Turn a 7-day meal plan into a grocery list grouped by aisle.",
+        "balanced": "Rewrite a diabetes handout at a 6th-grade reading level without changing any numbers.",
+        "daily": "Draft a 3-day Lebanese-style meal plan for a client with CKD stage 3, with potassium and phosphorus per meal.",
+        "frontier": "Design a full nutrition-intervention study: outcomes, sample size, diet protocol and analysis plan."
+      },
+      "eff": {
+        "none": "List five high-fiber breakfast swaps.",
+        "low": "Suggest snack swaps under 200 kcal for a client who skips breakfast.",
+        "medium": "Plan one day of meals from a client brief and total the macros.",
+        "high": "Plan a week of meals under a sodium target and explain each swap.",
+        "xhigh": "Check a hospital menu cycle against three diet orders and flag every conflict.",
+        "max": "Audit a research diet protocol for nutrient adequacy, line by line, against the DRIs.",
+        "ultra": "Code 200 food-frequency questionnaires, with helpers taking batches in parallel."
+      }
+    },
+    "clinical": {
+      "label": "Clinical & health sciences",
+      "role": {
+        "fast": "Expand 30 abbreviations from a chart note into a glossary.",
+        "balanced": "Summarize a 12-page clinical guideline into a one-page checklist.",
+        "daily": "Compare two enteral formulas for a patient case and explain the trade-offs.",
+        "frontier": "Map where guidelines disagree on vitamin D dosing in Crohn’s disease, and why."
+      },
+      "eff": {
+        "none": "Define refeeding syndrome in two sentences.",
+        "low": "Explain what a high BUN-to-creatinine ratio can suggest.",
+        "medium": "Walk through a lab panel for a case discussion.",
+        "high": "Work a complex case: estimate energy and protein needs, pick a feeding route, justify each step.",
+        "xhigh": "Cross-check a care plan against three guidelines and flag every mismatch.",
+        "max": "Stress-test a clinical protocol for edge cases before a committee review.",
+        "ultra": "Review 40 case files for one quality indicator, with helpers each taking a batch."
+      }
+    },
+    "research": {
+      "label": "Research & IRB",
+      "role": {
+        "fast": "Pull sample size, population and main outcome from 40 abstracts into a table.",
+        "balanced": "Draft the plain-language summary of your IRB application from the protocol.",
+        "daily": "Compare an IRB amendment with the original protocol and list every change reviewers will ask about.",
+        "frontier": "Plan a systematic review: search strings for three databases, eligibility rules and a risk-of-bias tool."
+      },
+      "eff": {
+        "none": "Reword one sentence of your methods.",
+        "low": "Tighten your abstract to 250 words.",
+        "medium": "Draft an introduction from five papers you upload.",
+        "high": "Choose a statistical test for your design and check its assumptions.",
+        "xhigh": "Review your analysis plan and data dictionary for gaps and mismatches.",
+        "max": "Red-team your whole protocol the way the strictest reviewer would.",
+        "ultra": "Screen 600 titles and abstracts against your criteria, split across parallel helpers."
+      }
+    },
+    "study": {
+      "label": "Studying & writing",
+      "role": {
+        "fast": "Make 20 flashcards from your micronutrient lecture notes.",
+        "balanced": "Turn your notes into a study guide with practice questions.",
+        "daily": "Give honest feedback on a 3,000-word case study against the rubric.",
+        "frontier": "Find the weakest link in your thesis argument and propose fixes."
+      },
+      "eff": {
+        "none": "Quiz me on five terms from this list.",
+        "low": "Explain glycemic index versus glycemic load with one example.",
+        "medium": "Explain the urea cycle step by step with a memory aid.",
+        "high": "Build a two-week revision plan from your syllabus and exam dates.",
+        "xhigh": "Mark your practice exam against the key and explain each miss.",
+        "max": "Write a mock board exam with rationales and a balanced difficulty spread.",
+        "ultra": "Build a whole course study pack, chapter by chapter in parallel."
+      }
+    },
+    "reports": {
+      "label": "Reports & slides",
+      "role": {
+        "fast": "Fix units and formatting in a table of lab values.",
+        "balanced": "Write speaker notes for a 10-slide journal club.",
+        "daily": "Analyze a 300-response survey file and write the results section with charts.",
+        "frontier": "Turn raw data, analysis and literature into a full report with limitations."
+      },
+      "eff": {
+        "none": "Suggest three titles for your poster.",
+        "low": "Write a slide title and three key takeaways.",
+        "medium": "Draft a one-page summary report from your notes.",
+        "high": "Turn a dataset into a report with tables and interpretation.",
+        "xhigh": "Build a 15-slide deck from a long report with consistent visuals.",
+        "max": "Produce a fully checked report where every number must reconcile.",
+        "ultra": "Produce a report, a deck and a handout from one dataset at the same time."
+      }
+    },
+    "build": {
+      "label": "Building apps & code",
+      "role": {
+        "fast": "Add comments and clearer names to a short script.",
+        "balanced": "Write a BMR calculator (Mifflin-St Jeor) with tests.",
+        "daily": "Add a food-logging feature to your iOS app across several files.",
+        "frontier": "Design a nutrition app’s data model, offline mode and sync from scratch."
+      },
+      "eff": {
+        "none": "Explain this error message in one line.",
+        "low": "Fix a small bug in one function.",
+        "medium": "Add one screen or one feature.",
+        "high": "Debug a crash that spans several files.",
+        "xhigh": "Refactor a module and keep every test passing.",
+        "max": "Track down a rare bug nobody can reproduce.",
+        "ultra": "Build several features at once, with subagents on separate parts."
+      }
+    }
+  }
+}

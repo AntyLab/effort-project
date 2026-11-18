@@ -35,6 +35,8 @@ export function summarizeArm(arm, records) {
     arm,
     runs: records.length,
     passed,
+    requestedModels: [...new Set(records.map((record) => record.model?.requested ?? null))],
+    observedModels: [...new Set(records.flatMap((record) => record.model?.observed ?? []))],
     passRate: wilsonByTask([...byTask.values()]),
     visiblePassed: records.filter((record) => record.visibleCheckPassed === true).length,
     // The agent's own check passed but the hidden check did not.
@@ -155,7 +157,16 @@ function providerSection(summary, meta, chartFile) {
   const lines = [`## ${summary.provider}`, ''];
   if (!summary.runs) return [...lines, 'No scored runs.', ''].join('\n');
   const models = summary.observedModels.length ? summary.observedModels.map((model) => `\`${model}\``).join(', ') : 'not reported';
-  lines.push(`Model requested: ${summary.requestedModel ? `\`${summary.requestedModel}\`` : 'provider default'} · observed: ${models}${summary.observedModels.length > 1 ? ' — **more than one model was observed; arms may not be comparable**' : ''}.`, '');
+  const perArmModels = meta.arms.some((arm) => arm.model) || new Set(summary.arms.flatMap((arm) => arm.requestedModels)).size > 1;
+  if (perArmModels) {
+    lines.push('Models are selected per arm; automatic routing can also select different models for different tasks. Requested ids and observed ids are checked by the provider adapters (including supported aliases).', '');
+    lines.push(table(['Arm', 'Models requested', 'Models observed'], summary.arms.map((arm) => [
+      `\`${arm.arm}\``, arm.requestedModels.map((model) => model ? `\`${model}\`` : 'provider default').join(', ') || '—',
+      arm.observedModels.map((model) => `\`${model}\``).join(', ') || 'not reported',
+    ])), '');
+  } else {
+    lines.push(`Model requested: ${summary.requestedModel ? `\`${summary.requestedModel}\`` : 'provider default'} · observed: ${models}${summary.observedModels.length > 1 ? ' — **more than one model was observed; arms may not be comparable**' : ''}.`, '');
+  }
   const highlights = summary.comparisons.filter((comparison) => isRoutingArm(comparison.arm));
   if (highlights.length) {
     lines.push(`**At a glance, against \`${summary.reference}\`:**`, '');
@@ -266,7 +277,7 @@ export function renderSummary(meta, records) {
     '- The visible check is the agent\'s own test command, the one Effort retries on. It can pass while the hidden check fails (see "Visible passed, hidden failed").',
     '- Wall time covers the whole managed run: provider turns, process start-up and visible checks. It excludes the hidden acceptance check.',
   );
-  if (fake) lines.push('- Fake-provider outcomes come from fixed made-up solve probabilities per difficulty and effort. They are listed under `fake` in meta.json.');
+  if (fake) lines.push('- Fake-provider outcomes come from fixed made-up solve probabilities per difficulty, effort and model tier. They are listed under `fake` in meta.json.');
   lines.push('');
   return { markdown: lines.join('\n'), aggregate: result };
 }

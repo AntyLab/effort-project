@@ -6,8 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- The Claude Code plugin now shows a model and effort suggestion for every eligible prompt without changing Claude's behavior. Set `EFFORT_AUTO_ROUTE=1` in Claude Code's `settings.json` env to opt into the existing low/high skill routes; medium stays advisory. Short follow-ups without a rule signal can inherit a recommendation from up to three earlier user prompts in the last 64 KiB of the local transcript, read without storing or logging its text.
+- Claude's built-in daily model is now `sonnet` instead of `opus`; fast remains `haiku` and frontier remains `fable`.
+- Policy `rules-0.3` recognizes more costly-error, investigative and mechanical English keywords, including login, passwords, billing, destructive data changes, privacy, crashes, performance, comments, lint and version bumps. Basic Spanish, French, German, Portuguese and Italian keyword coverage uses Unicode word boundaries. Risky and investigative words still take precedence over short mechanical edits.
+- Policy `rules-0.4` also treats money movement as risky: funds, balances, ledgers, refunds, payouts, withdrawals, deposits and money or bank transfers, with basic Spanish, French, German, Portuguese and Italian equivalents. Such prompts start at high effort; the model tier is unchanged unless the prompt also asks for investigation. Added after every benchmark failure turned out to be the `node-bank-ledger` task, so that task no longer counts as held out for this rule.
+
 ### Fixed
 
+- `effort auto codex` no longer drops the official terminal UI's session when Codex sends a single message larger than 8 MiB, which happens right after a turn starts for users with many skills, plugins or MCP servers. The router's message limit is now 64 MiB.
+- Two tests added in 0.2.0 now pass on Windows. The route-skill test accepts the CRLF line endings that Git for Windows checks out by default, and the WebSocket terminate test waits for the server end to finish closing, not only the client end. This changes test code only.
 - On Windows, command lookup now finds programs installed as app execution aliases, such as the `py` launcher that the Python install manager puts in `%LOCALAPPDATA%\Microsoft\WindowsApps`. Node cannot read these entries, so a verification command such as `py -m pytest` stopped with "was not found on PATH". The benchmark harness now picks only a Python that this lookup finds, and its checks run the interpreter it probed.
 
 ## [0.2.0] - 2026-11-16

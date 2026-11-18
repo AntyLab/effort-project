@@ -6,14 +6,15 @@ import { join } from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { runTask } from '../../src/runner.mjs';
 import { getAdapter } from '../../src/registry.mjs';
-import { POLICY_VERSION } from '../../src/policy.mjs';
+import { chooseModel, MODELS, POLICY_VERSION, recommend } from '../../src/policy.mjs';
+import { repositoryFacts } from '../../src/repository.mjs';
 import { CLI_OVERRIDES, providerCommand } from '../../src/provider-cli.mjs';
 import { verify } from '../../src/verify.mjs';
 import { BENCH_DIR, checkEnvironment, diffSnapshots, materialize, resolveCommand, runAcceptance, snapshot, taskDigest } from './corpus.mjs';
-import { ARMS, PROVIDER_FAILURES, buildSchedule, checkSpendGuard, maxProviderTurns, providerLaunch, reportsConversationTotals } from './plan.mjs';
+import { ARMS, PROVIDER_FAILURES, armModel, buildSchedule, checkModelPins, checkSpendGuard, maxProviderTurns, providerLaunch, reportsConversationTotals } from './plan.mjs';
 import { normalizeUsage, totalUsage } from './stats.mjs';
 import { writeReport } from './report.mjs';
-import { FAKE_VERSION, fakeRunConfig, RETRY_BONUS, SOLVE_PROBABILITY, TOKENS_PER_TURN } from '../fake/model.mjs';
+import { FAKE_VERSION, fakeRunConfig, RETRY_BONUS, SOLVE_PROBABILITY, TIER_BONUS, TOKENS_PER_TURN } from '../fake/model.mjs';
 
 export const BENCH_VERSION = '0.1.0';
 const RUN_SCHEMA = 'effort-bench-run/1';
@@ -34,6 +35,7 @@ const isolatedVerify = (argv, options) => verify(argv, { ...options, env: checkE
 export async function executeRun(entry, context) {
   const task = context.tasks.get(entry.task);
   const arm = ARMS[entry.arm];
+  const model = armModel(entry.arm, entry.provider, context.models[entry.provider]);
   const base = {
     schema: RUN_SCHEMA, benchId: context.benchId, key: entry.key, order: entry.order, mode: context.live ? 'live' : 'fake',
     provider: entry.provider, task: task.id, language: task.language, difficulty: task.difficulty, category: task.category,
@@ -44,13 +46,22 @@ export async function executeRun(entry, context) {
   const workspace = join(root, 'work');
   try {
     await materialize(task, workspace);
+    // Use the same policy and repository facts as runTask's model:'auto', then
+    // pin that choice for this comparison. Product routing may safely retry a
+    // rejected model on the provider default; a benchmark must instead stop on
+    // that provider failure so it cannot silently score a different model.
+    const requestedModel = model === 'auto' ? chooseModel(entry.provider, recommend({
+      prompt: task.prompt, provider: entry.provider, facts: await repositoryFacts(workspace, task.prompt), maxEffort: arm.maxEffort,
+    }).tier) : model;
     const before = await snapshot(workspace);
     let fakeConfig;
     if (!context.live) {
       fakeConfig = join(root, 'fake-provider.json');
       await writeFile(fakeConfig, JSON.stringify(fakeRunConfig({
         provider: entry.provider, task, repeat: entry.repeat, seed: context.seed,
-        stateFile: join(root, 'fake-state.json'), model: context.models[entry.provider],
+        // Routing arms must get their model through the adapter's request,
+        // never through a fake-only configuration fallback.
+        stateFile: join(root, 'fake-state.json'), model: arm.model ? undefined : model,
       })));
     }
     const launch = providerLaunch(entry.provider, { live: context.live, bin: context.bins[entry.provider], fakeConfig });
@@ -81,7 +92,7 @@ export async function executeRun(entry, context) {
     let outcome;
     try {
       outcome = await runTask({
-        prompt: task.prompt, cwd: workspace, model: context.models[entry.provider] ?? undefined, allowWrite: true,
+        prompt: task.prompt, cwd: workspace, model: requestedModel ?? undefined, allowWrite: true,
         effort: arm.effort, maxEffort: arm.maxEffort, maxAttempts: arm.maxAttempts, timeoutMs: context.timeoutMs,
         verify: resolveCommand(task.verify, { python: context.python }), signal: controller.signal, onEvent,
         env: context.env, ...launch,
@@ -107,7 +118,7 @@ export async function executeRun(entry, context) {
       ? attemptCodes.find((code) => PROVIDER_FAILURES[entry.provider]?.includes(code)) ?? null : null;
     return {
       ...base,
-      model: { requested: context.models[entry.provider] ?? null, observed: [...observedModels],
+      model: { requested: requestedModel ?? null, observed: [...observedModels],
         ...(entry.provider === 'gemini' ? { observedLabels: [...observedLabels] } : {}) },
       effort: {
         initial: result.initialEffort, final: result.effort, policyVersion: result.policyVersion, features: result.features,
@@ -187,6 +198,7 @@ export async function runBenchmark({
   referenceArm = 'fixed-high', signal, log = () => {},
 }) {
   if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 1_800_000) throw new Error('The per-run timeout must be 1–1,800 seconds.');
+  checkModelPins(arms, models);
   const schedule = buildSchedule({ taskIds: tasks.map((task) => task.id), arms, providers, repeats, seed });
   const digests = Object.fromEntries(await Promise.all(tasks.map(async (task) => [task.id, await taskDigest(task)])));
   const plan = {
@@ -194,6 +206,7 @@ export async function runBenchmark({
     // Keep the pre-Gemini shape when it is not selected, so old plans resume.
     models: { codex: models.codex ?? null, claude: models.claude ?? null,
       ...(providers.includes('gemini') ? { gemini: models.gemini ?? null } : {}) }, tasks: digests,
+    ...(arms.some((name) => ARMS[name].model) ? { modelRouting: { policyVersion: POLICY_VERSION, models: MODELS } } : {}),
   };
   const runsPath = join(outDir, 'runs.jsonl');
   const metaPath = join(outDir, 'meta.json');
@@ -210,7 +223,7 @@ export async function runBenchmark({
   const remaining = schedule.filter((entry) => !completed.has(entry.key));
   checkSpendGuard({ live, maxRuns, runs: remaining.length });
   if (!python && tasks.some((task) => task.language === 'python')) {
-    throw new Error('The selected tasks include Python tasks, but Python 3.8 or later was not found. Pass --python, set EFFORT_BENCH_PYTHON, or use --language node.');
+    throw new Error('The selected tasks include Python tasks, but Python 3.9 or later was not found. Pass --python, set EFFORT_BENCH_PYTHON, or use --language node.');
   }
   const providerVersions = live ? probeProviders(providers, bins, process.env) : Object.fromEntries(providers.map((provider) => [provider, FAKE_VERSION]));
   // The fake Claude CLI reports conversation totals on resume the way current Claude Code does.
@@ -238,7 +251,7 @@ export async function runBenchmark({
           ...(conversationTotals.claude ? ['The cost of a retried Claude run is the conversation total its last attempt reported.'] : []),
         ],
       },
-      fake: live ? null : { version: FAKE_VERSION, solveProbability: SOLVE_PROBABILITY, retryBonus: RETRY_BONUS, tokensPerTurn: TOKENS_PER_TURN },
+      fake: live ? null : { version: FAKE_VERSION, solveProbability: SOLVE_PROBABILITY, tierBonus: TIER_BONUS, retryBonus: RETRY_BONUS, tokensPerTurn: TOKENS_PER_TURN },
       invocations: [{ startedAt: now, runs: remaining.length, providerVersions, effort: revision }],
     };
   }

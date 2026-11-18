@@ -142,7 +142,7 @@ export function renderChart(summary, { fake = false } = {}) {
       : `${arm.arm}: usage unknown for all ${arm.runs} runs`;
     const parts = [
       index > 0 ? `<line class="rule" x1="0" y1="${ROWS_TOP + index * ROW}" x2="${INNER}" y2="${ROWS_TOP + index * ROW}"/>` : '',
-      `<text class="label" x="${LABEL_RIGHT}" y="${fixed(y + 4)}" text-anchor="end">${escape(arm.arm)}</text>`,
+      `<text class="label"${arm.arm.length > 16 ? ' style="font-size:10px"' : ''} x="${LABEL_RIGHT}" y="${fixed(y + 4)}" text-anchor="end">${escape(arm.arm)}<title>${escape(`Requested models: ${(arm.requestedModels ?? []).map((model) => model ?? 'provider default').join(', ') || 'not reported'}`)}</title></text>`,
       `<g><title>${escape(passTip)}</title>`,
       `<rect x="${PASS.x - 8}" y="${ROWS_TOP + index * ROW}" width="${PASS.right - PASS.x + 8}" height="${ROW}" fill="transparent"/>`,
       band(passScale(rate.lower), passScale(rate.upper), y, routing),

@@ -89,7 +89,7 @@ test('the user model table beats built-in models and missing entries use the bui
   await missingTier.chat.submit('Fix a spelling typo.');
   await missingTier.chat.submit('Write a short description of the project.');
   assert.equal(missingTier.calls[0].model, 'haiku');
-  assert.equal(missingTier.calls[1].model, 'opus');
+  assert.equal(missingTier.calls[1].model, 'sonnet');
   assert.equal(missingTier.events[1].decision.modelSelection, 'automatic');
 });
 

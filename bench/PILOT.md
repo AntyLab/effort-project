@@ -241,3 +241,38 @@ Read by the rules fixed before the first pilot:
 - **Both runs were clean.** All 55 runs were scored with usage known, one model was observed per provider, and no run was excluded. For Gemini the observed model is the pinned id, and the backend's display label was recorded for each run: "Gemini 4 Argon" at Low for 15 runs, Medium for 25 and High for 15, which matches the arms.
 
 These pilots used a pinned model in every arm, as the Claude pilot did. They do not test the model choice added on 2026-11-16; that needs an arm that routes the model too, and harder held-out tasks. The raw results are in the git-ignored `bench/results/` on the machine that ran them and are not committed.
+
+## Model-routing pilot, 2026-11-17
+
+The first benchmark in which the model is routed too. It used the arms added the same night (`--arms routing`): `fixed-daily` (the daily model at medium, what most people run), `fixed-frontier` (the frontier model at high, the reference), `auto-route` (the rules pick the model and effort) and `auto-route-escalate` (`effort run`'s defaults). The 17 tasks are the 11 seed tasks plus six harder ones added that night. Policy `rules-0.3`, macOS, Node 26.13, Claude Code 2.1.310, codex-cli 0.160.0, agy 1.5.9. Margin 5 pp, 600 s per run, fixed before the runs. Pass rates use `wilsonByTask` and differences use `newcombePairedByTask` from `bench/lib/stats.mjs`; pooled Claude figures combine two benchmark runs (seeds `overnight-2026-11-17` with one repeat and `overnight-2026-11-17-r2` with two), paired within each run.
+
+| Provider | Arm | Passed | Pass rate (95% CI) | vs `fixed-frontier` (95% CI) | Usage |
+| --- | --- | --- | --- | --- | --- |
+| Claude | `fixed-frontier` (Fable, high) | 51/51 | 100% (81.6–100) | reference | $8.67 |
+| Claude | `fixed-daily` (Sonnet, medium) | 49/51 | 96.1% (80.6–99.3) | −3.9 pp (−19.4 to +9.8), inconclusive | $1.06 |
+| Claude | `auto-route` | 49/51 | 96.1% (80.6–99.3) | −3.9 pp (−19.4 to +9.8), inconclusive | $1.39 |
+| Claude | `auto-route-escalate` | 49/51 | 96.1% (80.6–99.3) | −3.9 pp (−19.4 to +9.8), inconclusive | $1.45 |
+| Codex | `fixed-frontier` (gpt-6-astra, high) | 17/17 | 100% (81.6–100) | reference | 3.30M tokens |
+| Codex | `fixed-daily` (gpt-6.1-sol, medium) | 17/17 | 100% | 0.0 pp (−18.4 to +18.4), inconclusive | 3.13M tokens |
+| Codex | `auto-route` | 17/17 | 100% | 0.0 pp (−18.4 to +18.4), inconclusive | 3.17M tokens |
+| Codex | `auto-route-escalate` | 17/17 | 100% | 0.0 pp (−18.4 to +18.4), inconclusive | 3.21M tokens |
+| Gemini | `fixed-frontier` (argon, high) | 17/17 | 100% (81.6–100) | reference | 533k tokens |
+| Gemini | `fixed-daily` (argon, medium) | 14/15 | 93.3% (70.2–98.8) | −6.7 pp (−29.8 to +14.4), inconclusive | 360k tokens |
+| Gemini | `auto-route` | 15/16 | 93.8% (71.7–98.9) | −6.3 pp (−28.3 to +13.8), inconclusive | 432k tokens |
+| Gemini | `auto-route-escalate` | 14/15 | 93.3% (70.2–98.8) | −6.7 pp (−29.8 to +14.4), inconclusive | 396k tokens |
+
+Codex ran the six hard tasks and the eleven seed tasks as two benchmarks with the same seed; Codex reports tokens, not cost. Gemini stopped at 63 of 68 runs when the provider reported `rate_limited`; that run was excluded, and `--out bench/results/gemini-routing-r1 --resume` with the same options finishes it. Gemini reports tokens, not cost. The rules picked the daily model for most tasks: Claude sonnet 45, haiku 3, fable 3 of 51 `auto-route` runs; Codex gpt-6.1-sol 15, luna 1, astra 1.
+
+What this shows and does not show:
+
+- **Every failure is one task.** All eight failed runs, across Claude and Gemini, are `node-bank-ledger`, and the frontier arm passed it every time. The rules sent it to the daily tier at medium because its prompt ("bank event replay", "transfers without enough funds", "balances") names no word on the risk list. In every failure the visible check passed and the hidden check failed, so `auto-route-escalate` had no failing test to react to.
+- **Against always using the frontier model**, routing cost about a sixth on Claude ($1.39 against $8.67) with a pass-rate difference whose interval still reaches −19 pp. Equal quality is not shown.
+- **Against simply defaulting to the daily model**, routing did not help on this corpus: same pass rate, slightly higher cost on Claude ($1.39 against $1.06), because it picked the daily model for most tasks and Fable for three. Its fast-tier picks saved little because the fast tasks are already cheap.
+- **On Codex, model and effort barely move the bill.** About 190,000 tokens per run are fixed prompt and tools, so the four arms differ by under 6% in total tokens.
+- **Caveats.** The six new tasks were written the same night by a worker that knew the rules exist (told not to game them). The rule that only counts a comment edit with an edit verb was changed after seeing the rules' picks on these prompts, before any live run. Seventeen tasks give intervals about ±19 pp wide; only the private held-out corpus can support a claim.
+
+Next steps the data points to: treat money movement (transfers, funds, balances, ledger) as risky; and compare `auto-route` against `fixed-daily`, not only against the frontier, on the held-out corpus.
+
+### Follow-up: money movement as risky work (`rules-0.4`), 2026-11-17
+
+`rules-0.4` adds money-movement words (funds, balances, ledgers, refunds, payouts, money or bank transfers) to the risk list. Of the 17 tasks, only `node-bank-ledger` changes route: Claude stays on Sonnet but starts at high effort instead of medium. Six live `auto-route` runs on Claude passed 6/6 for $0.18 in total, against 3/9 for Sonnet at medium in the runs above. This rule was written after seeing that task fail, so `node-bank-ledger` no longer counts as held out for it, and six runs on one task show only that the change fixes this case, not that it generalizes.
