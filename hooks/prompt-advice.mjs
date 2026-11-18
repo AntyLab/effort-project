@@ -1,6 +1,6 @@
 // UserPromptSubmit hook of the Effort Project Claude Code plugin (hooks.json).
-// Requests skill-based routing; see docs/claude-code-plugin.md. It always exits 0,
-// so a broken install or a failure can never block a prompt.
+// Suggests model and effort, with opt-in routing; see docs/claude-code-plugin.md.
+// It always exits 0, so a broken install or a failure can never block a prompt.
 process.stdout.on('error', () => {});
 try {
   const { runPromptHook } = await import('../src/integrations/claude-code-hook.mjs');
