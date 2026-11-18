@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Results of the first held-out benchmark, 40 new tasks on Claude, in [bench/PILOT.md](bench/PILOT.md#held-out-round-4-2026-11-18), and the README's savings table now uses them. Routing cost about a ninth of always using the frontier model, saved almost nothing against the daily model, and failed one task that both fixed models passed.
+
 ## [0.3.0] - 2026-11-18
 
 Third experimental release: the Claude Code plugin now suggests a model and effort on every prompt and routes only when asked, Claude's daily tier is Sonnet, the rules cover more words and languages, and model routing has its first benchmark. Equal quality at lower cost is still not shown.

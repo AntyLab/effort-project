@@ -10,7 +10,7 @@
 
 **Stop paying top-model prices for typo fixes.** Effort suggests a model and effort (low, medium or high) for every coding-agent prompt, and can switch them for you. It explains each choice, checks results with your tests, and runs locally with no runtime dependencies. It supports Claude Code, Codex, Gemini, OpenCode and local MCP hosts.
 
-> **Status: experimental (0.3).** In a small benchmark, routing cost about a sixth of always using the top model. Equal quality is not yet shown. See [Does it save money?](#does-it-save-money)
+> **Status: experimental (0.3).** In two small benchmarks, routing cost a ninth to a sixth of always using the top model. Equal quality is not yet shown. See [Does it save money?](#does-it-save-money)
 
 ## Why
 
@@ -20,17 +20,18 @@ It only uses each agent's real effort setting. It never edits your agent's setti
 
 ## Does it save money?
 
-It depends on what you run today. On 17 small coding tasks with Claude (51 runs per setup, [details](bench/PILOT.md#model-routing-pilot-2026-11-17)):
+It depends on what you run today. On 40 held-out coding tasks with Claude, one run per setup ([details](bench/PILOT.md#held-out-round-4-2026-11-18)):
 
-| Setup | Runs passed | Cost |
+| Setup | Tasks passed | Cost |
 | --- | --- | --- |
-| Always the top model (Fable, high effort) | 51 of 51 | $8.67 |
-| Always the mid model (Sonnet, medium effort) | 49 of 51 | $1.06 |
-| Effort picks the model and effort | 49 of 51 | $1.39 |
+| Always the top model (Fable, high effort) | 40 of 40 | $6.26 |
+| Always the mid model (Sonnet, medium effort) | 40 of 40 | $0.76 |
+| Effort picks the model and effort | 39 of 40 | $0.72 |
 
-- **If you leave your agent on the top model,** Effort cost about a sixth as much here. On a subscription, the same choice draws down your usage more slowly.
-- **If you already default to a mid model,** Effort did not save money on these tasks. It mostly agreed with you, and spent a little more on the few prompts it sent to the top model.
-- **This is a small benchmark, not proof.** Seventeen tasks cannot show equal quality, and every failed run was the same money-handling task, which the rules have since been changed to catch.
+- **If you leave your agent on the top model,** Effort cost about a ninth as much here, and about a sixth in an [earlier 17-task pilot](bench/PILOT.md#model-routing-pilot-2026-11-17). On a subscription, the same choice draws down your usage more slowly.
+- **If you already default to a mid model,** Effort saved almost nothing: four cents across 40 tasks. It mostly agreed with you.
+- **Its one failure was its own mistake.** The rules sent a hard parsing task to the smallest model because the request used the word "format", and the result passed the visible tests but not the hidden ones. Check any suggestion to drop to the smallest model on work that matters.
+- **This is a small benchmark, not proof.** Forty tasks cannot show equal quality: the measured difference from the top model is 2.5 points, with an interval from 12.9 points worse to 6.5 points better.
 
 ## Set it up once
 

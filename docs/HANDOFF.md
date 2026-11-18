@@ -26,7 +26,7 @@ See [validation](validation.md) for the full record and local checks. Ordinary t
 
 - Support Google's own Gemini CLI and a native Antigravity plugin.
 - Model routing is now benchmarked (`--arms routing`; results in [bench/PILOT.md](../bench/PILOT.md#model-routing-pilot-2026-11-17)). On 17 tasks, routing matched the daily model's pass rate at slightly higher Claude cost and about a sixth of the frontier model's cost; every failure was `node-bank-ledger`, a money-handling task the rules sent to the daily tier. Finish the rate-limited Gemini run with `--resume`.
-- Gather savings and quality evidence on a held-out corpus.
+- A first held-out run exists (40 tasks, Claude only; [bench/PILOT.md](../bench/PILOT.md#held-out-round-4-2026-11-18)). It is still inconclusive on quality. Run Codex and Gemini on it, and decide what to do about the fast tier's silent failures.
 - Perform Windows/Linux live checks of the new routes.
 
 Run commands from the repository root with Node 22 or later. [Automatic setup](automatic.md) describes permissions, session lifetime, evidence, and limitations. A run has no universal spending cap; frontier models can cost more.

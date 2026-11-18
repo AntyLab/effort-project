@@ -276,3 +276,28 @@ Next steps the data points to: treat money movement (transfers, funds, balances,
 ### Follow-up: money movement as risky work (`rules-0.4`), 2026-11-17
 
 `rules-0.4` adds money-movement words (funds, balances, ledgers, refunds, payouts, money or bank transfers) to the risk list. Of the 17 tasks, only `node-bank-ledger` changes route: Claude stays on Sonnet but starts at high effort instead of medium. Six live `auto-route` runs on Claude passed 6/6 for $0.18 in total, against 3/9 for Sonnet at medium in the runs above. This rule was written after seeing that task fail, so `node-bank-ledger` no longer counts as held out for it, and six runs on one task show only that the change fixes this case, not that it generalizes.
+
+## Held-out round 4, 2026-11-18
+
+The first run on tasks the rules had never met. Forty tasks, 20 Node.js and 20 Python (10 easy, 16 medium, 14 hard, all seven categories), were written that day by two Codex workers (`gpt-6.1-sol`, high effort) that were told not to read this repository or guess how a tool would classify a prompt. Codex's session records show no command reading a path outside the corpus folder. Each worker's own Codex memory named the file `src/policy.mjs` and said Effort selects a model tier; it held no rule words. The orchestrator, which knows the rules, chose the mix and a list of topics to avoid and edited no prompt. All 40 passed `self-test`, and the prompts were frozen in commit `b44f3fb20eb5c4014b3b4d3370d7998916205def` of the private corpus before `plan` or any run applied the rules. This is a new corpus, not rounds 1 to 3 described above, which were not on the machine used.
+
+Policy `rules-0.4`, Effort 0.3.0, macOS, Node 26.13, Claude Code 2.1.310, Python 3.14.7. Arms `--arms routing`, one repeat, 160 runs, seed `heldout-r4-2026-11-18`, 600 s per run, margin 5 pp fixed before the run. Every run finished as `verified` with no provider or harness error.
+
+| Arm | Passed | Pass rate (95% CI) | vs `fixed-frontier` (95% CI) | Cost |
+| --- | --- | --- | --- | --- |
+| `fixed-frontier` (Fable, high) | 40/40 | 100% (91.2–100) | reference | $6.26 |
+| `fixed-daily` (Sonnet, medium) | 40/40 | 100% (91.2–100) | 0.0 pp (−8.8 to +8.8), inconclusive | $0.76 |
+| `auto-route` | 39/40 | 97.5% (87.1–99.6) | −2.5 pp (−12.9 to +6.5), inconclusive | $0.72 |
+| `auto-route-escalate` | 39/40 | 97.5% (87.1–99.6) | −2.5 pp (−12.9 to +6.5), inconclusive | $0.71 |
+
+The rules picked Sonnet for 37 tasks and Haiku for 3, and never the frontier model; effort was medium for 31, high for 6 and low for 3. The whole run cost $8.46 of API credit.
+
+What this shows and does not show:
+
+- **Against always using the frontier model**, routing cost about 11% as much ($0.72 against $6.26). Its pass-rate interval still reaches −12.9 pp, so equal quality is not shown.
+- **Against defaulting to the daily model**, routing saved four cents and passed one task fewer. As in the pilot, it mostly picked the daily model.
+- **The one failed task was a rule miss.** `py-properties-reader`, a hard parsing task, was sent to Haiku at low effort because its prompt says "the format documented in properties.py" and "format" counts as a mechanical edit. Sonnet and Fable both passed it. In both auto arms the visible check passed and the hidden check failed, so escalation had nothing to react to. This is the same shape as `node-bank-ledger` in the pilot: a wrong pick of a cheaper setting fails silently.
+- **The other two Haiku picks passed** (`node-event-name`, a rename, and `node-record-key`, a refactor), at about a tenth of a cent each. The fast tier's saving against the daily model is a few cents per task; its risk is a silent failure.
+- **Caveats.** One repeat, one provider, tasks sized for minutes. The workers' wrong-fix checks are their own reports. Two topics appear in both languages. If the "format" rule is changed in response, this task no longer counts as held out for that rule.
+
+Next steps the data points to: count "format" as mechanical only as a verb next to code or files; reconsider whether automatic routing should ever drop below the daily model without the user asking; and run the other providers on this corpus.
