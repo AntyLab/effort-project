@@ -1,6 +1,12 @@
 # Validation record
 
-Release: **0.2.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
+Release: **0.3.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
+
+## Suggestion line in the Claude Code terminal UI, 2026-11-18
+
+macOS, Claude Code 2.1.310, Haiku 5.5. One functional check, not quality or cost evidence.
+
+- The interactive terminal UI was started with `--plugin-dir` and driven with `expect`. A typed typo prompt showed `UserPromptSubmit says: Effort suggests haiku · low effort for this prompt (/model haiku, /effort low).` under the prompt before Claude answered. No skill was invoked. Follow-up inheritance and the desktop Code tab were not checked.
 
 ## Codex terminal UI and OpenCode, 2026-11-17
 

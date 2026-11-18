@@ -6,6 +6,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-18
+
+Third experimental release: the Claude Code plugin now suggests a model and effort on every prompt and routes only when asked, Claude's daily tier is Sonnet, the rules cover more words and languages, and model routing has its first benchmark. Equal quality at lower cost is still not shown.
+
+### Added
+
+- Benchmark arms that route the model as well as the effort (`--arms routing`), six harder tasks, and the first model-routing results in [bench/PILOT.md](bench/PILOT.md#model-routing-pilot-2026-11-17). On Claude, routing cost about a sixth of always using the frontier model and no less than defaulting to the daily model.
+
 ### Changed
 
 - The Claude Code plugin now shows a model and effort suggestion for every eligible prompt without changing Claude's behavior. Set `EFFORT_AUTO_ROUTE=1` in Claude Code's `settings.json` env to opt into the existing low/high skill routes; medium stays advisory. Short follow-ups without a rule signal can inherit a recommendation from up to three earlier user prompts in the last 64 KiB of the local transcript, read without storing or logging its text.
