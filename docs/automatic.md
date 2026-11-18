@@ -101,7 +101,7 @@ Built-in model selection is on by default in managed runs, managed text sessions
 
 | Provider | fast | daily | frontier |
 | --- | --- | --- | --- |
-| Claude | haiku | opus | fable |
+| Claude | haiku | sonnet | fable |
 | Codex | gpt-6-luna | gpt-6.1-sol | gpt-6-astra |
 | Gemini | gemini-4-hydrogen | gemini-4-argon | gemini-4-argon |
 
@@ -129,7 +129,7 @@ Model IDs are configuration, not executable commands. Effort does not download m
 
 Short mechanical requests can start at low, uncertain tasks at medium, and investigation or costly error risks at high. A request that names five or more distinct workspace files counts as a broad edit and is raised one level, never past high. Files are counted by the relative paths the prompt contains, plus each other bare file name once. The checkout's language count is reported as a reason but never changes effort, because it describes the repository rather than the request. Short ambiguous followups preserve the previous level. Two successive clearly simpler requests allow a downgrade, reducing setting churn. Explicit pins and bounds win over recommendations; bounds can therefore limit effort even for complex work.
 
-This is an English-oriented rules policy. It does not read the entire conversation, inspect repository source contents, route every internal tool result, or learn from provider outputs. Lower settings, fewer output tokens, and successful protocol tests do not prove equal quality or lower total cost. Most Claude models can lose conversation cache reuse when effort changes, and model changes have separate caches; the conservative downgrade rule is a mitigation, not a cost model.
+This rules policy covers English plus basic Spanish, French, German, Portuguese and Italian keywords. It does not read the entire conversation, inspect repository source contents, route every internal tool result, or learn from provider outputs. Lower settings, fewer output tokens, and successful protocol tests do not prove equal quality or lower total cost. Most Claude models can lose conversation cache reuse when effort changes, and model changes have separate caches; the conservative downgrade rule is a mitigation, not a cost model.
 
 Offline tests cover policy decisions, continuation handling, overrides, native-shaped host contracts, session separation, resumed managed turns, request-option application, malformed inputs, and configuration generation. Live checks cover Claude plugin skill routing, Codex app-server routing through the built-in WebSocket server, and a managed Gemini task. Windows/Linux live routing remains unchecked; OpenCode and the official Codex terminal UI were checked live on November 17. See [validation](validation.md).
 

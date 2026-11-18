@@ -1,12 +1,14 @@
 import { join } from 'node:path';
 import { BENCH_DIR } from './corpus.mjs';
 import { seededRandom, shuffle } from './random.mjs';
+import { chooseModel } from '../../src/policy.mjs';
 
 export const PROVIDERS = Object.freeze(['codex', 'claude', 'gemini']);
 export const DEFAULT_PROVIDERS = Object.freeze(['codex', 'claude']);
 
 // Each arm is one runTask configuration. Within a provider every arm gets the
-// same prompts, fresh fixture copies, visible check, time limit and model.
+// same prompts, fresh fixture copies, visible check and time limit. Existing
+// effort arms share the provider pin; opt-in model arms choose their own model.
 export const ARMS = Object.freeze({
   'fixed-low': Object.freeze({ effort: 'low', maxEffort: 'high', maxAttempts: 1, label: 'Fixed low effort, one attempt' }),
   'fixed-medium': Object.freeze({ effort: 'medium', maxEffort: 'high', maxAttempts: 1, label: 'Fixed medium effort, one attempt' }),
@@ -17,8 +19,25 @@ export const ARMS = Object.freeze({
   // keeps the retries but never escalates, separating the two effects.
   'medium-escalate': Object.freeze({ effort: 'medium', maxEffort: 'high', maxAttempts: 3, optional: true, label: 'Start at medium, retry and escalate like effort run' }),
   'medium-retry': Object.freeze({ effort: 'medium', maxEffort: 'medium', maxAttempts: 3, optional: true, label: 'Start at medium, retry on failed checks, never escalate' }),
+  'fixed-daily': Object.freeze({ effort: 'medium', model: 'daily', maxEffort: 'high', maxAttempts: 1, optional: true, label: 'What most people run by default' }),
+  'fixed-frontier': Object.freeze({ effort: 'high', model: 'frontier', maxEffort: 'high', maxAttempts: 1, optional: true, label: 'Frontier model at high effort, one attempt' }),
+  'auto-route': Object.freeze({ effort: 'auto', model: 'auto', maxEffort: 'high', maxAttempts: 1, optional: true, label: 'Rules choose model and effort, one attempt' }),
+  'auto-route-escalate': Object.freeze({ effort: 'auto', model: 'auto', maxEffort: 'high', maxAttempts: 3, optional: true, label: '`effort run` defaults: model and effort routing, retries and escalation' }),
 });
 export const DEFAULT_ARMS = Object.freeze(['fixed-low', 'fixed-medium', 'fixed-high', 'auto-rules', 'auto-escalate']);
+export const ROUTING_ARMS = Object.freeze(['fixed-daily', 'fixed-frontier', 'auto-route', 'auto-route-escalate']);
+
+/** The arm's model selection; 'auto' is resolved with the product policy per task. */
+export function armModel(name, provider, pin) {
+  const model = ARMS[name].model;
+  return model === 'auto' ? 'auto' : model ? chooseModel(provider, model) : pin;
+}
+
+export function checkModelPins(arms, models) {
+  if (!arms.some((name) => ARMS[name]?.model)) return;
+  const pins = Object.keys(models).filter((provider) => models[provider] != null);
+  if (pins.length) throw new Error(`Model-routing arms cannot be combined with ${pins.map((provider) => `--${provider}-model`).join(', ')}: a model pin defeats the comparison. Remove the pin or select effort-only arms.`);
+}
 
 // Adapter failure codes that mean the provider never gave the arm a fair attempt:
 // sign-in, plan or rate limits, model availability, CLI compatibility or isolation.

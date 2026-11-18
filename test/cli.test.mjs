@@ -82,8 +82,9 @@ test('a polyglot checkout does not raise a short mechanical recommendation', asy
   assert.equal(JSON.parse(json.stdout).effort, 'low');
   const text = f.invoke(['recommend', 'Fix the typo in the README', '--cwd', f.cwd]);
   assert.match(text.stdout, /^LOW · heuristic recommendation/);
+  assert.match(f.invoke(['recommend', 'Bump the version number in package.json', '--cwd', f.cwd]).stdout, /^LOW /);
   // The language count describes the checkout, so ordinary requests stay at medium.
-  for (const task of ['Add a settings page', 'Bump the version number in package.json', 'Change the button color from blue to green']) {
+  for (const task of ['Add a settings page', 'Change the button color from blue to green']) {
     assert.match(f.invoke(['recommend', task, '--cwd', f.cwd]).stdout, /^MEDIUM /, task);
   }
 });
@@ -98,6 +99,12 @@ test('recommend names the built-in model and tier for providers with a model tab
     const json = JSON.parse(f.invoke([...args, '--json']).stdout);
     assert.equal(json.model, model); assert.equal(json.tier, 'fast');
   }
+  const daily = ['recommend', 'Add a settings page', '--provider', 'claude', '--cwd', f.cwd];
+  const text = f.invoke(daily);
+  assert.equal(text.status, 0, text.stderr);
+  assert.match(text.stdout, /Model: sonnet · tier: daily/);
+  const json = JSON.parse(f.invoke([...daily, '--json']).stdout);
+  assert.equal(json.model, 'sonnet'); assert.equal(json.policyVersion, 'rules-0.4');
   assert.doesNotMatch(f.invoke(['recommend', 'Rename a variable']).stdout, /Model:/);
 });
 
@@ -108,6 +115,7 @@ test('run dry-run resolves automatic tier models and preserves explicit model pi
     ['codex', 'Add a settings page', 'daily', 'gpt-6.1-sol'],
     ['codex', 'Investigate a security regression', 'frontier', 'gpt-6-astra'],
     ['claude', 'Rename a variable', 'fast', 'haiku'],
+    ['claude', 'Add a settings page', 'daily', 'sonnet'],
     ['gemini', 'Rename a variable', 'fast', 'gemini-4-hydrogen'],
   ]) {
     const args = ['run', prompt, '--provider', provider, '--cwd', f.cwd, '--dry-run'];

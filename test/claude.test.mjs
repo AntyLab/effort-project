@@ -35,7 +35,8 @@ process.stdin.on('end', () => {
 });
 `;
   await writeFile(scriptPath, script);
-  return { cwd, executable, scriptPath, log, pidFile, options: { prompt: 'Read the fixture.', cwd, executable, executableArgs: [scriptPath], effort: 'medium', env: { PATH: process.env.PATH, HOME: cwd }, timeoutMs: 4000 } };
+  // Generous: a loaded machine can take seconds to start the fake CLI; timeout tests set their own.
+  return { cwd, executable, scriptPath, log, pidFile, options: { prompt: 'Read the fixture.', cwd, executable, executableArgs: [scriptPath], effort: 'medium', env: { PATH: process.env.PATH, HOME: cwd }, timeoutMs: 30_000 } };
 }
 
 const argValue = (args, name) => args[args.indexOf(name) + 1];
@@ -461,7 +462,7 @@ test('timeout kills the managed process group including stubborn descendants', {
   const start = performance.now();
   t.mock.timers.tick(400);
   t.mock.timers.tick(500);
-  const result = await running;
+  const result = await Promise.race([running, new Promise((_, reject) => realTimeout(() => reject(new Error('timed-out run never finished')), 10_000).unref())]);
   t.mock.timers.reset();
   timersActive = false;
   assert.equal(result.status, 'failed');

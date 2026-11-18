@@ -4,8 +4,9 @@
 import { cp, readFile, rename, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { unitHash } from '../lib/random.mjs';
+import { MODELS } from '../../src/policy.mjs';
 
-export const FAKE_VERSION = 'effort-bench-fake/1';
+export const FAKE_VERSION = 'effort-bench-fake/2';
 const CONFIG_SCHEMA = 'effort-bench-fake-config/1';
 
 // Made-up chance of "solving" a task in one turn, by difficulty and effort.
@@ -16,6 +17,12 @@ export const SOLVE_PROBABILITY = Object.freeze({
 });
 // A later turn sees the failed check's output, so it does a little better.
 export const RETRY_BONUS = 0.1;
+// Synthetic only. Resolve shared ids (Gemini daily/frontier) as daily: an
+// identical requested model must behave identically at the same effort.
+export const TIER_BONUS = Object.freeze({ fast: -0.08, daily: 0, frontier: 0.08 });
+export function fakeModelTier(provider, model) {
+  return Object.keys(TIER_BONUS).find((tier) => MODELS[provider]?.[tier] === model) ?? 'daily';
+}
 export const TOKENS_PER_TURN = Object.freeze({
   low: Object.freeze({ input: 9_000, output: 600 }),
   medium: Object.freeze({ input: 12_000, output: 1_600 }),
@@ -57,11 +64,11 @@ export async function writeState(config, state) {
  * higher effort. A success copies the reference solution into the workspace;
  * a failure leaves it unchanged.
  */
-export async function simulateTurn(config, state, { cwd, effort, canWrite }) {
+export async function simulateTurn(config, state, { cwd, effort, model, canWrite }) {
   if (!(effort in TOKENS_PER_TURN)) throw new Error(`Unsupported effort: ${effort}`);
   state.turns += 1;
   const attempt = state.turns;
-  const probability = Math.min(0.99, SOLVE_PROBABILITY[config.difficulty][effort] + (attempt > 1 ? RETRY_BONUS : 0));
+  const probability = Math.min(0.99, SOLVE_PROBABILITY[config.difficulty][effort] + TIER_BONUS[fakeModelTier(config.provider, model)] + (attempt > 1 ? RETRY_BONUS : 0));
   const solved = canWrite && unitHash(config.seed, config.provider, config.taskId, config.repeat, attempt) < probability;
   if (solved) await cp(config.solutionDir, cwd, { recursive: true, force: true });
   const scale = DIFFICULTY_SCALE[config.difficulty] * (0.8 + 0.4 * unitHash(config.seed, config.provider, config.taskId, config.repeat, attempt, 'usage'));

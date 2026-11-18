@@ -2,10 +2,10 @@ import { parseArgs } from 'node:util';
 import { readFile, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
-import { recommend } from '../../src/policy.mjs';
+import { chooseModel, recommend } from '../../src/policy.mjs';
 import { repositoryFacts } from '../../src/repository.mjs';
 import { BENCH_DIR, DEFAULT_MANIFEST, findPython, loadCorpus, selectTasks, selfTestTask } from './corpus.mjs';
-import { ARMS, DEFAULT_ARMS, DEFAULT_PROVIDERS, PROVIDERS, SpendGuardError, buildSchedule, checkSpendGuard, maxProviderTurns, parseList } from './plan.mjs';
+import { ARMS, DEFAULT_ARMS, DEFAULT_PROVIDERS, PROVIDERS, ROUTING_ARMS, SpendGuardError, armModel, buildSchedule, checkModelPins, checkSpendGuard, maxProviderTurns, parseList } from './plan.mjs';
 import { readRecords, runBenchmark } from './execute.mjs';
 import { aggregate, writeReport } from './report.mjs';
 
@@ -20,6 +20,7 @@ Selection
   --providers a,b             codex, claude, gemini (default: codex,claude)
   --arms a,b                  ${Object.keys(ARMS).join(', ')}
                               (default: ${DEFAULT_ARMS.join(', ')})
+                              routing = ${ROUTING_ARMS.join(',')}; no model pins
   --tasks id,id | all         Task ids from the manifest (default: all)
   --language node|python      Only tasks in this language
   --repeats N                 Repeats of every task and arm (default: 1)
@@ -31,7 +32,7 @@ Execution
   --resume                    Continue an interrupted benchmark in --out with the same options
   --keep-workspaces           Keep each run's temporary workspace for inspection
   --work-root DIR             Where temporary workspaces are created (default: the OS temp directory)
-  --python PATH               Python 3.8+ interpreter for Python tasks (or EFFORT_BENCH_PYTHON)
+  --python PATH               Python 3.9+ interpreter for Python tasks (or EFFORT_BENCH_PYTHON)
   --manifest PATH             Use another task manifest, e.g. a private held-out corpus
   --margin FRACTION           Non-inferiority margin for pass rates, fixed at start (default: 0.05)
   --reference-arm ARM         Arm the others are compared with (default: fixed-high)
@@ -97,7 +98,9 @@ export async function resolveSettings(values) {
   const corpus = await loadCorpus(values.manifest ? resolve(values.manifest) : DEFAULT_MANIFEST);
   const tasks = selectTasks(corpus.tasks, { ids: values.tasks, language: values.language });
   const providers = parseList(values.providers ?? DEFAULT_PROVIDERS.join(','), PROVIDERS, 'provider');
-  const arms = parseList(values.arms ?? DEFAULT_ARMS.join(','), Object.keys(ARMS), 'arm');
+  const armList = (values.arms ?? DEFAULT_ARMS.join(',')).split(',').flatMap((name) => name.trim() === 'routing' ? ROUTING_ARMS : [name]).join(',');
+  const arms = parseList(armList, Object.keys(ARMS), 'arm');
+  checkModelPins(arms, Object.fromEntries(PROVIDERS.map((provider) => [provider, values[`${provider}-model`]])));
   const repeats = values.repeats === undefined ? 1 : integer(values.repeats, '--repeats', { min: 1, max: 100 });
   const seconds = values.timeout === undefined ? (live ? 600 : 60) : Number(values.timeout);
   if (!Number.isFinite(seconds) || seconds < 1 || seconds > 1800) throw new UsageError('--timeout must be 1–1,800 seconds.');
@@ -131,12 +134,19 @@ async function planCommand(settings, { json, write }) {
   const tasks = [];
   for (const task of settings.tasks) {
     const pick = recommend({ prompt: task.prompt, provider: 'generic', facts: await repositoryFacts(task.repoDir, task.prompt) });
-    tasks.push({ id: task.id, language: task.language, difficulty: task.difficulty, category: task.category, rulesPick: pick.effort });
+    tasks.push({ id: task.id, language: task.language, difficulty: task.difficulty, category: task.category, rulesPick: pick.effort, rulesTier: pick.tier });
   }
+  const runs = schedule.map((entry) => {
+    const task = tasks.find((task) => task.id === entry.task);
+    const model = armModel(entry.arm, entry.provider, settings.models[entry.provider]);
+    return { ...entry, model: model === 'auto' ? chooseModel(entry.provider, task.rulesTier) : model ?? null,
+      effort: ARMS[entry.arm].effort === 'auto' ? task.rulesPick : ARMS[entry.arm].effort };
+  });
   const plan = {
     mode: settings.live ? 'live' : 'fake', tasks, arms: settings.arms.map((name) => ({ name, ...ARMS[name] })), providers: settings.providers,
     repeats: settings.repeats, seed: settings.seed, timeoutSeconds: settings.timeoutMs / 1000,
     runsPerProvider: schedule.length / settings.providers.length, runs: schedule.length, maxProviderTurns: maxProviderTurns(schedule),
+    schedule: runs,
   };
   if (json) return write(`${JSON.stringify(plan, null, 2)}\n`);
   const width = Math.max(...tasks.map((task) => task.id.length));
@@ -149,6 +159,9 @@ async function planCommand(settings, { json, write }) {
     `Arms: ${plan.arms.map((arm) => `${arm.name} (${arm.maxAttempts === 1 ? '1 attempt' : `up to ${arm.maxAttempts} attempts`})`).join(', ')}`,
     `Providers: ${plan.providers.join(', ')}; repeats ${plan.repeats}; seed "${plan.seed}"; ${plan.timeoutSeconds} s per run`,
     `Runs: ${plan.runsPerProvider} per provider, ${plan.runs} in total, at most ${plan.maxProviderTurns} provider turns`,
+    '',
+    'Requested model and initial effort per run:',
+    ...runs.map((run) => `  ${run.key}  model: ${run.model ?? 'provider default'}  effort: ${run.effort}`),
     settings.live ? `Spend guard: this plan needs --max-runs ${plan.runs} or higher.` : 'Live equivalent: add --live --max-runs ' + plan.runs + ' (real usage; see bench/README.md).',
     '',
   ].join('\n'));

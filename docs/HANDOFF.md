@@ -4,7 +4,7 @@ Checkpoint: November 16, 2026. Effort now routes both model and effort. This is 
 
 ## Implemented
 
-- Local rules choose fast for short mechanical requests, frontier for requests that are both high-stakes and investigative or tangled, and daily for everything else. Built-in models are Claude `haiku` / `opus` / `fable`, Codex `gpt-6-luna` / `gpt-6.1-sol` / `gpt-6-astra`, and Gemini `gemini-4-hydrogen` / `gemini-4-argon` / `gemini-4-argon`, in fast/daily/frontier order. `effort recommend` prints the model and tier.
+- Local rules choose fast for short mechanical requests, frontier for requests that are both high-stakes and investigative or tangled, and daily for everything else. Built-in models are Claude `haiku` / `sonnet` / `fable`, Codex `gpt-6-luna` / `gpt-6.1-sol` / `gpt-6-astra`, and Gemini `gemini-4-hydrogen` / `gemini-4-argon` / `gemini-4-argon`, in fast/daily/frontier order. `effort recommend` prints the model and tier.
 - A `--model` pin takes precedence. In `effort auto`, a user's `--routing-config` table overrides the built-in model; otherwise routing uses the tier model, then the current/default model. Managed runs retry once with the provider default only when an automatically chosen model was rejected before a turn was submitted.
 - Managed runs support Codex, Claude Code, and Gemini through the Antigravity CLI (`agy`, or `EFFORT_GEMINI_BIN`). Claude and Gemini also have resumable managed text sessions. Gemini grants file permissions for that session only, never allows shell commands, and reports tokens without cost.
 - The Claude Code plugin's prompt hook asks Claude to invoke `route-fast` (Haiku, low effort, fork), `route-frontier` (Fable, high effort, fork), or `route-hard` (high effort in the main conversation). Ordinary prompts stay on the session's settings. Hooks cannot set model or effort directly; routing depends on Claude following the instruction. A fork has no earlier conversation unless Claude passes it along. The Claude managed adapter accepts Haiku 5.x effort controls.
@@ -25,7 +25,7 @@ See [validation](validation.md) for the full record and local checks. Ordinary t
 ## What remains
 
 - Support Google's own Gemini CLI and a native Antigravity plugin.
-- Add a benchmark arm that also routes the model. The 55-run pilots on Codex (`gpt-6.1-sol`) and Gemini (`gemini-4-argon`) are recorded in [bench/PILOT.md](../bench/PILOT.md): every arm passed 11 of 11, so they are inconclusive like the Claude pilot, and they pinned one model per provider.
+- Model routing is now benchmarked (`--arms routing`; results in [bench/PILOT.md](../bench/PILOT.md#model-routing-pilot-2026-11-17)). On 17 tasks, routing matched the daily model's pass rate at slightly higher Claude cost and about a sixth of the frontier model's cost; every failure was `node-bank-ledger`, a money-handling task the rules sent to the daily tier. Finish the rate-limited Gemini run with `--resume`.
 - Gather savings and quality evidence on a held-out corpus.
 - Perform Windows/Linux live checks of the new routes.
 

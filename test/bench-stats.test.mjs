@@ -1,13 +1,45 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, newcombePaired, newcombePairedByTask, nonInferiority, normalizeUsage, passDesignEffect, quantile, taskDesignEffect, totalUsage, wilson, wilsonByTask } from '../bench/lib/stats.mjs';
 import { ARMS, DEFAULT_ARMS, FAKE_CLI, PROVIDER_FAILURES, SpendGuardError, buildSchedule, checkSpendGuard, maxProviderTurns, parseList, providerLaunch, reportsConversationTotals, runKey } from '../bench/lib/plan.mjs';
 import { aggregate, analyzableRecords, pairRuns, renderSummary } from '../bench/lib/report.mjs';
 import { seededRandom, shuffle, unitHash } from '../bench/lib/random.mjs';
 import { compact, isRoutingArm, renderChart } from '../bench/lib/chart.mjs';
+import { fakeModelTier, simulateTurn } from '../bench/fake/model.mjs';
+import { MODELS } from '../src/policy.mjs';
 
 const close = (actual, expected, tolerance = 5e-4) => assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} is not within ${tolerance} of ${expected}`);
+
+test('synthetic model tiers mildly change solve outcomes using the same random draw', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'effort-bench-tier-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const solutionDir = join(directory, 'solution');
+  await mkdir(solutionDir);
+  await writeFile(join(solutionDir, 'solved.txt'), 'reference');
+  for (const [lower, upper, expected] of [[0.32, 0.4, [false, true, true]], [0.4, 0.48, [false, false, true]]]) {
+    const repeat = Array.from({ length: 1000 }, (_, index) => index + 1).find((repeat) => {
+      const draw = unitHash('tiers', 'codex', 'task', repeat, 1);
+      return draw > lower && draw < upper;
+    });
+    assert.ok(repeat);
+    const outcomes = [];
+    for (const tier of ['fast', 'daily', 'frontier']) {
+      const cwd = join(directory, `${repeat}-${tier}`);
+      await mkdir(cwd);
+      const turn = await simulateTurn({ provider: 'codex', taskId: 'task', difficulty: 'hard', seed: 'tiers', repeat, solutionDir },
+        { turns: 0 }, { cwd, effort: 'medium', model: MODELS.codex[tier], canWrite: true });
+      outcomes.push(turn.solved);
+      if (turn.solved) assert.equal(await readFile(join(cwd, 'solved.txt'), 'utf8'), 'reference');
+      else assert.equal(existsSync(join(cwd, 'solved.txt')), false);
+    }
+    assert.deepEqual(outcomes, expected);
+  }
+  assert.equal(fakeModelTier('gemini', MODELS.gemini.frontier), 'daily', 'shared model ids get identical synthetic behavior');
+});
 
 test('Wilson intervals match reference values and handle the edges', () => {
   const half = wilson(5, 10);

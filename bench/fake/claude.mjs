@@ -37,7 +37,7 @@ if (resumed && !state.sessions[resumed]) {
   process.exit(1);
 }
 
-const turn = await simulateTurn(config, state, { cwd: process.cwd(), effort: flag('--effort'), canWrite: tools.includes('Edit') || tools.includes('Write') });
+const turn = await simulateTurn(config, state, { cwd: process.cwd(), effort: flag('--effort'), model, canWrite: tools.includes('Edit') || tools.includes('Write') });
 const session = state.sessions[sessionId] ?? { costUsd: 0 };
 // Like the real CLI's total_cost_usd on a resumed session, this cost covers the whole conversation.
 session.costUsd = Math.round((session.costUsd + (turn.usage.inputTokens + turn.usage.outputTokens) * FAKE_USD_PER_TOKEN) * 1e6) / 1e6;

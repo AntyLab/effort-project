@@ -1,6 +1,6 @@
 # Validation record
 
-Release: **0.1.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
+Release: **0.2.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
 
 ## Codex terminal UI and OpenCode, 2026-11-17
 
@@ -45,7 +45,7 @@ Nine `effort run` tasks, three per provider, each in a disposable workspace with
 | Codex | Add `slugify` | `gpt-6.1-sol` (daily) | medium | Thread readback: `gpt-6.1-sol`, medium | verified, 1 attempt |
 | Codex | Fix a lost-update race | `gpt-6-astra` (frontier) | high | Thread readback: `gpt-6-astra`, high | verified, 1 attempt |
 | Claude | Rename a misspelled export | `haiku` (fast) | low | Stream reported `claude-haiku-5-5`; effort is a launch flag, not reported back | verified in 3 of 7 runs before the fix below, 6 of 6 after |
-| Claude | Add `slugify` | `opus` (daily) | medium | Stream reported `claude-opus-5-5` | verified, 1 attempt, about $0.03 |
+| Claude | Add `slugify` | `opus` (daily at the time; now `sonnet`) | medium | Stream reported `claude-opus-5-5` | verified, 1 attempt, about $0.03 |
 | Claude | Fix a lost-update race | `fable` (frontier) | high | Stream reported `claude-fable-5-1` | verified, 1 attempt, about $0.17 |
 | Gemini | Rename a misspelled export | `gemini-4-hydrogen` (fast) | low | Log label "Gemini 4 Hydrogen (Low)", 154 thinking tokens | verified, 1 attempt |
 | Gemini | Add `slugify` | `gemini-4-argon` (daily) | medium | Log label "Gemini 4 Argon (Medium)", 376 thinking tokens | verified, 1 attempt |

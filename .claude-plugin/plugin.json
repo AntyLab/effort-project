@@ -1,7 +1,7 @@
 {
   "name": "effort-project",
   "displayName": "The Effort Project",
-  "description": "Routes prompts to a lighter or stronger model and effort through its own skills when a local rule fires, and stays silent otherwise. Includes Effort's read-only MCP tools.",
+  "description": "Suggests a model and effort for each eligible prompt, with local context for short follow-ups and optional skill routing through EFFORT_AUTO_ROUTE. Includes Effort's read-only MCP tools.",
   "author": {
     "name": "The Effort Project contributors",
     "url": "https://github.com/AntyLab/effort-project"
