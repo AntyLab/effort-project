@@ -14,8 +14,14 @@ async function scratch(t) {
   return directory;
 }
 
-test('the seed corpus has 8–12 tasks across both languages, all difficulties and all categories', () => {
-  assert.ok(corpus.tasks.length >= 8 && corpus.tasks.length <= 12, `${corpus.tasks.length} tasks`);
+test('the corpus has eleven seed tasks and six hard additions across both languages', () => {
+  assert.equal(corpus.tasks.length, 17);
+  const heldOut = new Set(['node-lru-ttl', 'node-bank-ledger', 'node-expression-parser', 'py-interval-scheduler', 'py-dependency-resolver', 'py-unified-diff']);
+  const additions = corpus.tasks.filter((task) => heldOut.has(task.id));
+  assert.equal(additions.length, 6);
+  assert.equal(additions.filter((task) => task.language === 'node').length, 3);
+  assert.equal(additions.filter((task) => task.language === 'python').length, 3);
+  assert.ok(additions.every((task) => task.difficulty === 'hard' && task.visibleFailsAtStart));
   assert.deepEqual(new Set(corpus.tasks.map((task) => task.language)), new Set(['node', 'python']));
   assert.deepEqual(new Set(corpus.tasks.map((task) => task.difficulty)), new Set(['easy', 'medium', 'hard']));
   assert.deepEqual(new Set(corpus.tasks.map((task) => task.category)), new Set(CATEGORIES));
@@ -23,10 +29,10 @@ test('the seed corpus has 8–12 tasks across both languages, all difficulties a
 });
 
 // The core guarantee of the corpus: each hidden check separates the starting
-// fixture from the reference solution. Python tasks need Python 3.8 or later.
+// fixture from the reference solution. Python tasks need Python 3.9 or later.
 describe('every task is solvable and its hidden check is discriminating', { concurrency: 2 }, () => {
   for (const task of corpus.tasks) {
-    const skip = task.language === 'python' && !python ? 'Python 3.8 or later was not found' : false;
+    const skip = task.language === 'python' && !python ? 'Python 3.9 or later was not found' : false;
     test(task.id, { skip }, async () => {
       const result = await selfTestTask(task, { python });
       assert.deepEqual(result.problems, [], JSON.stringify(result.output ?? {}, null, 2).slice(0, 6000));
