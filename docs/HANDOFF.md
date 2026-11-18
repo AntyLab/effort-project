@@ -24,8 +24,6 @@ See [validation](validation.md) for the full record and local checks. Ordinary t
 
 ## What remains
 
-- Type a prompt into the official Codex terminal UI started by `effort auto codex` and confirm the routed turn there. The UI connects and draws its start screen through the router; the routed turn was confirmed with a WebSocket client only.
-- Perform OpenCode live acceptance.
 - Support Google's own Gemini CLI and a native Antigravity plugin.
 - Model routing is now benchmarked (`--arms routing`; results in [bench/PILOT.md](../bench/PILOT.md#model-routing-pilot-2026-11-17)). On 17 tasks, routing matched the daily model's pass rate at slightly higher Claude cost and about a sixth of the frontier model's cost; every failure was `node-bank-ledger`, a money-handling task the rules sent to the daily tier. Finish the rate-limited Gemini run with `--resume`.
 - Gather savings and quality evidence on a held-out corpus.

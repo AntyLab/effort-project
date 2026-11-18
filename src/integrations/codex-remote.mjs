@@ -5,7 +5,9 @@ import { createCodexRouting } from './codex-routing.mjs';
 import { providerCommand } from '../provider-cli.mjs';
 import { WebSocketServer as BuiltInWebSocketServer } from './ws-server.mjs';
 
-const MAX_BYTES = 8 * 1024 * 1024;
+// Codex sends single messages over 8 MiB when a user has many skills, plugins or
+// MCP servers; a smaller cap tore down real sessions right after turn/started.
+const MAX_BYTES = 64 * 1024 * 1024;
 const delay = (ms) => new Promise((done) => setTimeout(done, ms));
 
 async function terminate(child) {

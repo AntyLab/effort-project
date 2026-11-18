@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Policy `rules-0.3` recognizes more costly-error, investigative and mechanical English keywords, including login, passwords, billing, destructive data changes, privacy, crashes, performance, comments, lint and version bumps. Basic Spanish, French, German, Portuguese and Italian keyword coverage uses Unicode word boundaries. Risky and investigative words still take precedence over short mechanical edits.
 - Policy `rules-0.4` also treats money movement as risky: funds, balances, ledgers, refunds, payouts, withdrawals, deposits and money or bank transfers, with basic Spanish, French, German, Portuguese and Italian equivalents. Such prompts start at high effort; the model tier is unchanged unless the prompt also asks for investigation. Added after every benchmark failure turned out to be the `node-bank-ledger` task, so that task no longer counts as held out for this rule.
 
+### Fixed
+
+- `effort auto codex` no longer drops the official terminal UI's session when Codex sends a single message larger than 8 MiB, which happens right after a turn starts for users with many skills, plugins or MCP servers. The router's message limit is now 64 MiB.
+
 ## [0.2.0] - 2026-11-16
 
 Second experimental release: automatic model and effort routing for Claude, Codex and Gemini, a Claude Code plugin that routes through its own skills, a Codex terminal router with no extra package, an offline benchmark harness, and the fixes from the October 2026 review. Effort still has not demonstrated lower cost at equivalent coding quality.

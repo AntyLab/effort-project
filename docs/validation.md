@@ -2,6 +2,13 @@
 
 Release: **0.2.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
 
+## Codex terminal UI and OpenCode, 2026-11-17
+
+macOS, Node 26.13, codex-cli 0.160.0, OpenCode 1.19.5. Functional checks, not quality or cost evidence.
+
+- **Official Codex terminal UI.** `effort auto codex` was started in a disposable folder and driven with `expect` in a 120×40 pseudo-terminal. Before the fix, every typed prompt ended with the UI showing "Reconnecting to server" and disconnecting. A trace of method names showed why: right after `turn/started`, Codex's app-server sent a single message over 8 MiB (this account has many skills and MCP servers), and the router's 8 MiB message limit closed the whole session. With the limit at 64 MiB, the typo prompt was rewritten from the UI's default `gpt-6.1-sol` to `gpt-6-luna` at low and completed in about 5 seconds with the corrected sentence. Codex's own session record showed `gpt-6-luna` / low. The one-time folder-trust prompt was accepted for the disposable folder; the hooks prompt was answered with "Continue without trusting".
+- **OpenCode.** OpenCode 1.19.5 with no credentials, using the free `opencode/flint-40b-free` model, which advertises low, medium and high variants. With the plugin from `effort config opencode` in `.opencode/plugins/`, a typo prompt logged `Automatic effort: apply` with `reasoningEffort: low`, and a race-condition investigation logged `apply` with `reasoningEffort: high`. The request options OpenCode sent carried those values. `providerAccepted` stays `null`: the provider does not report the applied effort. An earlier attempt on `opencode/beam-free` logged nothing because that model hung before any request; the plugin loaded and its `config` hook ran.
+
 ## Model and effort routing, 2026-11-16
 
 The supplied live evidence was gathered on macOS with Node 26.13, Claude Code 2.1.310, codex-cli 0.160.0, and agy 1.5.9. These are functional checks of routing and task completion. No new provider calls were made during this documentation pass.

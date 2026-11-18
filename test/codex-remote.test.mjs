@@ -82,6 +82,7 @@ createInterface({ input: process.stdin }).on('line', line => {
     send({ id: message.id, result: {} });
     send({ method: 'turn/completed', params: { threadId: 'fixture-thread', turn: { id: 'fixture-turn', status: 'interrupted', items: [] } } });
   }
+  else if (message.method === 'fixture/large') send({ method: 'fixture/large', params: { data: 'x'.repeat(9 * 1024 * 1024) } });
   else if (message.method === 'fixture/exit') { process.stderr.write('private fixture diagnostics'); process.exit(0); }
 });
 `;
@@ -185,7 +186,7 @@ test('Codex remote requires bearer authentication, exact loopback Host, no Origi
   assert.equal(accepted.status, 101);
   assert.equal((await f.upgrade()).status, 403);
   assert.equal(f.fake.instances[0].connections.length, 1);
-  assert.deepEqual(f.fake.instances[0].options, { noServer: true, maxPayload: 8 * 1024 * 1024, perMessageDeflate: false });
+  assert.deepEqual(f.fake.instances[0].options, { noServer: true, maxPayload: 64 * 1024 * 1024, perMessageDeflate: false });
   await initialize(accepted.ws);
 });
 
@@ -248,6 +249,18 @@ test('Codex remote passes provider approvals, user responses, and cancellation w
   assert.deepEqual(requests.find(value => value.id === 'approval-1'), response);
   assert.deepEqual(requests.find(value => value.method === 'turn/interrupt'), cancel);
   assert.equal(requests.some(value => /config\/.*write/.test(value.method ?? '')), false);
+});
+
+test('Codex remote relays an app-server message larger than 8 MiB without closing the session', { timeout: 20_000 }, async t => {
+  const f = await fixture(t);
+  const { ws } = await f.upgrade();
+  await initialize(ws);
+  ws.receive({ id: 6, method: 'fixture/large', params: {} });
+  const large = await message(ws, value => value.method === 'fixture/large');
+  assert.equal(large.params.data.length, 9 * 1024 * 1024);
+  assert.notEqual(ws.readyState, 3);
+  ws.receive(turn);
+  await message(ws, value => value.id === 3);
 });
 
 test('Codex remote closes the client and listener when the backend exits', { timeout: 10_000 }, async t => {
