@@ -1,4 +1,4 @@
-import { readFileSync, statSync, accessSync, constants } from 'node:fs';
+import { readFileSync, statSync, lstatSync, accessSync, constants } from 'node:fs';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
@@ -6,10 +6,21 @@ import { spawnSync } from 'node:child_process';
 // Windows .cmd or .bat file without a shell, so npm's wrappers are run through the
 // JavaScript entry point they name instead; cmd.exe is never involved.
 const SCRIPT = /\.[cm]?js$/i;
+const NODE_FS = Object.freeze({ statSync, lstatSync });
 
 export const isFile = (path) => { try { return statSync(path).isFile(); } catch { return false; } };
 export const unquote = (value) => value.trim().replace(/^"(.*)"$/, '$1');
 const isExecutable = (path) => { try { accessSync(path, constants.X_OK); return statSync(path).isFile(); } catch { return false; } };
+
+// Windows starts a file, or an app execution alias such as the py.exe that the Python
+// install manager puts in %LOCALAPPDATA%\Microsoft\WindowsApps. Node reports an alias
+// as a symbolic link that stat cannot follow (EACCES), but CreateProcess starts it.
+function isWindowsProgram(path, fs) {
+  try { return fs.statSync(path).isFile(); } catch (error) {
+    if (error?.code !== 'EACCES') return false;
+    try { return fs.lstatSync(path).isSymbolicLink(); } catch { return false; }
+  }
+}
 
 /**
  * An environment variable as a child process sees it. Windows names are case-insensitive,
@@ -70,9 +81,11 @@ function batch(path, command) {
 /**
  * How to spawn `command` with shell:false, or null when nothing can be started.
  * Relative paths are taken from `cwd`. On Windows, `cwd` (when given) is searched
- * before PATH, as cmd.exe does, and a batch file must be an npm wrapper.
+ * before PATH, as cmd.exe does, a batch file must be an npm wrapper, and an app
+ * execution alias counts as a program. `fs` supplies the statSync and lstatSync that
+ * Windows programs are checked with, so tests can simulate an alias on any platform.
  */
-export function findCommand(command, { env = process.env, cwd, platform = process.platform } = {}) {
+export function findCommand(command, { env = process.env, cwd, platform = process.platform, fs = NODE_FS } = {}) {
   const base = resolve(cwd ?? process.cwd());
   const hasDirectory = /[\\/]/.test(command);
   if (platform !== 'win32') {
@@ -82,17 +95,20 @@ export function findCommand(command, { env = process.env, cwd, platform = proces
   }
   const extension = extname(command).toLowerCase();
   const isBatch = extension === '.cmd' || extension === '.bat';
+  const isProgram = (path) => isWindowsProgram(path, fs);
   if (hasDirectory) {
     const path = resolve(base, command);
     if (isBatch) return isFile(path) ? batch(path, command) : null;
-    const executable = ['', '.exe', '.com'].map((suffix) => path + suffix).find(isFile);
+    const executable = ['', '.exe', '.com'].map((suffix) => path + suffix).find(isProgram);
     return executable ? { executable, executableArgs: [] } : null;
   }
   const directories = [...(cwd ? [base] : []), ...pathDirectories(env, platform)];
   const suffixes = extension === '.exe' || extension === '.com' || isBatch ? [''] : ['.exe', '.com'];
+  // A batch file is read to find its entry point, so it must be a file; never an alias.
+  const matches = isBatch ? isFile : isProgram;
   for (const directory of directories) for (const suffix of suffixes) {
     const path = resolve(base, directory, command + suffix);
-    if (isFile(path)) return isBatch ? batch(path, command) : { executable: path, executableArgs: [] };
+    if (matches(path)) return isBatch ? batch(path, command) : { executable: path, executableArgs: [] };
   }
   if (extension) return null;
   for (const directory of directories) for (const suffix of ['.cmd', '.bat']) {

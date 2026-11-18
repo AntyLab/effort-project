@@ -2,8 +2,9 @@ import test, { describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { ACCEPT_DIR, CATEGORIES, checkEnvironment, diffSnapshots, findPython, loadCorpus, materialize, runAcceptance, selfTestTask, snapshot } from '../bench/lib/corpus.mjs';
+import { findCommand } from '../src/commands.mjs';
 
 const corpus = await loadCorpus();
 const python = findPython();
@@ -71,6 +72,23 @@ test('checks run agent-written code without credentials or code-injection variab
     assert.equal(env[dropped], undefined, dropped);
   }
   assert.equal(env.PYTHONDONTWRITEBYTECODE, '1');
+});
+
+test('the bench picks only a Python that checks can start, and checks run the file it probed', async (t) => {
+  const directory = await scratch(t);
+  // A stand-in interpreter: an npm-style wrapper on Windows, an executable script elsewhere.
+  const override = join(directory, process.platform === 'win32' ? 'python.cmd' : 'python');
+  if (process.platform === 'win32') {
+    await writeFile(join(directory, 'python.mjs'), "console.log('3.12.4');\n");
+    await writeFile(override, '@ECHO off\r\n"%~dp0\\python.mjs" %*\r\n');
+  } else await writeFile(override, '#!/bin/sh\necho 3.12.4\n', { mode: 0o755 });
+  const found = findCommand(override);
+  assert.deepEqual(findPython({ override }), { command: resolve(found.executable), prefix: found.executableArgs, version: '3.12.4' });
+  // A batch file that is not an npm wrapper (or, elsewhere, a file without execute permission) cannot start.
+  const plain = join(directory, 'python-plain.bat');
+  await writeFile(plain, '@echo 3.12.4\r\n');
+  assert.equal(findPython({ override: plain }), null);
+  assert.equal(findPython({ override: join(directory, 'missing-python') }), null);
 });
 
 test('snapshots report added, modified and deleted files and ignore generated ones', async (t) => {

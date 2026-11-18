@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - `effort auto codex` no longer drops the official terminal UI's session when Codex sends a single message larger than 8 MiB, which happens right after a turn starts for users with many skills, plugins or MCP servers. The router's message limit is now 64 MiB.
 - Two tests added in 0.2.0 now pass on Windows. The route-skill test accepts the CRLF line endings that Git for Windows checks out by default, and the WebSocket terminate test waits for the server end to finish closing, not only the client end. This changes test code only.
+- On Windows, command lookup now finds programs installed as app execution aliases, such as the `py` launcher that the Python install manager puts in `%LOCALAPPDATA%\Microsoft\WindowsApps`. Node cannot read these entries, so a verification command such as `py -m pytest` stopped with "was not found on PATH". The benchmark harness now picks only a Python that this lookup finds, and its checks run the interpreter it probed.
 
 ## [0.2.0] - 2026-11-16
 
