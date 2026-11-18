@@ -1,13 +1,49 @@
 import { plainReport, reportsTestFailure, suiteBlocker } from './test-reports.mjs';
 
-export const POLICY_VERSION = 'rules-0.2';
+export const POLICY_VERSION = 'rules-0.3';
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const MODELS = Object.freeze({
-  claude: Object.freeze({ fast: 'haiku', daily: 'opus', frontier: 'fable' }),
+  claude: Object.freeze({ fast: 'haiku', daily: 'sonnet', frontier: 'fable' }),
   codex: Object.freeze({ fast: 'gpt-6-luna', daily: 'gpt-6.1-sol', frontier: 'gpt-6-astra' }),
   gemini: Object.freeze({ fast: 'gemini-4-hydrogen', daily: 'gemini-4-argon', frontier: 'gemini-4-argon' }),
 });
 export const TIERS = ['fast', 'daily', 'frontier'];
+
+// Regex sources, grouped by language: English, Spanish, French, German,
+// Portuguese and Italian. Compile once; Unicode boundaries keep accented words
+// whole too (JavaScript's \b only recognizes ASCII word characters).
+function keywordPattern(terms) {
+  return new RegExp(`(?<![\\p{L}\\p{N}_])(?:${terms.join('|')})(?![\\p{L}\\p{N}_])`, 'iu');
+}
+
+const criticalWords = keywordPattern([
+  String.raw`auth(?:entication|orization)?|permission|cryptograph\w*|encrypt\w*|payments?|migrations?|race condition|deadlock|data loss|security|vulnerability`,
+  String.raw`logins?|log\s+in|sign[- ]?in|sign[- ]?up|passwords?|tokens?|secrets?|credentials?|billing|invoices?|(?:production|prod)\s+outage|drop\s+table|truncate|wipe|delet(?:e[sd]?|ing)\s+(?:[\p{L}\p{N}_-]+\s+){0,6}data|PII|privacy`,
+  String.raw`seguridad|autenticación|pagos?|migración|pérdida\s+de\s+datos|contraseñas?`,
+  String.raw`sécurité|authentification|paiements?|migration|perte\s+de\s+données|mot\s+de\s+passe`,
+  String.raw`Sicherheit|Authentifizierung|Zahlung|Migration|Datenverlust|Passwort`,
+  String.raw`segurança|autenticação|pagamentos?|migração|perda\s+de\s+dados|senhas?`,
+  String.raw`sicurezza|autenticazione|pagamento|migrazione|perdita\s+di\s+dati|password`,
+]);
+const complexWords = keywordPattern([
+  String.raw`architect\w*|investigate|diagnos\w*|refactor|concurren\w*|intermittent|distributed|across|root cause|regression|debug`,
+  String.raw`crash(?:es|ing)?|flaky|leaks?|hang(?:s|ing)?|freez(?:e[sd]?|ing)|performance|slow(?:ness)?|bottlenecks?|randomly|sometimes\s+fails?|bisect`,
+  String.raw`investigar|depurar|refactorizar|condición\s+de\s+carrera|intermitente`,
+  String.raw`enquêter|déboguer|refactoriser|condition\s+de\s+course|intermittent|plantage`,
+  String.raw`untersuchen|debuggen|refaktorieren|Race\s+Condition|sporadisch|Absturz`,
+  String.raw`investigar|depurar|refatorar|condição\s+de\s+corrida|intermitente|travamento`,
+  String.raw`indagare|debuggare|rifattorizzare|condizione\s+di\s+gara|intermittente|arresto\s+anomalo`,
+]);
+const mechanicalWords = keywordPattern([
+  String.raw`rename|typo|spelling|format|translate|summarize|capitaliz\w*`,
+  // Only a comment edit is mechanical: "follow its doc comment" or review comments are real work.
+  String.raw`(?:add|write|fix|update|remove|delete|reword|improve)\s+(?:a\s+|an\s+|the\s+|some\s+|its\s+)?(?:code\s+|inline\s+)?(?:comments?|docstrings?)|lint|indent(?:ation)?|bump\s+the\s+version|version\s+bump|wording|reword|whitespace|sort\s+imports`,
+  String.raw`errata|falta\s+de\s+ortografía|ortografía|renombrar|traducir|formatear`,
+  String.raw`faute\s+de\s+frappe|orthographe|renommer|traduire|formater`,
+  String.raw`Tippfehler|Rechtschreibung|umbenennen|übersetzen|formatieren`,
+  String.raw`erro\s+de\s+digitação|ortografia|renomear|traduzir|formatar`,
+  String.raw`refuso|errore\s+di\s+battitura|ortografia|rinominare|tradurre|formattare`,
+]);
 
 export function modelTier(features) {
   if (features.critical && features.complex) return 'frontier';
@@ -31,9 +67,9 @@ export function recommend({ prompt, provider = 'generic', facts = {}, maxEffort 
   if (![...Object.keys(MODELS), 'generic'].includes(provider)) throw new Error('Provider must be codex, claude, gemini, or generic.');
   validateLevel(maxEffort); validateLevel(minEffort);
   if (LEVELS.indexOf(minEffort) > LEVELS.indexOf(maxEffort)) throw new Error('Minimum effort exceeds maximum.');
-  const critical = /\b(auth(?:entication|orization)?|permission|cryptograph\w*|encrypt\w*|payments?|migrations?|race condition|deadlock|data loss|security|vulnerability)\b/i.test(prompt);
-  const complex = /\b(architect\w*|investigate|diagnos\w*|refactor|concurren\w*|intermittent|distributed|across|root cause|regression|debug)\b/i.test(prompt);
-  const mechanical = /\b(rename|typo|spelling|format|translate|summarize|capitaliz\w*)\b/i.test(prompt) && prompt.length < 350;
+  const critical = criticalWords.test(prompt);
+  const complex = complexWords.test(prompt);
+  const mechanical = mechanicalWords.test(prompt) && prompt.length < 350;
   // Breadth comes from what the request names: five or more distinct workspace files
   // make an edit broad. The checkout's language count describes the repository, not
   // this request, so it is reported but never changes effort.
