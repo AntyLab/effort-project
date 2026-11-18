@@ -272,3 +272,7 @@ What this shows and does not show:
 - **Caveats.** The six new tasks were written the same night by a worker that knew the rules exist (told not to game them). The rule that only counts a comment edit with an edit verb was changed after seeing the rules' picks on these prompts, before any live run. Seventeen tasks give intervals about ±19 pp wide; only the private held-out corpus can support a claim.
 
 Next steps the data points to: treat money movement (transfers, funds, balances, ledger) as risky; and compare `auto-route` against `fixed-daily`, not only against the frontier, on the held-out corpus.
+
+### Follow-up: money movement as risky work (`rules-0.4`), 2026-11-17
+
+`rules-0.4` adds money-movement words (funds, balances, ledgers, refunds, payouts, money or bank transfers) to the risk list. Of the 17 tasks, only `node-bank-ledger` changes route: Claude stays on Sonnet but starts at high effort instead of medium. Six live `auto-route` runs on Claude passed 6/6 for $0.18 in total, against 3/9 for Sonnet at medium in the runs above. This rule was written after seeing that task fail, so `node-bank-ledger` no longer counts as held out for it, and six runs on one task show only that the change fixes this case, not that it generalizes.

@@ -36,7 +36,7 @@ test('built-in models are frozen and recommendations map every provider and tier
       const result = recommend({ prompt, provider });
       assert.equal(result.tier, tier);
       assert.equal(result.model, MODELS[provider][tier]);
-      assert.equal(result.policyVersion, 'rules-0.3');
+      assert.equal(result.policyVersion, 'rules-0.4');
       assert.equal(chooseModel(provider, tier), MODELS[provider][tier]);
     }
   }
@@ -254,5 +254,23 @@ test('a doc comment that describes behavior is not a comment edit', () => {
   }
   for (const prompt of ['Add a comment to parseDuration', 'Update the docstring for retry_delays', 'Fix the inline comment typo']) {
     assert.equal(recommend({ prompt }).features.mechanical, true, prompt);
+  }
+});
+
+test('money movement is risky work, and a plain file transfer is not', () => {
+  for (const prompt of [
+    'Replay ledger events so transfers without enough funds are rejected.',
+    'Fix the account balance after a refund.', 'Wire transfers are applied twice.',
+    'Transfer money between accounts atomically.', 'Payouts skip pending withdrawals.',
+    'Los saldos no cuadran.', 'Le virement est appliqué deux fois.', 'Die Überweisung wird doppelt gebucht.',
+    'Os fundos não batem.', 'Il bonifico viene registrato due volte.',
+  ]) {
+    const result = recommend({ prompt, provider: 'claude' });
+    assert.equal(result.features.critical, true, prompt);
+    assert.equal(result.effort, 'high', prompt);
+    assert.equal(result.model, 'sonnet', prompt); // risk alone raises effort, not the model tier
+  }
+  for (const prompt of ['Transfer the file to the new server.', 'Add a load balancer.', 'Keep the columns balanced.']) {
+    assert.equal(recommend({ prompt }).features.critical, false, prompt);
   }
 });
