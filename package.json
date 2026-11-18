@@ -1,7 +1,7 @@
 {
   "name": "effort-project",
-  "version": "0.2.0",
-  "description": "A local, transparent effort controller for coding agents.",
+  "version": "0.3.0",
+  "description": "A local, transparent model and effort router for coding agents.",
   "type": "module",
   "license": "MIT",
   "engines": {

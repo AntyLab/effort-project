@@ -9,7 +9,7 @@
     {
       "name": "effort-project",
       "source": "./",
-      "description": "Routes prompts to a lighter or stronger model and effort through its own skills when a local rule fires, and stays silent otherwise. Includes read-only MCP tools.",
+      "description": "Suggests a model and effort for each prompt, with optional automatic routing through its own skills. Includes read-only MCP tools.",
       "category": "productivity",
       "tags": ["effort", "routing", "hooks", "mcp"]
     }

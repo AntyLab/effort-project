@@ -1,6 +1,6 @@
 # Automatic routing handoff
 
-Checkpoint: November 16, 2026. Effort now routes both model and effort. This is an experimental functional checkpoint, not evidence of equal quality or cost savings.
+Checkpoint: November 18, 2026 (0.3.0). Effort now routes both model and effort. This is an experimental functional checkpoint, not evidence of equal quality or cost savings.
 
 ## Implemented
 

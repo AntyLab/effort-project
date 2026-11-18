@@ -8,15 +8,29 @@
 [![Node.js 22 or later](https://img.shields.io/badge/node-%E2%89%A522-339933)](https://nodejs.org/)
 [![No runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](package.json)
 
-**Spend reasoning where it helps.** Effort picks a model and effort (low, medium or high) for coding-agent prompts, checks results with your tests, and explains each choice. It runs locally with no runtime dependencies, supporting Claude Code, Codex, Gemini, OpenCode and local MCP hosts.
+**Stop paying top-model prices for typo fixes.** Effort suggests a model and effort (low, medium or high) for every coding-agent prompt, and can switch them for you. It explains each choice, checks results with your tests, and runs locally with no runtime dependencies. It supports Claude Code, Codex, Gemini, OpenCode and local MCP hosts.
 
-> **Status: experimental (0.2).** Model and effort routing has functional live checks, but lower cost at equal quality is unproven. See [Limits](#limits).
+> **Status: experimental (0.3).** In a small benchmark, routing cost about a sixth of always using the top model. Equal quality is not yet shown. See [Does it save money?](#does-it-save-money)
 
 ## Why
 
 Coding agents let you choose how hard the model thinks. Effort makes that choice before each prompt, using rules you can read in one file ([`src/policy.mjs`](src/policy.mjs)), and raises effort when your tests keep failing the same way.
 
 It only uses each agent's real effort setting. It never edits your agent's settings files, never fakes effort by adding "think harder" to a prompt, and never interrupts a request that is already running.
+
+## Does it save money?
+
+It depends on what you run today. On 17 small coding tasks with Claude (51 runs per setup, [details](bench/PILOT.md#model-routing-pilot-2026-11-17)):
+
+| Setup | Runs passed | Cost |
+| --- | --- | --- |
+| Always the top model (Fable, high effort) | 51 of 51 | $8.67 |
+| Always the mid model (Sonnet, medium effort) | 49 of 51 | $1.06 |
+| Effort picks the model and effort | 49 of 51 | $1.39 |
+
+- **If you leave your agent on the top model,** Effort cost about a sixth as much here. On a subscription, the same choice draws down your usage more slowly.
+- **If you already default to a mid model,** Effort did not save money on these tasks. It mostly agreed with you, and spent a little more on the few prompts it sent to the top model.
+- **This is a small benchmark, not proof.** Seventeen tasks cannot show equal quality, and every failed run was the same money-handling task, which the rules have since been changed to catch.
 
 ## Set it up once
 
@@ -136,7 +150,7 @@ The page is served on `127.0.0.1`, and the printed URL contains a one-time acces
 ## Limits
 
 - **Rules, not a trained model.** They are keyword and length rules with basic coverage for English and five other languages, low confidence, and no measure of how hard a task really is.
-- **Savings aren't proven yet.** Effort hasn't shown lower cost at equal quality. See [what has been tested](docs/validation.md).
+- **Savings depend on your default, and equal quality isn't proven.** See [Does it save money?](#does-it-save-money) and [what has been tested](docs/validation.md).
 - **Claude Code suggests by default; routing is opt-in.** With `EFFORT_AUTO_ROUTE=1`, routing depends on Claude following the hook. Forks lose earlier context unless Claude passes it along; the main model still reads the prompt and relays the answer.
 - **Codex desktop and Claude desktop MCP remain advisory.** MCP tools cannot change the host conversation's model or effort.
 - **No spending cap.** Frontier models cost more. Time, attempt and effort limits do not guarantee a final bill.
