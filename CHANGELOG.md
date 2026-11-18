@@ -16,6 +16,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - `effort auto codex` no longer drops the official terminal UI's session when Codex sends a single message larger than 8 MiB, which happens right after a turn starts for users with many skills, plugins or MCP servers. The router's message limit is now 64 MiB.
+- Two tests added in 0.2.0 now pass on Windows. The route-skill test accepts the CRLF line endings that Git for Windows checks out by default, and the WebSocket terminate test waits for the server end to finish closing, not only the client end. This changes test code only.
 
 ## [0.2.0] - 2026-11-16
 

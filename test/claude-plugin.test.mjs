@@ -189,7 +189,8 @@ test('route skills declare the policy models, effort and exactly two forks', asy
     assert.equal(fields.context, tier ? 'fork' : undefined);
     if (tier) {
       assert.match(body, /Carry out the request below exactly as written/);
-      assert.match(body, /\n\n\$ARGUMENTS\s*$/);
+      // Git for Windows checks text files out with CRLF line endings by default.
+      assert.match(body, /\r?\n\r?\n\$ARGUMENTS\s*$/);
       assert.match(body, route === 'fast' ? /report what was changed in one or two lines/ : /short report of findings and changes/);
     } else {
       assert.match(body, /high for the rest of this turn/);
