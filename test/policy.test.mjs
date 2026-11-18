@@ -25,7 +25,7 @@ test('model tiers follow task features independently of effort bounds', () => {
 test('built-in models are frozen and recommendations map every provider and tier', () => {
   assert.deepEqual(TIERS, ['fast', 'daily', 'frontier']);
   assert.deepEqual(MODELS, {
-    claude: { fast: 'haiku', daily: 'opus', frontier: 'fable' },
+    claude: { fast: 'haiku', daily: 'sonnet', frontier: 'fable' },
     codex: { fast: 'gpt-6-luna', daily: 'gpt-6.1-sol', frontier: 'gpt-6-astra' },
     gemini: { fast: 'gemini-4-hydrogen', daily: 'gemini-4-argon', frontier: 'gemini-4-argon' },
   });
@@ -36,6 +36,7 @@ test('built-in models are frozen and recommendations map every provider and tier
       const result = recommend({ prompt, provider });
       assert.equal(result.tier, tier);
       assert.equal(result.model, MODELS[provider][tier]);
+      assert.equal(result.policyVersion, 'rules-0.4');
       assert.equal(chooseModel(provider, tier), MODELS[provider][tier]);
     }
   }
@@ -62,6 +63,133 @@ test('documented payments and migrations requests start at high effort', () => {
     assert.equal(result.effort, 'high', prompt);
     assert.equal(result.features.critical, true, prompt);
   }
+});
+
+test('English costly-error keywords require high effort without making the task investigative', () => {
+  for (const prompt of [
+    'Fix login.', 'Let users log in.', 'Update logins.',
+    'Update sign-in.', 'Let users sign in.', 'Update signup.', 'Update sign-up.',
+    'Change the password.', 'Change passwords.', 'Rotate a token.', 'Rotate tokens.',
+    'Remove a secret.', 'Remove secrets.', 'Store a credential.', 'Store credentials.',
+    'Update billing.', 'Add an invoice.', 'Add invoices.',
+    'Resolve the production outage.', 'Resolve the prod outage.',
+    'DROP TABLE users;', 'Truncate the table.', 'Wipe the database.',
+    'Delete data.', 'Delete all customer data.', 'Deleting old data.',
+    'Handle PII.', 'Update privacy controls.',
+  ]) {
+    const result = recommend({ prompt });
+    assert.equal(result.features.critical, true, prompt);
+    assert.equal(result.features.complex, false, prompt);
+    assert.equal(result.effort, 'high', prompt);
+    assert.equal(result.tier, 'daily', prompt);
+  }
+});
+
+test('English investigative keywords require high effort without making the task critical', () => {
+  for (const prompt of [
+    'Fix a crash.', 'Fix crashes.', 'The app is crashing.', 'Fix the flaky test.',
+    'Fix a memory leak.', 'Fix memory leaks.',
+    'The app can hang.', 'The app hangs.', 'The app is hanging.',
+    'Fix the freeze.', 'The app freezes.', 'Improve performance.',
+    'The page is slow.', 'Fix the slowness.', 'Find the bottleneck.',
+    'The test fails randomly.', 'The test sometimes fails.', 'Bisect this failure.',
+  ]) {
+    const result = recommend({ prompt });
+    assert.equal(result.features.complex, true, prompt);
+    assert.equal(result.features.critical, false, prompt);
+    assert.equal(result.effort, 'high', prompt);
+    assert.equal(result.tier, 'daily', prompt);
+  }
+  assert.equal(recommend({ prompt: 'Fix crashing sign-in.' }).tier, 'frontier');
+});
+
+test('short English mechanical edits use low effort and the fast model tier', () => {
+  for (const prompt of [
+    'Add a comment.', 'Fix the comments.', 'Add a docstring.', 'Fix the docstrings.',
+    'Lint this file.', 'Indent this block.', 'Fix the indentation.',
+    'Bump the version.', 'Make a version bump.', 'Fix the wording.',
+    'Reword this sentence.', 'Remove whitespace.', 'Sort imports.',
+  ]) {
+    const result = recommend({ prompt });
+    assert.equal(result.effort, 'low', prompt);
+    assert.equal(result.tier, 'fast', prompt);
+  }
+});
+
+for (const [language, mechanical, complex, critical] of [
+  ['Spanish',
+    ['errata', 'falta de ortografía', 'ortografía', 'renombrar', 'traducir', 'formatear'],
+    ['investigar', 'depurar', 'refactorizar', 'condición de carrera', 'intermitente'],
+    ['seguridad', 'autenticación', 'pago', 'migración', 'pérdida de datos', 'contraseña']],
+  ['French',
+    ['faute de frappe', 'orthographe', 'renommer', 'traduire', 'formater'],
+    ['enquêter', 'déboguer', 'refactoriser', 'condition de course', 'intermittent', 'plantage'],
+    ['sécurité', 'authentification', 'paiement', 'migration', 'perte de données', 'mot de passe']],
+  ['German',
+    ['Tippfehler', 'Rechtschreibung', 'umbenennen', 'übersetzen', 'formatieren'],
+    ['untersuchen', 'debuggen', 'refaktorieren', 'Race Condition', 'sporadisch', 'Absturz'],
+    ['Sicherheit', 'Authentifizierung', 'Zahlung', 'Migration', 'Datenverlust', 'Passwort']],
+  ['Portuguese',
+    ['erro de digitação', 'ortografia', 'renomear', 'traduzir', 'formatar'],
+    ['investigar', 'depurar', 'refatorar', 'condição de corrida', 'intermitente', 'travamento'],
+    ['segurança', 'autenticação', 'pagamento', 'migração', 'perda de dados', 'senha']],
+  ['Italian',
+    ['refuso', 'errore di battitura', 'ortografia', 'rinominare', 'tradurre', 'formattare'],
+    ['indagare', 'debuggare', 'rifattorizzare', 'condizione di gara', 'intermittente', 'arresto anomalo'],
+    ['sicurezza', 'autenticazione', 'pagamento', 'migrazione', 'perdita di dati', 'password']],
+]) {
+  test(`${language} has basic mechanical, investigative and critical keyword coverage`, () => {
+    for (const prompt of mechanical) {
+      const result = recommend({ prompt });
+      assert.equal(result.effort, 'low', prompt);
+      assert.equal(result.tier, 'fast', prompt);
+    }
+    for (const [prompts, feature] of [[complex, 'complex'], [critical, 'critical']]) {
+      for (const prompt of prompts) {
+        const result = recommend({ prompt });
+        assert.equal(result.effort, 'high', prompt);
+        assert.equal(result.features[feature], true, prompt);
+      }
+    }
+    assert.equal(recommend({ prompt: `${complex[0]}: ${critical[0]}` }).tier, 'frontier');
+  });
+}
+
+test('keywords match whole Unicode words, ignoring case and allowing punctuation', () => {
+  for (const prompt of [
+    'Add a tokenizer.', 'Change the button color.', 'Add a hanger.',
+    'Update the commentary.', 'Update the billingInfo field.', 'Fix the token_count field.',
+    'insécurité', 'segurançaextra', 'épassword', 'passwordé', 'sécurité2', '_senha',
+    'préorthographe', 'orthographeé', 'indagares',
+  ]) {
+    const result = recommend({ prompt });
+    assert.equal(result.effort, 'medium', prompt);
+    assert.equal(result.tier, 'daily', prompt);
+    for (const feature of ['critical', 'complex', 'mechanical']) assert.equal(result.features[feature], false, prompt);
+  }
+  for (const prompt of ['(SÉCURITÉ)', '«contraseña»', 'AUTENTICAÇÃO!', 'ENQUÊTER', 'ÜBERSETZEN']) {
+    assert.notEqual(recommend({ prompt }).effort, 'medium', prompt);
+  }
+  assert.equal(recommend({ prompt: 'faute\tde\nfrappe' }).effort, 'low');
+});
+
+test('comments never lower risky, investigative, long or broad requests to fast', () => {
+  for (const prompt of ['Add a comment about passwords.', 'Add a comment about the memory leak.']) {
+    const result = recommend({ prompt });
+    assert.equal(result.effort, 'high', prompt);
+    assert.equal(result.tier, 'daily', prompt);
+  }
+  const long = 'Add a comment. ' + 'Details about the requested behavior. '.repeat(12);
+  assert.ok(long.length >= 350);
+  assert.equal(recommend({ prompt: long }).effort, 'medium');
+  assert.equal(recommend({ prompt: long }).tier, 'daily');
+  const risky = recommend({ prompt: long + 'Investigate the production outage.' });
+  assert.equal(risky.effort, 'high');
+  assert.equal(risky.tier, 'frontier');
+  assert.equal(risky.features.mechanical, false);
+  const broad = recommend({ prompt: 'Add comments.', facts: { mentionedFiles: 5 } });
+  assert.equal(broad.effort, 'high');
+  assert.equal(broad.tier, 'daily');
 });
 
 test('mechanical length and file breadth thresholds are exact', () => {
@@ -111,4 +239,38 @@ test('retry decisions obey support, repetition and extended ceilings', () => {
     { supportedLevels: [] }, { supportedLevels: null }, { supportedLevels: ['invalid'] },
     { repeatCount: 0 }, { repeatCount: 101 }, { repeatCount: 1.5 }, { repeatCount: '2' },
   ]) assert.throws(() => nextDecision({ effort: 'low', kind: 'test', ...options }));
+});
+
+test('review comments are not a mechanical edit', () => {
+  for (const prompt of ['Address the review comments on the PR', 'Address the PR comments', 'Resolve the pull request comments']) {
+    assert.equal(recommend({ prompt }).features.mechanical, false, prompt);
+  }
+  assert.equal(recommend({ prompt: 'Add a comment to parseDuration' }).effort, 'low');
+});
+
+test('a doc comment that describes behavior is not a comment edit', () => {
+  for (const prompt of ['Fix parseDuration so it follows its doc comment.', 'Make it follow the rules in its doc comment.', 'Implement the docstring contract.']) {
+    assert.equal(recommend({ prompt }).features.mechanical, false, prompt);
+  }
+  for (const prompt of ['Add a comment to parseDuration', 'Update the docstring for retry_delays', 'Fix the inline comment typo']) {
+    assert.equal(recommend({ prompt }).features.mechanical, true, prompt);
+  }
+});
+
+test('money movement is risky work, and a plain file transfer is not', () => {
+  for (const prompt of [
+    'Replay ledger events so transfers without enough funds are rejected.',
+    'Fix the account balance after a refund.', 'Wire transfers are applied twice.',
+    'Transfer money between accounts atomically.', 'Payouts skip pending withdrawals.',
+    'Los saldos no cuadran.', 'Le virement est appliqué deux fois.', 'Die Überweisung wird doppelt gebucht.',
+    'Os fundos não batem.', 'Il bonifico viene registrato due volte.',
+  ]) {
+    const result = recommend({ prompt, provider: 'claude' });
+    assert.equal(result.features.critical, true, prompt);
+    assert.equal(result.effort, 'high', prompt);
+    assert.equal(result.model, 'sonnet', prompt); // risk alone raises effort, not the model tier
+  }
+  for (const prompt of ['Transfer the file to the new server.', 'Add a load balancer.', 'Keep the columns balanced.']) {
+    assert.equal(recommend({ prompt }).features.critical, false, prompt);
+  }
 });

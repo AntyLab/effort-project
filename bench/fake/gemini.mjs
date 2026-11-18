@@ -28,7 +28,7 @@ if (resumed && !state.sessions[resumed]) {
   emit({ conversation_id: '', status: 'ERROR', response: '', error: 'No conversation found for the session ID.', finished_reason: 'error', num_turns: 0 });
   process.exit(0);
 }
-const turn = await simulateTurn(config, state, { cwd: process.cwd(), effort,
+const turn = await simulateTurn(config, state, { cwd: process.cwd(), effort, model,
   canWrite: flag('--mode') === 'accept-edits' && settings.permissions?.allow?.includes('write_file(*)') });
 const session = state.sessions[sessionId] ?? { input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, num_turns: 0 };
 session.input_tokens += turn.usage.inputTokens;

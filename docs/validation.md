@@ -1,6 +1,13 @@
 # Validation record
 
-Release: **0.1.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
+Release: **0.2.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
+
+## Codex terminal UI and OpenCode, 2026-11-17
+
+macOS, Node 26.13, codex-cli 0.160.0, OpenCode 1.19.5. Functional checks, not quality or cost evidence.
+
+- **Official Codex terminal UI.** `effort auto codex` was started in a disposable folder and driven with `expect` in a 120×40 pseudo-terminal. Before the fix, every typed prompt ended with the UI showing "Reconnecting to server" and disconnecting. A trace of method names showed why: right after `turn/started`, Codex's app-server sent a single message over 8 MiB (this account has many skills and MCP servers), and the router's 8 MiB message limit closed the whole session. With the limit at 64 MiB, the typo prompt was rewritten from the UI's default `gpt-6.1-sol` to `gpt-6-luna` at low and completed in about 5 seconds with the corrected sentence. Codex's own session record showed `gpt-6-luna` / low. The one-time folder-trust prompt was accepted for the disposable folder; the hooks prompt was answered with "Continue without trusting".
+- **OpenCode.** OpenCode 1.19.5 with no credentials, using the free `opencode/flint-40b-free` model, which advertises low, medium and high variants. With the plugin from `effort config opencode` in `.opencode/plugins/`, a typo prompt logged `Automatic effort: apply` with `reasoningEffort: low`, and a race-condition investigation logged `apply` with `reasoningEffort: high`. The request options OpenCode sent carried those values. `providerAccepted` stays `null`: the provider does not report the applied effort. An earlier attempt on `opencode/beam-free` logged nothing because that model hung before any request; the plugin loaded and its `config` hook ran.
 
 ## Model and effort routing, 2026-11-16
 
@@ -38,7 +45,7 @@ Nine `effort run` tasks, three per provider, each in a disposable workspace with
 | Codex | Add `slugify` | `gpt-6.1-sol` (daily) | medium | Thread readback: `gpt-6.1-sol`, medium | verified, 1 attempt |
 | Codex | Fix a lost-update race | `gpt-6-astra` (frontier) | high | Thread readback: `gpt-6-astra`, high | verified, 1 attempt |
 | Claude | Rename a misspelled export | `haiku` (fast) | low | Stream reported `claude-haiku-5-5`; effort is a launch flag, not reported back | verified in 3 of 7 runs before the fix below, 6 of 6 after |
-| Claude | Add `slugify` | `opus` (daily) | medium | Stream reported `claude-opus-5-5` | verified, 1 attempt, about $0.03 |
+| Claude | Add `slugify` | `opus` (daily at the time; now `sonnet`) | medium | Stream reported `claude-opus-5-5` | verified, 1 attempt, about $0.03 |
 | Claude | Fix a lost-update race | `fable` (frontier) | high | Stream reported `claude-fable-5-1` | verified, 1 attempt, about $0.17 |
 | Gemini | Rename a misspelled export | `gemini-4-hydrogen` (fast) | low | Log label "Gemini 4 Hydrogen (Low)", 154 thinking tokens | verified, 1 attempt |
 | Gemini | Add `slugify` | `gemini-4-argon` (daily) | medium | Log label "Gemini 4 Argon (Medium)", 376 thinking tokens | verified, 1 attempt |

@@ -6,9 +6,13 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadCorpus, selectTasks } from '../bench/lib/corpus.mjs';
-import { DEFAULT_ARMS, buildSchedule } from '../bench/lib/plan.mjs';
+import { ARMS, DEFAULT_ARMS, ROUTING_ARMS, buildSchedule } from '../bench/lib/plan.mjs';
 import { readRecords, runBenchmark } from '../bench/lib/execute.mjs';
 import { FAKE_VERSION } from '../bench/fake/model.mjs';
+import { resolveSettings } from '../bench/lib/cli.mjs';
+import { chooseModel, MODELS, recommend } from '../src/policy.mjs';
+import { repositoryFacts } from '../src/repository.mjs';
+import { aggregate } from '../bench/lib/report.mjs';
 
 // Offline only: every provider turn below goes to the fake CLIs in bench/fake.
 const root = resolve(fileURLToPath(new URL('..', import.meta.url)));
@@ -61,6 +65,85 @@ function cli(args, { env }) {
 }
 
 describe('offline benchmark runs', { concurrency: 1 }, () => {
+  test('routing plans expand the shorthand and list each run model and effort', async (t) => {
+    const directory = await scratch(t);
+    const env = withoutPath(directory);
+    const args = ['plan', '--arms', 'routing', '--providers', 'codex,claude,gemini', '--tasks', 'node-rename-export'];
+    const result = await cli([...args, '--json'], { env });
+    assert.equal(result.code, 0, result.stderr);
+    const plan = JSON.parse(result.stdout);
+    assert.deepEqual(plan.arms.map((arm) => arm.name), ROUTING_ARMS);
+    assert.equal(plan.schedule.length, 12);
+    for (const run of plan.schedule) {
+      const tier = run.arm === 'fixed-daily' ? 'daily' : run.arm === 'fixed-frontier' ? 'frontier' : 'fast';
+      assert.equal(run.model, MODELS[run.provider][tier]);
+      assert.equal(run.effort, run.arm === 'fixed-daily' ? 'medium' : run.arm === 'fixed-frontier' ? 'high' : 'low');
+    }
+    const text = await cli(args, { env });
+    assert.equal(text.code, 0, text.stderr);
+    for (const run of plan.schedule) assert.ok(text.stdout.includes(`${run.key}  model: ${run.model}  effort: ${run.effort}`));
+    const mixed = await resolveSettings({ arms: 'routing,fixed-low,auto-route', tasks: 'node-rename-export' });
+    assert.deepEqual(mixed.arms, [...ROUTING_ARMS, 'fixed-low']);
+    assert.deepEqual((await resolveSettings({ tasks: 'node-rename-export' })).arms, DEFAULT_ARMS);
+    for (const arm of ROUTING_ARMS) assert.ok(ARMS[arm].optional && !DEFAULT_ARMS.includes(arm));
+  });
+
+  test('routing arms refuse model pins before creating output or launching a CLI', async (t) => {
+    const directory = await scratch(t);
+    for (const provider of ['codex', 'claude', 'gemini']) {
+      for (const arm of ROUTING_ARMS) await assert.rejects(resolveSettings({ arms: arm, tasks: 'node-paginate', [`${provider}-model`]: 'pinned' }), /Model-routing arms cannot be combined with .*model.*pin defeats the comparison/);
+    }
+    const out = join(directory, 'out');
+    const result = await cli(['--arms', 'routing', '--claude-model', 'sonnet', '--tasks', 'node-paginate', '--out', out], { env: withoutPath(directory) });
+    assert.equal(result.code, 1);
+    assert.match(result.stderr, /--claude-model.*pin defeats the comparison/);
+    await assert.rejects(stat(out), { code: 'ENOENT' });
+    const tasks = selectTasks(corpus.tasks, { ids: 'node-paginate' });
+    await assert.rejects(runBenchmark({ tasks, arms: ['auto-route'], providers: ['codex'], models: { codex: 'pinned' }, timeoutMs: 60_000 }), /pin defeats the comparison/);
+  });
+
+  test('per-arm models reach every fake CLI and results, with per-arm report statistics', async (t) => {
+    const directory = await scratch(t);
+    const tasks = selectTasks(corpus.tasks, { ids: 'node-rename-export,node-map-limit,node-money-refactor' });
+    const picks = new Map(await Promise.all(tasks.map(async (task) => [task.id, recommend({ prompt: task.prompt, facts: await repositoryFacts(task.repoDir, task.prompt) })])));
+    assert.deepEqual(new Set([...picks.values()].map((pick) => pick.tier)), new Set(['fast', 'daily', 'frontier']));
+    const result = await runBenchmark({ corpus, tasks, arms: ROUTING_ARMS, providers: ['codex', 'claude', 'gemini'],
+      seed: 'effort-bench', timeoutMs: 60_000, outDir: join(directory, 'out'), referenceArm: 'fixed-frontier' });
+    const records = await readRecords(result.runsPath);
+    assert.equal(records.length, 36);
+    for (const record of records) {
+      assert.equal(record.harnessError, null, record.key);
+      assert.equal(record.providerError, null, record.key);
+      const arm = ARMS[record.arm];
+      const pick = picks.get(record.task);
+      const requested = chooseModel(record.provider, arm.model === 'auto' ? pick.tier : arm.model);
+      assert.equal(record.model.requested, requested, record.key);
+      assert.deepEqual(record.model.observed, [requested], record.key);
+      assert.equal(record.effort.initial, arm.effort === 'auto' ? pick.effort : arm.effort);
+      assert.ok(record.attempts.length >= 1 && record.attempts.length <= arm.maxAttempts);
+    }
+    assert.ok(records.some((record) => record.arm === 'auto-route-escalate' && record.attempts.length > 1));
+    const summary = await readFile(result.summaryPath, 'utf8');
+    assert.match(summary, /Models are selected per arm/);
+    assert.match(summary, /\| Arm \| Models requested \| Models observed \|/);
+    assert.match(summary, /\| `fixed-daily` \| `gpt-6.1-sol` \| `gpt-6.1-sol` \|/);
+    assert.match(summary, /\| `fixed-frontier` \| `gpt-6-astra` \| `gpt-6-astra` \|/);
+    assert.doesNotMatch(summary, /arms may not be comparable/);
+    for (const provider of aggregate(records, result.meta).providers) {
+      for (const arm of provider.arms) {
+        const rows = records.filter((record) => record.provider === provider.provider && record.arm === arm.arm);
+        assert.equal(arm.runs, 3);
+        assert.equal(arm.passed, rows.filter((record) => record.accepted).length);
+        assert.equal(arm.tokens.n, rows.filter((record) => record.usage.totalTokens !== null).length);
+        assert.equal(arm.cost.n, rows.filter((record) => record.usage.costUsd !== null).length);
+      }
+      const chart = await readFile(join(result.outDir, `chart-${provider.provider}.svg`), 'utf8');
+      assert.match(chart, /auto-route-escalate/);
+      assert.match(chart, /Requested models:/);
+    }
+    assert.equal(result.meta.plan.modelRouting.policyVersion, records[0].effort.policyVersion);
+  });
+
   test('a full offline run writes JSONL records, a summary and charts through the real adapters', async (t) => {
     const directory = await scratch(t);
     const workRoot = join(directory, 'work');

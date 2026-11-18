@@ -1,0 +1,417 @@
+[
+ {
+  "file": "sky/cloud_1.webp",
+  "w": 1024,
+  "h": 389
+ },
+ {
+  "file": "sky/cloud_2.webp",
+  "w": 1024,
+  "h": 459
+ },
+ {
+  "file": "sky/cloud_3.webp",
+  "w": 1024,
+  "h": 98
+ },
+ {
+  "file": "sky/swallow_body.webp",
+  "w": 1024,
+  "h": 362
+ },
+ {
+  "file": "sky/swallow_wing_near.webp",
+  "w": 374,
+  "h": 1024
+ },
+ {
+  "file": "sky/swallow_wing_far.webp",
+  "w": 416,
+  "h": 1024
+ },
+ {
+  "file": "room/wall_window.webp",
+  "w": 1024,
+  "h": 1536
+ },
+ {
+  "file": "room/desk.webp",
+  "w": 1536,
+  "h": 864
+ },
+ {
+  "file": "room/candle.webp",
+  "w": 634,
+  "h": 1024
+ },
+ {
+  "file": "room/inkwell.webp",
+  "w": 706,
+  "h": 1024
+ },
+ {
+  "file": "room/quill_1.webp",
+  "w": 1005,
+  "h": 1024
+ },
+ {
+  "file": "room/quill_2.webp",
+  "w": 1024,
+  "h": 1015
+ },
+ {
+  "file": "room/quill_3.webp",
+  "w": 1014,
+  "h": 1024
+ },
+ {
+  "file": "room/quill_4.webp",
+  "w": 1008,
+  "h": 1024
+ },
+ {
+  "file": "room/quill_5.webp",
+  "w": 1024,
+  "h": 1022
+ },
+ {
+  "file": "room/wax_seal.webp",
+  "w": 1010,
+  "h": 1024
+ },
+ {
+  "file": "pond/pond_base.webp",
+  "w": 1254,
+  "h": 1254
+ },
+ {
+  "file": "pond/pebble_1.webp",
+  "w": 445,
+  "h": 307
+ },
+ {
+  "file": "pond/pebble_2.webp",
+  "w": 464,
+  "h": 322
+ },
+ {
+  "file": "pond/pebble_3.webp",
+  "w": 455,
+  "h": 316
+ },
+ {
+  "file": "pond/pebble_4.webp",
+  "w": 448,
+  "h": 298
+ },
+ {
+  "file": "pond/pebble_5.webp",
+  "w": 483,
+  "h": 364
+ },
+ {
+  "file": "pond/pebble_6.webp",
+  "w": 487,
+  "h": 338
+ },
+ {
+  "file": "pond/pebble_7.webp",
+  "w": 495,
+  "h": 357
+ },
+ {
+  "file": "pond/pebble_8.webp",
+  "w": 481,
+  "h": 344
+ },
+ {
+  "file": "pond/lily_pad_1.webp",
+  "w": 604,
+  "h": 559
+ },
+ {
+  "file": "pond/lily_pad_2.webp",
+  "w": 618,
+  "h": 560
+ },
+ {
+  "file": "pond/lily_pad_3.webp",
+  "w": 621,
+  "h": 550
+ },
+ {
+  "file": "pond/lily_bud.webp",
+  "w": 1024,
+  "h": 929
+ },
+ {
+  "file": "pond/lily_open.webp",
+  "w": 1024,
+  "h": 960
+ },
+ {
+  "file": "pond/frog_sit.webp",
+  "w": 1024,
+  "h": 774
+ },
+ {
+  "file": "pond/frog_hop.webp",
+  "w": 1024,
+  "h": 424
+ },
+ {
+  "file": "pond/reeds.webp",
+  "w": 673,
+  "h": 1024
+ },
+ {
+  "file": "pond/dragonfly.webp",
+  "w": 1024,
+  "h": 900
+ },
+ {
+  "file": "meadow/butterfly_1.webp",
+  "w": 1024,
+  "h": 729
+ },
+ {
+  "file": "meadow/butterfly_2.webp",
+  "w": 1024,
+  "h": 747
+ },
+ {
+  "file": "meadow/butterfly_3.webp",
+  "w": 1024,
+  "h": 755
+ },
+ {
+  "file": "meadow/butterfly_4.webp",
+  "w": 1024,
+  "h": 770
+ },
+ {
+  "file": "meadow/butterfly_5.webp",
+  "w": 1024,
+  "h": 777
+ },
+ {
+  "file": "meadow/small_1.webp",
+  "w": 420,
+  "h": 273
+ },
+ {
+  "file": "meadow/small_2.webp",
+  "w": 524,
+  "h": 424
+ },
+ {
+  "file": "meadow/small_3.webp",
+  "w": 432,
+  "h": 277
+ },
+ {
+  "file": "meadow/small_4.webp",
+  "w": 588,
+  "h": 335
+ },
+ {
+  "file": "meadow/grass.webp",
+  "w": 1024,
+  "h": 306
+ },
+ {
+  "file": "night/book.webp",
+  "w": 922,
+  "h": 1024
+ },
+ {
+  "file": "valley/plate_wide.webp",
+  "w": 1672,
+  "h": 941
+ },
+ {
+  "file": "valley/plate_tower.webp",
+  "w": 1024,
+  "h": 1536
+ },
+ {
+  "file": "valley/plate_pond.webp",
+  "w": 1672,
+  "h": 941
+ },
+ {
+  "file": "valley/plate_meadow.webp",
+  "w": 1672,
+  "h": 941
+ },
+ {
+  "file": "valley/lily_pad_side_1.webp",
+  "w": 640,
+  "h": 187
+ },
+ {
+  "file": "valley/lily_pad_side_2.webp",
+  "w": 639,
+  "h": 191
+ },
+ {
+  "file": "valley/lily_pad_side_3.webp",
+  "w": 640,
+  "h": 197
+ },
+ {
+  "file": "valley/frog_croak.webp",
+  "w": 1024,
+  "h": 816
+ },
+ {
+  "file": "valley/chrysalis.webp",
+  "w": 608,
+  "h": 1024
+ },
+ {
+  "file": "valley/plate_tower_still.webp",
+  "w": 1024,
+  "h": 1536
+ },
+ {
+  "file": "valley/wizard_arm.webp",
+  "w": 1024,
+  "h": 660
+ },
+ {
+  "file": "valley/frog_front.webp",
+  "w": 980,
+  "h": 726
+ },
+ {
+  "file": "valley/frog_back.webp",
+  "w": 964,
+  "h": 859
+ },
+ {
+  "file": "meadow/flyer_1.webp",
+  "w": 496,
+  "h": 522
+ },
+ {
+  "file": "meadow/flyer_2.webp",
+  "w": 487,
+  "h": 519
+ },
+ {
+  "file": "meadow/flyer_3.webp",
+  "w": 501,
+  "h": 510
+ },
+ {
+  "file": "meadow/flyer_down_1.webp",
+  "w": 486,
+  "h": 455
+ },
+ {
+  "file": "meadow/flyer_down_2.webp",
+  "w": 479,
+  "h": 463
+ },
+ {
+  "file": "meadow/flyer_down_3.webp",
+  "w": 474,
+  "h": 453
+ },
+ {
+  "file": "meadow/perch_a_1.webp",
+  "w": 449,
+  "h": 611
+ },
+ {
+  "file": "meadow/perch_a_2.webp",
+  "w": 529,
+  "h": 559
+ },
+ {
+  "file": "meadow/perch_a_3.webp",
+  "w": 640,
+  "h": 318
+ },
+ {
+  "file": "meadow/perch_b_1.webp",
+  "w": 478,
+  "h": 607
+ },
+ {
+  "file": "meadow/perch_b_2.webp",
+  "w": 561,
+  "h": 593
+ },
+ {
+  "file": "meadow/perch_b_3.webp",
+  "w": 640,
+  "h": 396
+ },
+ {
+  "file": "meadow/perch_c_1.webp",
+  "w": 464,
+  "h": 543
+ },
+ {
+  "file": "meadow/perch_c_2.webp",
+  "w": 532,
+  "h": 535
+ },
+ {
+  "file": "meadow/perch_c_3.webp",
+  "w": 640,
+  "h": 367
+ },
+ {
+  "file": "meadow/perch_d_1.webp",
+  "w": 470,
+  "h": 586
+ },
+ {
+  "file": "meadow/perch_d_2.webp",
+  "w": 510,
+  "h": 578
+ },
+ {
+  "file": "meadow/perch_d_3.webp",
+  "w": 640,
+  "h": 302
+ },
+ {
+  "file": "meadow/perch_e_1.webp",
+  "w": 462,
+  "h": 583
+ },
+ {
+  "file": "meadow/perch_e_2.webp",
+  "w": 534,
+  "h": 542
+ },
+ {
+  "file": "meadow/perch_e_3.webp",
+  "w": 640,
+  "h": 372
+ },
+ {
+  "file": "valley/frog_leap_1.webp",
+  "w": 497,
+  "h": 287
+ },
+ {
+  "file": "valley/frog_leap_2.webp",
+  "w": 640,
+  "h": 305
+ },
+ {
+  "file": "valley/frog_leap_3.webp",
+  "w": 533,
+  "h": 291
+ },
+ {
+  "file": "valley/wizard_quill.webp",
+  "w": 1024,
+  "h": 660
+ }
+]

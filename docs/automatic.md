@@ -93,7 +93,7 @@ The router discovers `model/list` capabilities and sets `turn/start.effort`, inc
 
 The router selects a built-in tier model by default, subject to discovered capabilities. `--model` and an explicit routing table override that choice. Approval requests, approval responses, sandbox policies, and unrelated protocol messages pass through. The official terminal UI owns permissions and cancellation; `--allow-write` and Effort's managed timeout flag are rejected for this mode. The router never approves requests on the user's behalf.
 
-A live WebSocket client check drove the real `codex app-server` through this router and confirmed a typo turn changed from the session default gpt-6.1-sol/max to gpt-6-luna/low. Codex's own session record matched. The official terminal UI was separately started through the router and drew its start screen; a prompt typed into it has not been observed.
+A live WebSocket client check drove the real `codex app-server` through this router and confirmed a typo turn changed from the session default gpt-6.1-sol/max to gpt-6-luna/low. Codex's own session record matched. The official terminal UI was separately started through the router and drew its start screen; a prompt typed into it has not been observed. On November 17 a prompt typed into the official terminal UI (codex-cli 0.160.0) was routed from gpt-6.1-sol to gpt-6-luna/low and completed; Codex's session record showed the routed model and effort.
 
 ## Model routing
 
@@ -101,7 +101,7 @@ Built-in model selection is on by default in managed runs, managed text sessions
 
 | Provider | fast | daily | frontier |
 | --- | --- | --- | --- |
-| Claude | haiku | opus | fable |
+| Claude | haiku | sonnet | fable |
 | Codex | gpt-6-luna | gpt-6.1-sol | gpt-6-astra |
 | Gemini | gemini-4-hydrogen | gemini-4-argon | gemini-4-argon |
 
@@ -129,8 +129,8 @@ Model IDs are configuration, not executable commands. Effort does not download m
 
 Short mechanical requests can start at low, uncertain tasks at medium, and investigation or costly error risks at high. A request that names five or more distinct workspace files counts as a broad edit and is raised one level, never past high. Files are counted by the relative paths the prompt contains, plus each other bare file name once. The checkout's language count is reported as a reason but never changes effort, because it describes the repository rather than the request. Short ambiguous followups preserve the previous level. Two successive clearly simpler requests allow a downgrade, reducing setting churn. Explicit pins and bounds win over recommendations; bounds can therefore limit effort even for complex work.
 
-This is an English-oriented rules policy. It does not read the entire conversation, inspect repository source contents, route every internal tool result, or learn from provider outputs. Lower settings, fewer output tokens, and successful protocol tests do not prove equal quality or lower total cost. Most Claude models can lose conversation cache reuse when effort changes, and model changes have separate caches; the conservative downgrade rule is a mitigation, not a cost model.
+This rules policy covers English plus basic Spanish, French, German, Portuguese and Italian keywords. It does not read the entire conversation, inspect repository source contents, route every internal tool result, or learn from provider outputs. Lower settings, fewer output tokens, and successful protocol tests do not prove equal quality or lower total cost. Most Claude models can lose conversation cache reuse when effort changes, and model changes have separate caches; the conservative downgrade rule is a mitigation, not a cost model.
 
-Offline tests cover policy decisions, continuation handling, overrides, native-shaped host contracts, session separation, resumed managed turns, request-option application, malformed inputs, and configuration generation. Live checks cover Claude plugin skill routing, Codex app-server routing through the built-in WebSocket server, and a managed Gemini task. OpenCode native execution, the official Codex terminal UI, and Windows/Linux live routing remain unchecked. See [validation](validation.md).
+Offline tests cover policy decisions, continuation handling, overrides, native-shaped host contracts, session separation, resumed managed turns, request-option application, malformed inputs, and configuration generation. Live checks cover Claude plugin skill routing, Codex app-server routing through the built-in WebSocket server, and a managed Gemini task. Windows/Linux live routing remains unchecked; OpenCode and the official Codex terminal UI were checked live on November 17. See [validation](validation.md).
 
 Source contracts checked on September 26, 2026: [Codex app-server](https://learn.chatgpt.com/docs/app-server), [Codex hooks](https://learn.chatgpt.com/docs/hooks), [Claude hooks](https://code.claude.com/docs/en/hooks#userpromptsubmit-decision-control), [Claude runtime configuration](https://code.claude.com/docs/en/agent-sdk/configuration#change-configuration-mid-session), [Claude prompt caching](https://code.claude.com/docs/en/prompt-caching#changing-effort-level), and [OpenCode v1.18.32 plugin contract](https://github.com/anomalyco/opencode/blob/v1.18.32/packages/plugin/src/index.ts).
