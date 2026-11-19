@@ -1,6 +1,6 @@
 {
   "name": "effort-project",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "A local, transparent model and effort router for coding agents.",
   "type": "module",
   "license": "MIT",

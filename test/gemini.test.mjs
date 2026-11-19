@@ -11,6 +11,8 @@ import { unitHash } from '../bench/lib/random.mjs';
 
 const SESSION = 'gemini-test-conversation_123';
 const SHELL_LIMIT = 'Shell commands are not available in this session: read and edit files only, and do not run tests or other commands.';
+const NO_AGENTS = 'This session has no tool for listing or searching files, so the workspace files are listed below. Do not start sub-agents or wait for one: do the work yourself in this turn.';
+const sent = (prompt, files) => `${prompt}\n\n${SHELL_LIMIT}\n\n${NO_AGENTS}\n\nFiles in this workspace (hidden and dependency folders left out):\n${files}`;
 const EMPTY_USAGE = { inputTokens: null, outputTokens: null, cachedInputTokens: null, costUsd: null };
 const argValue = (args, name) => args[args.indexOf(name) + 1];
 const exists = async path => { try { await access(path); return true; } catch { return false; } };
@@ -88,7 +90,7 @@ test('Gemini sends a literal argv prompt with read-only session permissions and 
   assert.deepEqual(result.usage, { inputTokens: 12, outputTokens: 7, cachedInputTokens: 3, costUsd: null });
   assert.equal(launch.stdin, '');
   assert.equal(launch.cwd, await realpath(f.cwd));
-  assert.equal(argValue(launch.argv, '--print'), `${prompt}\n\n${SHELL_LIMIT}`);
+  assert.equal(argValue(launch.argv, '--print'), sent(prompt, 'fake-agy.cjs'));
   assert.equal(argValue(launch.argv, '--output-format'), 'json');
   assert.equal(argValue(launch.argv, '--model'), 'gemini-4-hydrogen');
   assert.equal(argValue(launch.argv, '--effort'), 'medium');
@@ -105,6 +107,22 @@ test('Gemini sends a literal argv prompt with read-only session permissions and 
   assert.ok(events.some(event => event.type === 'session' && event.sessionId === SESSION && event.model === 'gemini-4-hydrogen'));
   assert.ok(events.some(event => event.type === 'effort' && event.thinkingTokens === 5));
   assert.ok(!JSON.stringify({ result, events }).includes(prompt));
+});
+
+test('Gemini prompts list workspace files, shallowest first, without hidden or dependency folders', async t => {
+  const f = await fixture(t);
+  for (const path of ['src/deep/b.mjs', 'node_modules/pkg/index.js', '.git/config', 'test/a.test.mjs']) {
+    await mkdir(dirname(join(f.cwd, path)), { recursive: true });
+    await writeFile(join(f.cwd, path), '');
+  }
+  await writeFile(join(f.cwd, '.env'), '');
+  await run(f.options);
+  assert.equal(argValue((await launchAndAssertCleaned(f)).argv, '--print'), sent(f.options.prompt, 'fake-agy.cjs\ntest/a.test.mjs\nsrc/deep/b.mjs'));
+  for (let index = 0; index < 400; index++) await writeFile(join(f.cwd, `extra-${index}.txt`), '');
+  await run(f.options);
+  const listed = argValue(JSON.parse(await readFile(f.log, 'utf8')).argv, '--print').split('\n');
+  assert.equal(listed.at(-1), '(Only the first 400 files are listed.)');
+  assert.ok(!listed.includes('src/deep/b.mjs'));
 });
 
 test('Gemini write turns use accept-edits and resume without reporting cumulative usage as per-turn', async t => {
@@ -223,6 +241,7 @@ test('Gemini blocks access failures using fixed messages without leaking prompt,
     ['rate-limit reached', 'rate_limited'],
     ['usage limit reached', 'rate_limited'],
     ['permission denied', 'permission_denied'],
+    ['Eligibility check failed: Post "https://example.invalid/v1internal:loadCodeAssist": EOF', 'service_unavailable'],
   ]) {
     const secret = 'PRIVATE_PROVIDER_SECRET';
     const prompt = 'PRIVATE_PROMPT_CONTENT';

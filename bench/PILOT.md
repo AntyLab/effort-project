@@ -308,3 +308,51 @@ Next steps the data points to: count "format" as mechanical only as a verb next 
 
 No new live run was made. The new route for both tasks is exactly the `fixed-daily` setting, which passed both in the run above, so a fresh run would repeat that arm. Read this way, `auto-route` would have passed 40 of 40 for about the same cost as `fixed-daily`, but that is a reading of one earlier run per task, not a new measurement. The rule was written after seeing these prompts, so neither task counts as held out for it, and it does not show the change generalizes.
 
+
+## Held-out round 4 on Codex and Gemini, 2026-11-19
+
+The same 40 held-out tasks as above, on the other two providers. Arms `--arms routing`, one repeat, 160 runs each, 600 s per run, margin 5 pp, policy `rules-0.5`, macOS, Node 26.13, Python 3.14.7. Both ran on subscription sign-ins: nothing was billed, and neither CLI reports a cost, so the tables show tokens. The tasks are no longer untouched for the "format" rule (see the follow-up above); nothing else in the rules changed after the Claude run.
+
+### Codex
+
+codex-cli 0.170.0, Effort at commit `0f17d8e` (the `gpt-6.2` tiers), seed `heldout-r4-codex-2026-11-19`. Every run finished as `verified` with one attempt and no provider or harness error.
+
+| Arm | Passed | Pass rate (95% CI) | vs `fixed-frontier` (95% CI) | Total tokens | Output tokens |
+| --- | --- | --- | --- | --- | --- |
+| `fixed-frontier` (`gpt-6.2-astra`, high) | 40/40 | 100% (91.2–100) | reference | 10.0 M | 36,919 |
+| `fixed-daily` (`gpt-6.2-sol`, medium) | 40/40 | 100% (91.2–100) | 0.0 pp (−8.8 to +8.8), inconclusive | 11.7 M | 58,864 |
+| `auto-route` | 40/40 | 100% (91.2–100) | 0.0 pp (−8.8 to +8.8), inconclusive | 11.8 M | 61,816 |
+| `auto-route-escalate` | 40/40 | 100% (91.2–100) | 0.0 pp (−8.8 to +8.8), inconclusive | 11.0 M | 58,563 |
+
+The rules picked `gpt-6.2-sol` for 39 tasks (medium for 33, high for 6) and `gpt-6-luna` at low for one, `node-event-name`; never the frontier model.
+
+- **No arm failed a task.** Routing matched the frontier model on all 40, and so did the daily model alone. The interval still reaches −8.8 pp, so equal quality is not shown.
+- **Routing did not save tokens on Codex.** The frontier model used the fewest: 10.0 M against 11.8 M for `auto-route`, and fewer output tokens too. About 88% of every arm's tokens are cached input, the fixed prompt and tools Codex reads on each call.
+- **Tokens are not cost here.** Codex reports no price, and this run cannot say how much of a plan's allowance a frontier-model token uses compared with a daily-model token. The weekly usage figure of the plan used went from 1% to 6% over the run.
+- **The one fast-tier pick passed**, as it did on Claude.
+- **Caveats.** One repeat, tasks sized for minutes, and `gpt-6.2-astra` was not checked live outside this run.
+
+### Gemini (unfinished: 69 of 160 runs)
+
+Antigravity CLI (`agy`) 1.5.12. On Gemini the daily and frontier tiers are the same model, `gemini-4-argon`, at medium and high effort; the fast tier is `gemini-4-hydrogen`. Three things happened to this run, in order.
+
+1. **A first attempt found a defect in Effort and is not counted.** Seed `heldout-r4-gemini-2026-11-19`, stopped by hand after 64 finished runs: 55 passed and 9 failed. Eight of the nine ended with no file changed. Antigravity 1.5.12 gives the model no tool to list or search files and Effort denies shell commands, so Gemini guessed file names, started a sub-agent to find them and ended its turn waiting for it. Antigravity's own conversation records show this for seven of the eight; the eighth was not found. Twelve of that attempt's 66 turns launched a sub-agent. The ninth failure, `node-flush-queue` on `fixed-daily`, was a wrong answer: the file was edited, the visible check passed and the hidden check failed. Effort now lists the workspace files in each Gemini prompt (commit `9354161`).
+2. **The rerun on the fixed code lost 106 runs to dropped connections.** Seed `heldout-r4-gemini-fixed-2026-11-19`. After 54 runs Google's endpoint dropped connections for about five minutes. agy ended each turn with "Eligibility check failed" in about a second, the harness scored those 106 runs as failures instead of stopping, and they were taken out of the scored file by hand (the raw records are kept). Effort now reports that failure as `service_unavailable`, which the harness sets aside and stops on (commit `761a137`); the run was resumed on that commit.
+3. **The resume ran out of quota.** After 15 more runs Antigravity answered "Individual quota reached", with a reset about 165 hours away (2026-11-26). The remaining 91 runs have not run.
+
+What was scored, all on the fixed code:
+
+| Arm | Passed | Pass rate (95% CI) | Median tokens | Median wall time |
+| --- | --- | --- | --- | --- |
+| `fixed-frontier` (`gemini-4-argon`, high) | 23/23 | 100% (85.7–100) | 28,333 | 82.6 s |
+| `fixed-daily` (`gemini-4-argon`, medium) | 11/11 | 100% (74.1–100) | 22,254 | 42.2 s |
+| `auto-route` | 15/15 | 100% (79.6–100) | 22,697 | 44.9 s |
+| `auto-route-escalate` | 20/20 | 100% (83.9–100) | 21,891 | 39.5 s |
+
+- **The fix held in what ran.** All 69 scored runs passed with one attempt, against 55 of 64 before the fix, and Antigravity's records for those turns show no sub-agent and no denied command. The two attempts ran different runs in a different order, so this is a before-and-after reading, not a paired comparison.
+- **It is not a comparison of arms.** The order is random, so each arm holds a different subset of tasks; only three tasks have all four arms, and `auto-route` has nine pairs with the frontier arm. No pass-rate difference should be read from the table.
+- **High effort cost more tokens and time than medium** on the same model: a median of about 28,000 tokens and 83 s against about 22,000 and 42 s. The rules chose medium for 30 of the 35 routed runs, high for 4 and the fast model for one.
+- **One pass had a failed visible check.** `py-binary-frames` on `auto-route` edited two files, failed the visible test and passed the hidden check. A pass is defined by the hidden check, so it counts.
+- **To finish:** rerun the command with `--resume` after the quota resets. A 160-run benchmark on `gemini-4-argon` does not fit in one week of this plan's quota once the first attempt's turns are counted.
+
+Raw results for both providers are in the git-ignored `bench/results/` on the machine that ran them and are not committed.

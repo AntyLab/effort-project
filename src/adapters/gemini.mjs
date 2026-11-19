@@ -1,9 +1,10 @@
-import { mkdtemp, realpath, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, realpath, rm, stat } from 'node:fs/promises';
 import { createReadStream } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { isAbsolute, join } from 'node:path';
+import { isAbsolute, join, relative, sep } from 'node:path';
 import { providerCommand } from '../provider-cli.mjs';
 import { execute } from './claude.mjs';
+import { skip } from '../repository.mjs';
 
 export const capabilities = Object.freeze({
   id: 'gemini',
@@ -19,6 +20,33 @@ const MAX_LABEL_BYTES = 200;
 const SESSION_ID = /^[a-zA-Z0-9_-]{1,256}$/;
 const MODEL_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:/[\]-]{0,199}$/;
 const SHELL_LIMIT = 'Shell commands are not available in this session: read and edit files only, and do not run tests or other commands.';
+// agy 1.5.12 gives the model no tool to list or search files. Left to guess names, it starts a
+// sub-agent, ends the print turn "waiting" for it and edits nothing, so the prompt carries the list.
+const NO_AGENTS = 'This session has no tool for listing or searching files, so the workspace files are listed below. Do not start sub-agents or wait for one: do the work yourself in this turn.';
+const MAX_LISTED_FILES = 400, MAX_LISTED_DIRECTORIES = 400;
+
+/** Workspace-relative file paths, shallowest first; hidden and dependency folders are left out. */
+async function workspaceFiles(root) {
+  const files = [], pending = [root];
+  let directories = 0;
+  while (pending.length) {
+    if (++directories > MAX_LISTED_DIRECTORIES) return { files, truncated: true };
+    const directory = pending.shift();
+    let entries;
+    try { entries = await readdir(directory, { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries.sort((a, b) => a.name < b.name ? -1 : 1)) {
+      if (entry.name.startsWith('.') || skip.has(entry.name) || entry.isSymbolicLink()) continue;
+      const path = join(directory, entry.name);
+      if (entry.isDirectory()) pending.push(path);
+      else if (entry.isFile()) {
+        if (files.length >= MAX_LISTED_FILES) return { files, truncated: true };
+        files.push(relative(root, path).split(sep).join('/'));
+      }
+    }
+  }
+  return { files, truncated: false };
+}
+
 const emptyUsage = () => ({ inputTokens: null, outputTokens: null, cachedInputTokens: null, costUsd: null });
 const reportedNumber = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
 
@@ -77,6 +105,8 @@ function accessFailure(value) {
   if (/billing[_ ]error|credit balance|account_on_hold|payment required/i.test(value)) return 'account_blocked';
   if (/rate[ _-]limit|usage limit|quota|resource_exhausted|\b429\b/i.test(value)) return 'rate_limited';
   if (/permission[_ ]denied|not permitted|oauth_org_not_allowed/i.test(value)) return 'permission_denied';
+  // agy checks the account with Google before each turn; when that call fails no turn has run.
+  if (/eligibility check failed/i.test(value)) return 'service_unavailable';
   return null;
 }
 
@@ -85,6 +115,7 @@ const ERRORS = {
   account_blocked: ['blocked', 'Gemini reported an account or billing restriction.'],
   rate_limited: ['blocked', 'Gemini reported a rate or usage limit.'],
   permission_denied: ['blocked', 'Gemini reported a permission restriction.'],
+  service_unavailable: ['blocked', 'Antigravity could not check this account with Google, so no turn ran. Try again later.'],
   model_unavailable: ['blocked', 'The requested Gemini model is unavailable. No replacement model was selected by this adapter.'],
   unsupported_effort: ['blocked', 'The requested effort is unavailable for this Gemini model.'],
   tool_denied: ['blocked', 'Gemini denied a tool action.'],
@@ -132,7 +163,9 @@ export async function run(inputOptions) {
     directory = await mkdtemp(join(tmpdir(), 'effort-gemini-'));
     const log = join(directory, 'turn.log');
     // shortcut: agy print has no system-prompt or tool-allowlist flag, upgrade when the CLI offers either.
-    const prompt = `${options.prompt}\n\n${SHELL_LIMIT}`;
+    // shortcut: a workspace over 400 files is listed only in part, upgrade when agy offers a listing tool.
+    const listed = await workspaceFiles(options.cwd);
+    const prompt = `${options.prompt}\n\n${SHELL_LIMIT}\n\n${NO_AGENTS}\n\nFiles in this workspace (hidden and dependency folders left out):\n${listed.files.join('\n') || '(none)'}${listed.truncated ? `\n(Only the first ${listed.files.length} files are listed.)` : ''}`;
     const args = ['--print', prompt, '--output-format', 'json', '--effort', options.effort,
       '--mode', options.allowWrite ? 'accept-edits' : 'plan', '--print-timeout', `${Math.ceil(options.timeoutMs / 1000)}s`,
       '--log-file', log, '--settings', JSON.stringify({ permissions: { allow: ['read_file(*)', ...(options.allowWrite ? ['write_file(*)'] : [])] } })];

@@ -1,14 +1,15 @@
 # Validation record
 
-Release: **0.3.1 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
+Release: **0.3.2 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
 
 ## Gemini, OpenCode and Codex on 0.3.1, 2026-11-19
 
-macOS, Node 26.13, Effort 0.3.1 (`rules-0.5`), agy 1.5.12, OpenCode 1.19.5, codex-cli 0.160.0. Functional checks, not quality or cost evidence.
+macOS, Node 26.13, Effort 0.3.1 (`rules-0.5`), agy 1.5.12, OpenCode 1.19.5, codex-cli 0.170.0. Functional checks, not quality or cost evidence.
 
 - **Gemini.** `effort run --provider gemini` on a one-file typo task chose `gemini-4-hydrogen` at low effort automatically, the file was fixed, and the `node --test` verification passed.
+- **Gemini, after the file-list fix in 0.3.2.** In the held-out benchmark eight Gemini runs had ended with no file changed, because Antigravity 1.5.12 has no tool to list files and Gemini started a sub-agent to look for them. With the workspace file list in the prompt, 69 benchmark runs on `gemini-4-argon` and `gemini-4-hydrogen` all passed, and Antigravity's conversation records for those turns show no sub-agent. Not checked: a project with more than 400 files, and whether the session's `write_file` permission lets Gemini write outside the workspace.
 - **OpenCode.** With no credentials and the free `opencode/flint-40b-free` model, the plugin from `effort config opencode` saved as `.opencode/plugins/effort.mjs` was not loaded: two runs logged nothing from Effort. Saved as `effort.js`, a typo prompt logged `Automatic effort: apply` with `effort=low` and a race-condition prompt logged `apply` with `effort=high`. The instructions now say `effort.js`. `providerAccepted` stays `null`.
-- **Codex.** Not checked: the account's weekly Codex limit was used up, and Codex refused every call until 2026-11-25. The November 16 and 17 records below are the latest Codex evidence.
+- **Codex.** Checked later the same day on codex-cli 0.170.0, once the weekly limit had reset, with the `gpt-6.2` tiers that ship in 0.3.2. `effort run --provider codex` chose `gpt-6-luna` at low effort for a typo task and `gpt-6.2-sol` at medium for an ordinary task; both runs were verified, and Codex's own session records show the same model and effort. A WebSocket client driving the real `codex app-server` behind Effort's router had a turn rewritten from `gpt-6.2-astra` / medium to `gpt-6-luna` / low. Not confirmed: a prompt typed into the official terminal UI on 0.170.0. Scripted `expect` runs fail there for plain Codex too, without Effort: the UI waits for replies to its `OSC 10/11` colour queries and expects `ESC[13u` for Enter, and turns then end with "N warnings" and no session record. The November 17 check on 0.160.0 below is still the latest terminal UI evidence.
 
 ## Suggestion line in the Claude Code terminal UI, 2026-11-18
 
@@ -147,7 +148,7 @@ A 10,000-call microbenchmark of the local rules on two short prompts measured p9
 - Native in-flight effort changes inside Codex/Claude desktop chats.
 - The official Codex terminal UI handshake driven by hand, and OpenCode live acceptance.
 - Google's own Gemini CLI and a native Antigravity plugin.
-- A benchmark arm that also routes the model, and savings/quality evidence on a held-out corpus.
+- Savings or equal quality on a held-out corpus. The held-out runs are in [bench/PILOT.md](../bench/PILOT.md#held-out-round-4-2026-11-18); they are inconclusive on quality, and the Gemini run is unfinished.
 - Windows/Linux live compatibility for the new routes, other provider/CLI versions, or every account/organization policy. Historical Windows Claude checks do not establish those new routes.
 - A universal spending cap. Unknown/cumulative usage is not treated as zero or summed as per-turn usage.
 

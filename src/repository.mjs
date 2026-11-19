@@ -1,7 +1,7 @@
 import { readdir, lstat } from 'node:fs/promises';
 import { resolve, extname, relative, basename, sep } from 'node:path';
 
-const skip = new Set(['.git', 'node_modules', '.venv', 'venv', 'vendor', 'build', 'dist', '.next', 'target', '.effort']);
+export const skip = new Set(['.git', 'node_modules', '.venv', 'venv', 'vendor', 'build', 'dist', '.next', 'target', '.effort']);
 // The scan is bounded by work, not elapsed time: a time budget ran out early on a busy
 // machine, missed files the prompt names and lowered the recommendation.
 const MAX_FILES = 500, MAX_DIRECTORIES = 500;
