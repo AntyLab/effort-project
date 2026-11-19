@@ -6,13 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-### Changed
-
-- Policy `rules-0.5` counts "format" as a mechanical edit only when the prompt asks to format something ("Format src/a.js", "please format the table"). As a noun ("the format documented in properties.py", "the key format") it no longer sends a prompt to the fast tier at low effort. Added after the one failed task in the held-out benchmark, `py-properties-reader`, was routed to Haiku on that word; that task and `node-record-key` no longer count as held out for this rule.
+## [0.3.1] - 2026-11-19
 
 ### Added
 
 - Results of the first held-out benchmark, 40 new tasks on Claude, in [bench/PILOT.md](bench/PILOT.md#held-out-round-4-2026-11-18), and the README's savings table now uses them. Routing cost about a ninth of always using the frontier model, saved almost nothing against the daily model, and failed one task that both fixed models passed.
+
+### Changed
+
+- Policy `rules-0.5` counts "format" as a mechanical edit only when the prompt asks to format something ("Format src/a.js", "please format the table"). As a noun ("the format documented in properties.py", "the key format") it no longer sends a prompt to the fast tier at low effort. Added after the one failed task in the held-out benchmark, `py-properties-reader`, was routed to Haiku on that word; that task and `node-record-key` no longer count as held out for this rule.
 
 ## [0.3.0] - 2026-11-18
 
@@ -117,6 +119,8 @@ First experimental release. It is a transparent rules controller, not a trained 
 - Tests that use fake provider processes and temporary directories, a JavaScript syntax check (`npm run check`), and `npm run smoke:package`, which packs the project, installs it offline into a temporary prefix, and exercises the CLI, MCP tools, dashboard assets and authenticated API.
 - A GitHub Actions workflow that runs these checks on Linux, macOS and Windows with Node.js 22 and 24.
 
-[Unreleased]: https://github.com/AntyLab/effort-project/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/AntyLab/effort-project/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/AntyLab/effort-project/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/AntyLab/effort-project/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AntyLab/effort-project/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/AntyLab/effort-project/releases/tag/v0.1.0

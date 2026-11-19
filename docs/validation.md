@@ -1,6 +1,6 @@
 # Validation record
 
-Release: **0.3.0 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
+Release: **0.3.1 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
 
 ## Suggestion line in the Claude Code terminal UI, 2026-11-18
 
