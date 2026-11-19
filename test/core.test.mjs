@@ -311,12 +311,17 @@ test('automatic run models resolve per tier while pins and omitted models retain
   assert.doesNotThrow(()=>checkRunOptions({model:'auto'},{adapter:f.adapter}));
   for(const [prompt,tier,model] of [['Rename variable','fast','gpt-6-luna'],['Add a settings page','daily','gpt-6.2-sol'],['Investigate a security regression','frontier','gpt-6.2-astra']]){
     const events=[];
-    const result=await runTask({prompt,cwd:f.cwd,model:'auto',onEvent:e=>events.push(e)},f);
+    const result=await runTask({prompt,cwd:f.cwd,model:'auto',allowFast:tier==='fast',onEvent:e=>events.push(e)},f);
     assert.equal(calls.at(-1).model,model);assert.equal(result.task.model,model);
     assert.equal(result.task.tier,tier);assert.equal(result.task.modelSelection,'automatic');
     assert.equal(events[0].model,model);assert.equal(events[0].tier,tier);assert.equal(events[0].modelSelection,'automatic');
     assert.equal((await f.store.get(result.task.id)).model,model);
   }
+  // Without allowFast, a fast pick runs as the daily setting and says why.
+  const held=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto'},f);
+  assert.equal(calls.at(-1).model,'gpt-6.2-sol');assert.equal(calls.at(-1).effort,'medium');
+  assert.equal(held.task.tier,'daily');assert.equal(held.task.modelSelection,'automatic');assert.match(held.task.decisions[0].reason,/fast tier only when you allow it/);
+  for(const allowFast of ['yes',1])assert.throws(()=>checkRunOptions({allowFast},{adapter:f.adapter}),/allowFast/);
   for(const [model,selection] of [['my-pinned-model','pinned'],[undefined,'default']]){
     const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model},f);
     assert.equal(calls.at(-1).model,model);assert.equal(result.task.model,model??null);assert.equal(result.task.modelSelection,selection);
@@ -327,7 +332,7 @@ test('automatic run models resolve per tier while pins and omitted models retain
 });
 test('automatic run models stay fixed through retries and effort escalation',async()=>{
   const calls=[];const f=await fixture(async o=>{calls.push(o);return completed;});let checks=0;
-  const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',verify:['fake-check']},{...f,verifyFn:async()=>++checks===3?{status:'passed',exitCode:0}:{status:'failed',kind:'test',exitCode:1,output:'FAIL',fingerprint:'same'}});
+  const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',allowFast:true,verify:['fake-check']},{...f,verifyFn:async()=>++checks===3?{status:'passed',exitCode:0}:{status:'failed',kind:'test',exitCode:1,output:'FAIL',fingerprint:'same'}});
   assert.deepEqual(calls.map(o=>o.effort),['low','low','medium']);
   assert.deepEqual(calls.map(o=>o.model),Array(3).fill('gpt-6-luna'));
   assert.equal(result.task.model,'gpt-6-luna');assert.equal(result.task.status,'verified');
@@ -341,7 +346,7 @@ test('first pre-submission model rejection falls back once and records both choi
       return completed;
     });
     f.adapter.capabilities.id=provider;
-    const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',maxAttempts:2,verify:['fake-check'],onEvent:e=>events.push(e)},
+    const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',allowFast:true,maxAttempts:2,verify:['fake-check'],onEvent:e=>events.push(e)},
       {...f,verifyFn:async()=>++checks===2?{status:'passed',exitCode:0}:{status:'failed',kind:'test',exitCode:1,output:'FAIL',fingerprint:'same'}});
     assert.deepEqual(calls.map(o=>o.model),[provider==='codex'?'gpt-6-luna':provider==='gemini'?'gemini-4-hydrogen':'haiku',undefined,undefined]);
     assert.deepEqual(calls.map(o=>o.sessionId),[undefined,undefined,'fake-session']);
@@ -355,7 +360,7 @@ test('first pre-submission model rejection falls back once and records both choi
 });
 test('a fallback that is also rejected stops without a second fallback',async()=>{
   const calls=[],events=[];const f=await fixture(async o=>{calls.push(o);o.onEvent({type:'diagnostic',code:'unsupported_effort'});return {status:'blocked',effortEvidence:{turnSubmitted:false}};});
-  const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',onEvent:e=>events.push(e)},f);
+  const result=await runTask({prompt:'Rename variable',cwd:f.cwd,model:'auto',allowFast:true,onEvent:e=>events.push(e)},f);
   assert.deepEqual(calls.map(o=>o.model),['gpt-6-luna',undefined]);assert.equal(result.task.status,'blocked');
   assert.equal(events.filter(e=>e.type==='model_fallback').length,1);
 });

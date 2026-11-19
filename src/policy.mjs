@@ -1,6 +1,6 @@
 import { plainReport, reportsTestFailure, suiteBlocker } from './test-reports.mjs';
 
-export const POLICY_VERSION = 'rules-0.5';
+export const POLICY_VERSION = 'rules-0.6';
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const MODELS = Object.freeze({
   claude: Object.freeze({ fast: 'haiku', daily: 'sonnet', frontier: 'fable' }),
@@ -56,6 +56,12 @@ export function modelTier(features) {
   return 'daily';
 }
 
+// Automatic routing uses the fast tier only when the user allows it: in the
+// benchmarks it saved cents per task, and its wrong picks failed silently.
+export const ALLOW_FAST_VARIABLE = 'EFFORT_ALLOW_FAST';
+export const enabledFlag = (value) => /^(?:1|true|yes|on)$/i.test(String(value ?? '').trim());
+export const fastAllowed = (env = {}) => enabledFlag(env?.[ALLOW_FAST_VARIABLE]);
+
 export function chooseModel(provider, tier, available) {
   if (!Object.hasOwn(MODELS, provider) || !Object.hasOwn(MODELS[provider], tier)) return undefined;
   const model = MODELS[provider][tier];
@@ -67,9 +73,15 @@ export function validateLevel(level) {
   return level;
 }
 
-export function recommend({ prompt, provider = 'generic', facts = {}, maxEffort = 'high', minEffort = 'low' }) {
+/**
+ * The rules' pick for one prompt. Advice (`effort recommend`, suggestions) shows the
+ * fast tier; automatic routing passes allowFast: false unless the user allowed it,
+ * which turns a fast pick into the daily tier at medium effort before the bounds apply.
+ */
+export function recommend({ prompt, provider = 'generic', facts = {}, maxEffort = 'high', minEffort = 'low', allowFast = true }) {
   if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 100_000) throw new Error('Prompt must contain 1–100,000 characters.');
   if (![...Object.keys(MODELS), 'generic'].includes(provider)) throw new Error('Provider must be codex, claude, gemini, or generic.');
+  if (typeof allowFast !== 'boolean') throw new Error('allowFast must be true or false.');
   validateLevel(maxEffort); validateLevel(minEffort);
   if (LEVELS.indexOf(minEffort) > LEVELS.indexOf(maxEffort)) throw new Error('Minimum effort exceeds maximum.');
   const critical = criticalWords.test(prompt);
@@ -94,12 +106,18 @@ export function recommend({ prompt, provider = 'generic', facts = {}, maxEffort 
   }
   if (!reasons.length) reasons.push('Difficulty is uncertain; start at medium and use an independent check.');
   if (manyLanguages && !critical && !complex && !broadEdit) reasons.push('The workspace contains several languages; that describes the checkout, not this request, so it does not change effort.');
+  const features = { promptCharacters: prompt.length, critical, complex, mechanical, broadEdit, manyLanguages, repositoryComplex: broadEdit };
+  let tier = modelTier(features);
+  // A fast pick is always low effort. Held back, it becomes the daily setting.
+  if (tier === 'fast' && !allowFast) {
+    tier = 'daily';
+    effort = 'medium';
+    reasons.push(`Automatic routing keeps this on the daily tier at medium effort; it uses the fast tier only when you allow it (--allow-fast or ${ALLOW_FAST_VARIABLE}=1).`);
+  }
   const unclamped = effort;
   const index = Math.max(LEVELS.indexOf(minEffort), Math.min(LEVELS.indexOf(maxEffort), LEVELS.indexOf(effort)));
   effort = LEVELS[index];
   if (effort !== unclamped) reasons.push(`Your configured effort bounds changed ${unclamped} to ${effort}.`);
-  const features = { promptCharacters: prompt.length, critical, complex, mechanical, broadEdit, manyLanguages, repositoryComplex: broadEdit };
-  const tier = modelTier(features);
   return { effort, tier, model: chooseModel(provider, tier) ?? null, reasons, policyVersion: POLICY_VERSION, confidence: 'low',
     features,
     control: provider === 'generic' ? 'advisory' : 'managed-turns',

@@ -52,6 +52,7 @@ export async function executeRun(entry, context) {
     // that provider failure so it cannot silently score a different model.
     const requestedModel = model === 'auto' ? chooseModel(entry.provider, recommend({
       prompt: task.prompt, provider: entry.provider, facts: await repositoryFacts(workspace, task.prompt), maxEffort: arm.maxEffort,
+      allowFast: arm.allowFast ?? false,
     }).tier) : model;
     const before = await snapshot(workspace);
     let fakeConfig;
@@ -93,7 +94,7 @@ export async function executeRun(entry, context) {
     try {
       outcome = await runTask({
         prompt: task.prompt, cwd: workspace, model: requestedModel ?? undefined, allowWrite: true,
-        effort: arm.effort, maxEffort: arm.maxEffort, maxAttempts: arm.maxAttempts, timeoutMs: context.timeoutMs,
+        effort: arm.effort, maxEffort: arm.maxEffort, allowFast: arm.allowFast ?? false, maxAttempts: arm.maxAttempts, timeoutMs: context.timeoutMs,
         verify: resolveCommand(task.verify, { python: context.python }), signal: controller.signal, onEvent,
         env: context.env, ...launch,
       }, { adapter: getAdapter(entry.provider), store: NULL_STORE, verifyFn: isolatedVerify });

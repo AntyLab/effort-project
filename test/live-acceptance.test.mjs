@@ -32,12 +32,12 @@ test('plan mode runs only local fixture tests, matches policy, and restores brok
   assert.equal(result.failed, false);
   for (const [index, plan] of result.plans.entries()) {
     const fixture = plan.fixture;
-    const prediction = recommend({ provider: plan.provider, prompt: fixture.prompt });
+    const prediction = recommend({ provider: plan.provider, prompt: fixture.prompt, allowFast: fixture.allowFast === true });
     assert.deepEqual(plan.expected, { tier: prediction.tier, effort: prediction.effort, model: chooseModel(plan.provider, prediction.tier) });
     assert.equal(calls[index * 2].source, fixture.broken);
     assert.equal(calls[index * 2 + 1].source, fixture.fixed);
     assert.deepEqual(plan.command.slice(1), ['run', fixture.prompt, '--provider', plan.provider, '--cwd', plan.cwd,
-      '--allow-write', '--max-attempts', '2', '--json', '--', 'node', 'test.mjs']);
+      '--allow-write', '--max-attempts', '2', ...(fixture.allowFast ? ['--allow-fast'] : []), '--json', '--', 'node', 'test.mjs']);
     await assert.rejects(access(plan.cwd), { code: 'ENOENT' });
   }
   assert.equal(lines.filter(line => line.startsWith('Plan {')).length, 9);

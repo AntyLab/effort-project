@@ -23,7 +23,8 @@ async function fixture(t, options = {}, run = async (request) => completed(reque
   const events = [];
   const adapter = { capabilities: { id: 'claude', levels: ['low', 'medium', 'high'] },
     async run(request) { calls.push(request); return run(request); } };
-  const chat = createManagedChat({ adapter, cwd, onEvent: (event) => events.push(event), ...options });
+  // These tests were written with the fast tier in use; the default hold has its own test.
+  const chat = createManagedChat({ adapter, cwd, allowFast: true, onEvent: (event) => events.push(event), ...options });
   return { chat, calls, events, adapter, cwd };
 }
 
@@ -105,7 +106,7 @@ test('fixed effort still selects the built-in model from the prompt tier', async
 test('all built-in providers route by tier while unknown providers retain the current model', async (t) => {
   const f = await fixture(t);
   const geminiCalls = [];
-  const gemini = createManagedChat({ cwd: f.cwd, adapter: { capabilities: { id: 'gemini', levels: ['low', 'medium', 'high'] },
+  const gemini = createManagedChat({ cwd: f.cwd, allowFast: true, adapter: { capabilities: { id: 'gemini', levels: ['low', 'medium', 'high'] },
     async run(request) { geminiCalls.push(request); return completed(request); } } });
   const selected = await gemini.submit('Fix a spelling typo.');
   assert.equal(geminiCalls[0].model, 'gemini-4-hydrogen');
@@ -306,4 +307,19 @@ test('a failed routing observer does not add an unsent prompt to routing history
   const second = await f.chat.submit('Fix a spelling typo.');
   assert.equal(second.status, 'unverified');
   assert.equal(second.requestedEffort, 'low');
+});
+
+test('by default a fast pick runs on the daily model at medium effort', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'effort-chat-test-'));
+  t.after(() => rm(cwd, { recursive: true, force: true }));
+  const calls = [];
+  const adapter = { capabilities: { id: 'claude', levels: ['low', 'medium', 'high'] },
+    async run(request) { calls.push(request); return completed(request); } };
+  const result = await createManagedChat({ adapter, cwd }).submit('Fix a spelling typo in the heading.');
+  assert.equal(result.status, 'unverified');
+  assert.equal(calls[0].model, 'sonnet');
+  assert.equal(calls[0].effort, 'medium');
+  assert.equal(result.decision.tier, 'daily');
+  assert.equal(result.decision.modelSelection, 'automatic');
+  assert.throws(() => createManagedChat({ adapter, cwd, allowFast: 'yes' }), /allowFast/);
 });

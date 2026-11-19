@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Automatic routing no longer drops to the fast tier on its own (policy `rules-0.6`). When the rules pick the fast tier, `effort run`, `effort auto`, the Codex router and the OpenCode plugin use the daily model at medium effort instead, and the Claude Code plugin shows the suggestion line instead of invoking `route-fast`. To allow the fast tier, pass `--allow-fast`, put `"allowFast": true` in an `effort auto --routing-config` file, or set `EFFORT_ALLOW_FAST=1`; the Claude Code plugin needs it next to `EFFORT_AUTO_ROUTE=1`. `effort recommend`, the MCP tools and the suggestion line still show the fast pick, and the `--min-effort` and `--max-effort` bounds still apply. In the benchmarks the fast tier saved a few cents per task against the daily tier, and its one wrong pick, `py-properties-reader`, failed silently. The benchmark's automatic arms follow the new default, and a new `auto-route-fast` arm allows the fast tier. `scripts/live-acceptance.mjs` passes `--allow-fast` for its typo case, so it still checks the fast tier live.
+- `EFFORT_AUTO_ROUTE` and `EFFORT_ALLOW_FAST` accept their on values with surrounding spaces, such as the trailing space that `set EFFORT_AUTO_ROUTE=1 && claude` leaves in cmd.exe.
+
 ## [0.3.2] - 2026-11-19
 
 ### Added

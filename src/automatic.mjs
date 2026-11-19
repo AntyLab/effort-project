@@ -3,11 +3,15 @@ import { recommend, LEVELS, validateLevel } from './policy.mjs';
 const rank = (value) => LEVELS.indexOf(value);
 const MAX_SESSIONS = 256;
 
-/** Per-conversation routing state contains decisions only, never submitted text. */
-export function createAutomaticRouter({ minEffort = 'low', maxEffort = 'high', provider = 'generic', effort = 'auto' } = {}) {
+/**
+ * Per-conversation routing state contains decisions only, never submitted text.
+ * The fast tier is held at the daily tier and medium effort unless allowFast is true.
+ */
+export function createAutomaticRouter({ minEffort = 'low', maxEffort = 'high', provider = 'generic', effort = 'auto', allowFast = false } = {}) {
   validateLevel(minEffort);
   validateLevel(maxEffort);
   if (rank(minEffort) > rank(maxEffort)) throw new Error('Minimum effort exceeds maximum.');
+  if (typeof allowFast !== 'boolean') throw new Error('allowFast must be true or false.');
   if (effort !== 'auto') {
     validateLevel(effort);
     if (rank(effort) < rank(minEffort) || rank(effort) > rank(maxEffort)) throw new Error('Fixed effort is outside the configured bounds.');
@@ -25,7 +29,7 @@ export function createAutomaticRouter({ minEffort = 'low', maxEffort = 'high', p
       const supported = LEVELS.filter((level) => supportedEfforts.includes(level) && rank(level) >= rank(minEffort) && rank(level) <= rank(maxEffort));
       // The shared policy keeps a multilingual checkout from inflating a narrow
       // mechanical request, while a request naming many files still counts as broad.
-      const recommendation = recommend({ prompt, provider, facts, minEffort, maxEffort });
+      const recommendation = recommend({ prompt, provider, facts, minEffort, maxEffort, allowFast });
       const reasons = [...recommendation.reasons];
       const previous = sessions.get(sessionId);
       let desired = effort === 'auto' ? recommendation.effort : effort;

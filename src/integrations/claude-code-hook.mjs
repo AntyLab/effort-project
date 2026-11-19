@@ -1,6 +1,6 @@
 import { open, stat } from 'node:fs/promises';
 import { isAbsolute } from 'node:path';
-import { MODELS, recommend } from '../policy.mjs';
+import { MODELS, recommend, enabledFlag, fastAllowed } from '../policy.mjs';
 
 // Claude Code UserPromptSubmit suggestions, with skill-based routing by opt-in.
 // Prompt and transcript text stay in memory: never written, logged or sent.
@@ -44,7 +44,10 @@ export function promptAdvice(event, { env = {}, previousPrompts = [] } = {}) {
     }
   }
   const suffix = inherited ? ' Based on your earlier request.' : '';
-  if (!/^(?:1|true|yes|on)$/i.test(env.EFFORT_AUTO_ROUTE ?? '') || suggested.effort === 'medium') {
+  // A fast pick is shown as a suggestion; it routes to the fast fork only when
+  // EFFORT_ALLOW_FAST allows it as well as EFFORT_AUTO_ROUTE.
+  const heldFast = suggested.effort === 'low' && !fastAllowed(env);
+  if (!enabledFlag(env.EFFORT_AUTO_ROUTE) || suggested.effort === 'medium' || heldFast) {
     const model = MODELS.claude[suggested.tier];
     return { systemMessage: `Effort suggests ${model} · ${suggested.effort} effort for this prompt (/model ${model}, /effort ${suggested.effort}).${suffix}` };
   }

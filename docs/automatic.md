@@ -19,7 +19,7 @@ The ordinary website remains a local recommendation and run-history dashboard. O
 
 Install the [Claude Code plugin](claude-code-plugin.md) to route inside Claude Code's own interface. Its `UserPromptSubmit` hook asks Claude to invoke one of three skills:
 
-- `route-fast`: a fork on Haiku at low effort for short mechanical requests.
+- `route-fast`: a fork on Haiku at low effort for short mechanical requests, only when `EFFORT_ALLOW_FAST=1` is set too. Without it, those requests get the suggestion line and stay on the session's settings.
 - `route-frontier`: a fork on Fable at high effort for requests that are both high-stakes and investigative or tangled.
 - `route-hard`: high effort for the rest of the turn on the session's model for other high-effort requests.
 
@@ -63,6 +63,8 @@ node bin/effort.mjs config opencode
 
 Create a new `.opencode/plugins/effort.js` in the chosen project and paste the printed single export. Use the `.js` ending: OpenCode 1.19.5 does not load a plugin file ending in `.mjs`. Preserve existing plugins and config. OpenCode loads this project plugin on the next session. Effort does not write global settings. Regenerate the module if you move the Effort installation; remove that one module to disable the integration.
 
+The plugin applies low effort only when the fast tier is allowed: set `EFFORT_ALLOW_FAST=1` in the environment OpenCode starts in, or pass `allowFast: true` in a wrapper. Otherwise a short mechanical request gets medium. See [model routing](#model-routing).
+
 For custom bounds, use a wrapper exporting only one initializer:
 
 ```js
@@ -71,6 +73,7 @@ export default createEffortPlugin({
   minEffort: 'low',
   maxEffort: 'high',
   agents: ['build', 'plan'],
+  allowFast: false,
 });
 ```
 
@@ -97,7 +100,13 @@ A live WebSocket client check drove the real `codex app-server` through this rou
 
 ## Model routing
 
-Built-in model selection is on by default in managed runs, managed text sessions and the Codex router. Short mechanical requests use the fast tier; requests that are both high-stakes and investigative or tangled use frontier; everything else uses daily.
+Built-in model selection is on by default in managed runs, managed text sessions and the Codex router. Requests that are both high-stakes and investigative or tangled use frontier; everything else uses daily. The rules pick the fast tier at low effort for short mechanical requests, and `effort recommend` and the Claude Code suggestion line show that pick. Automatic routing does not apply it on its own, though. It runs those requests on the daily tier at medium effort unless you allow the fast tier.
+
+### Allowing the fast tier
+
+Allow it with `--allow-fast` on `effort run` or `effort auto`, with `"allowFast": true` in a routing configuration, or by setting `EFFORT_ALLOW_FAST=1` (also `true`, `yes` or `on`) in the environment. The Claude Code plugin and the OpenCode plugin read that variable too. A routing configuration's `allowFast` wins over the variable, and `--allow-fast` wins over both.
+
+The fast tier is opt-in because of what the benchmarks found ([bench/PILOT.md](../bench/PILOT.md)). It saved a few cents per task against the daily tier. Both tasks the rules have failed got a lower setting than they needed, and both failed silently: the visible tests passed and only the hidden checks caught them. One of them, `py-properties-reader`, was a fast-tier pick. The daily tier at medium effort passed every one of the 40 held-out tasks on Claude and Codex. The `--max-effort` and `--min-effort` bounds still apply after the hold, so `--max-effort low` gives low effort on the daily model.
 
 | Provider | fast | daily | frontier |
 | --- | --- | --- | --- |
@@ -121,13 +130,13 @@ To override the built-in choices in an automatic session, create a JSON file wit
 }
 ```
 
-Pass `--routing-config /path/to/routing.json` to `effort auto`. CLI bounds override file bounds. A fixed `--model` overrides the table. Missing entries use the built-in tier choice before the current/default model. The table stays within the selected provider; it does not choose paid accounts. Codex checks discovered capabilities. In `effort run`, an automatic model rejected before turn submission can fall back once to the provider default; pinned models do not fall back.
+Pass `--routing-config /path/to/routing.json` to `effort auto`. Add `"allowFast": true` to let the session use the fast tier. Without it, automatic routing chooses low effort only when the bounds force it, so a `low` entry applies only then. CLI bounds override file bounds. A fixed `--model` overrides the table. Missing entries use the built-in tier choice before the current/default model. The table stays within the selected provider; it does not choose paid accounts. Codex checks discovered capabilities. In `effort run`, an automatic model rejected before turn submission can fall back once to the provider default; pinned models do not fall back.
 
 Model IDs are configuration, not executable commands. Effort does not download models or edit account settings. Changing models can change billing and invalidate caches. Frontier models cost more, and runs have no spending cap.
 
 ## Policy and evidence
 
-Short mechanical requests can start at low, uncertain tasks at medium, and investigation or costly error risks at high. A request that names five or more distinct workspace files counts as a broad edit and is raised one level, never past high. Files are counted by the relative paths the prompt contains, plus each other bare file name once. The checkout's language count is reported as a reason but never changes effort, because it describes the repository rather than the request. Short ambiguous followups preserve the previous level. Two successive clearly simpler requests allow a downgrade, reducing setting churn. Explicit pins and bounds win over recommendations; bounds can therefore limit effort even for complex work.
+Short mechanical requests are advised low effort on the fast tier; automatic routing starts them at medium on the daily tier unless the fast tier is allowed. Uncertain tasks start at medium, and investigation or costly error risks at high. A request that names five or more distinct workspace files counts as a broad edit and is raised one level, never past high. Files are counted by the relative paths the prompt contains, plus each other bare file name once. The checkout's language count is reported as a reason but never changes effort, because it describes the repository rather than the request. Short ambiguous followups preserve the previous level. Two successive clearly simpler requests allow a downgrade, reducing setting churn. Explicit pins and bounds win over recommendations; bounds can therefore limit effort even for complex work.
 
 This rules policy covers English plus basic Spanish, French, German, Portuguese and Italian keywords. It does not read the entire conversation, inspect repository source contents, route every internal tool result, or learn from provider outputs. Lower settings, fewer output tokens, and successful protocol tests do not prove equal quality or lower total cost. Most Claude models can lose conversation cache reuse when effort changes, and model changes have separate caches; the conservative downgrade rule is a mitigation, not a cost model.
 
