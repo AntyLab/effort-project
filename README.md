@@ -30,7 +30,7 @@ It depends on what you run today. On 40 held-out coding tasks with Claude, one r
 
 - **If you leave your agent on the top model,** Effort cost about a ninth as much here, and about a sixth in an [earlier 17-task pilot](bench/PILOT.md#model-routing-pilot-2026-11-17). On a subscription, the same choice draws down your usage more slowly.
 - **If you already default to a mid model,** Effort saved almost nothing: four cents across 40 tasks. It mostly agreed with you.
-- **Its one failure was its own mistake.** The rules sent a hard parsing task to the smallest model because the request used the word "format", and the result passed the visible tests but not the hidden ones. Check any suggestion to drop to the smallest model on work that matters.
+- **Its one failure was its own mistake.** The rules sent a hard parsing task to the smallest model because the request used the word "format", and the result passed the visible tests but not the hidden ones. The rules now count "format" only as a request to format something; the table shows the run before that change. Check any suggestion to drop to the smallest model on work that matters.
 - **This is a small benchmark, not proof.** Forty tasks cannot show equal quality: the measured difference from the top model is 2.5 points, with an interval from 12.9 points worse to 6.5 points better.
 
 ## Set it up once
@@ -85,7 +85,7 @@ Every recommendation lists its reasons. The full rules are in [`src/policy.mjs`]
 | --- | --- |
 | Risky work: security, login, passwords, tokens, billing, payments, migrations, destructive data changes, privacy or a race condition | high |
 | Investigative work: investigate, debug, refactor, intermittent failures, crashes, leaks, hangs, performance, slowness or bisect | high |
-| A short mechanical edit: a typo, spelling, rename, format, translation, summary, comment, docstring, lint, indentation, version bump, wording, whitespace or sort imports | low |
+| A short mechanical edit: a typo, spelling, rename, a request to format something, translation, summary, comment, docstring, lint, indentation, version bump, wording, whitespace or sort imports | low |
 | Anything else | medium, the uncertain default |
 | The request names five or more files in the workspace | one level higher, at most high |
 

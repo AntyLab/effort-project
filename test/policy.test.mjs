@@ -36,7 +36,7 @@ test('built-in models are frozen and recommendations map every provider and tier
       const result = recommend({ prompt, provider });
       assert.equal(result.tier, tier);
       assert.equal(result.model, MODELS[provider][tier]);
-      assert.equal(result.policyVersion, 'rules-0.4');
+      assert.equal(result.policyVersion, 'rules-0.5');
       assert.equal(chooseModel(provider, tier), MODELS[provider][tier]);
     }
   }
@@ -201,6 +201,22 @@ test('mechanical length and file breadth thresholds are exact', () => {
   assert.equal(broad.effort, 'high');
   assert.equal(broad.features.broadEdit, true);
   assert.equal(recommend({ prompt: 'Reformatting the page' }).effort, 'medium');
+});
+
+test('"format" is mechanical only as a request to format something', () => {
+  for (const prompt of [
+    'Format src/index.js',
+    'Please format the table in README.md',
+    'Can you format this file?',
+    'Sort the keys, then format the JSON output',
+  ]) assert.equal(recommend({ prompt }).tier, 'fast', prompt);
+  for (const prompt of [
+    // The two held-out prompts that reached the fast tier on the noun (rules-0.4).
+    'Fix read_properties against the format documented in properties.py, including malformed input handling. This is a deliberately small format, so please keep it self-contained.',
+    'putRecord and getRecord should use recordKey(tenant, id). README.md has the key format.',
+    'Support the new date format in the parser',
+    'Change le format des dates',
+  ]) assert.equal(recommend({ prompt }).tier, 'daily', prompt);
 });
 
 test('floors and ceilings clamp decisions and explain the change', () => {
