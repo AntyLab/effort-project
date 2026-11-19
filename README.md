@@ -43,6 +43,7 @@ It depends on what you run today. On 40 held-out coding tasks with Claude, one r
 - **If you leave your agent on the top model,** Effort cost about a ninth as much here, and about a sixth in an [earlier 17-task pilot](bench/PILOT.md#model-routing-pilot-2026-11-17). On a subscription, the same choice draws down your usage more slowly.
 - **If you already default to a mid model,** Effort saved almost nothing: four cents across 40 tasks. It mostly agreed with you.
 - **Its one failure was its own mistake.** The rules sent a hard parsing task to the smallest model because the request used the word "format", and the result passed the visible tests but not the hidden ones. The rules now count "format" only as a request to format something; the table shows the run before that change. Check any suggestion to drop to the smallest model on work that matters.
+- **On Codex and Gemini there is no dollar figure.** Neither reports a cost. On Codex every setup passed all 40 tasks and Effort used no fewer tokens than the top model; the Gemini run is unfinished ([details](bench/PILOT.md#held-out-round-4-on-codex-and-gemini-2026-11-19)).
 - **This is a small benchmark, not proof.** Forty tasks cannot show equal quality: the measured difference from the top model is 2.5 points, with an interval from 12.9 points worse to 6.5 points better.
 
 ## Set it up once
@@ -167,7 +168,7 @@ The page is served on `127.0.0.1`, and the printed URL contains a one-time acces
 - **Claude Code suggests by default; routing is opt-in.** With `EFFORT_AUTO_ROUTE=1`, routing depends on Claude following the hook. Forks lose earlier context unless Claude passes it along; the main model still reads the prompt and relays the answer.
 - **Codex desktop and Claude desktop MCP remain advisory.** MCP tools cannot change the host conversation's model or effort.
 - **No spending cap.** Frontier models cost more. Time, attempt and effort limits do not guarantee a final bill.
-- **Gemini needs Antigravity CLI.** File permissions last for the session only; shell commands are never allowed. Token usage is reported, cost is not.
+- **Gemini needs Antigravity CLI.** File permissions last for the session only; shell commands are never allowed. Antigravity gives the model no tool to list files, so Effort puts up to 400 workspace file names in each prompt; a larger project is listed only in part. Token usage is reported, cost is not.
 
 ## Contributing
 

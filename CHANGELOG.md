@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-19
+
+### Added
+
+- Results of the held-out benchmark on Codex and Gemini, in [bench/PILOT.md](bench/PILOT.md#held-out-round-4-on-codex-and-gemini-2026-11-19). On Codex every setup passed all 40 tasks, and routing used no fewer tokens than the frontier model. The Gemini run is unfinished: 69 of 160 runs were scored, all passed, and the rest wait for a weekly quota that resets on 2026-11-26.
+
 ### Changed
 
 - Codex's built-in daily and frontier models are now `gpt-6.2-sol` and `gpt-6.2-astra` instead of `gpt-6.1-sol` and `gpt-6-astra`; fast remains `gpt-6-luna`. A `--model` pin or a `--routing-config` table still overrides them.
@@ -13,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - The OpenCode setup instructions now name the plugin file `.opencode/plugins/effort.js`. They said `effort.mjs`, which OpenCode 1.19.5 does not load, so the integration did nothing for anyone who followed them. Found in a live check on 2026-11-19; the plugin code is unchanged.
+- Gemini turns no longer end without an edit while Gemini hunts for files. Antigravity 1.5.12 gives the model no tool to list or search files and Effort denies shell commands, so Gemini guessed file names, started a sub-agent to find them and ended the turn waiting for it; Effort counted that as a finished attempt with nothing changed. Each Gemini prompt now carries a list of up to 400 workspace files (hidden and dependency folders left out) and says not to start sub-agents. Shell commands stay denied. Found in the held-out Gemini benchmark, where 8 of the first 64 runs ended this way; a project with more than 400 files is still listed only in part.
+- When Antigravity cannot check the account with Google ("Eligibility check failed"), Effort now reports `service_unavailable` and says no turn ran, instead of the generic "could not complete the turn". The benchmark sets such a run aside, redoes it on `--resume` and stops, as it does for a rate limit. Before this, a few minutes of dropped connections at Google were scored as 106 failed benchmark runs.
 
 ## [0.3.1] - 2026-11-19
 
@@ -127,7 +135,8 @@ First experimental release. It is a transparent rules controller, not a trained 
 - Tests that use fake provider processes and temporary directories, a JavaScript syntax check (`npm run check`), and `npm run smoke:package`, which packs the project, installs it offline into a temporary prefix, and exercises the CLI, MCP tools, dashboard assets and authenticated API.
 - A GitHub Actions workflow that runs these checks on Linux, macOS and Windows with Node.js 22 and 24.
 
-[Unreleased]: https://github.com/AntyLab/effort-project/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/AntyLab/effort-project/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/AntyLab/effort-project/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/AntyLab/effort-project/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/AntyLab/effort-project/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/AntyLab/effort-project/compare/v0.1.0...v0.2.0

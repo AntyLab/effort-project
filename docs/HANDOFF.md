@@ -1,6 +1,6 @@
 # Automatic routing handoff
 
-Checkpoint: November 19, 2026 (0.3.1). Effort now routes both model and effort. This is an experimental functional checkpoint, not evidence of equal quality or cost savings.
+Checkpoint: November 19, 2026 (0.3.2). Effort now routes both model and effort. This is an experimental functional checkpoint, not evidence of equal quality or cost savings.
 
 ## Implemented
 
@@ -26,7 +26,8 @@ See [validation](validation.md) for the full record and local checks. Ordinary t
 
 - Support Google's own Gemini CLI and a native Antigravity plugin.
 - Model routing is now benchmarked (`--arms routing`; results in [bench/PILOT.md](../bench/PILOT.md#model-routing-pilot-2026-11-17)). On 17 tasks, routing matched the daily model's pass rate at slightly higher Claude cost and about a sixth of the frontier model's cost; every failure was `node-bank-ledger`, a money-handling task the rules sent to the daily tier. Finish the rate-limited Gemini run with `--resume`.
-- A first held-out run exists (40 tasks, Claude only; [bench/PILOT.md](../bench/PILOT.md#held-out-round-4-2026-11-18)). It is still inconclusive on quality. Run Codex and Gemini on it, and decide what to do about the fast tier's silent failures.
+- The held-out corpus (40 tasks) has run on Claude and Codex ([bench/PILOT.md](../bench/PILOT.md#held-out-round-4-2026-11-18)). It is still inconclusive on quality, and on Codex routing saved no tokens. The Gemini run stopped at 69 of 160 runs when the weekly `gemini-4-argon` quota ran out; finish it with `--resume` after 2026-11-26. Decide what to do about the fast tier's silent failures.
+- Gemini prompts carry a list of at most 400 workspace files because Antigravity 1.5.12 has no file-listing tool. Larger projects are listed in part; revisit when agy offers a listing tool.
 - Perform Windows/Linux live checks of the new routes.
 
 Run commands from the repository root with Node 22 or later. [Automatic setup](automatic.md) describes permissions, session lifetime, evidence, and limitations. A run has no universal spending cap; frontier models can cost more.

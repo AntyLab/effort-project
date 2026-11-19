@@ -49,7 +49,7 @@ With the installed, signed-in Antigravity CLI (`agy`, or `EFFORT_GEMINI_BIN`):
 node bin/effort.mjs auto gemini --cwd /path/to/project
 ```
 
-This uses the same text-session commands, pins, bounds and default 120-second per-prompt limit as the Claude text session. It resumes the provider conversation, and results remain **unverified** without an independent check. `--allow-write` permits session-only file permissions, never shell commands. Antigravity reports token usage but no cost. This is not Google's own Gemini CLI or a native Antigravity plugin.
+This uses the same text-session commands, pins, bounds and default 120-second per-prompt limit as the Claude text session. It resumes the provider conversation, and results remain **unverified** without an independent check. `--allow-write` permits session-only file permissions, never shell commands. Because Antigravity 1.5.12 gives the model no tool to list or search files, each prompt carries a list of up to 400 workspace files (hidden and dependency folders left out) and asks Gemini not to start sub-agents. Antigravity reports token usage but no cost. This is not Google's own Gemini CLI or a native Antigravity plugin.
 
 For one task with independent verification, use `effort run "task" --provider gemini --allow-write -- node test.mjs`. A live rename-typo check selected Gemini 4 Hydrogen at low and passed its verification command; see [validation](validation.md).
 
