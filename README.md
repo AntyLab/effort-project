@@ -8,13 +8,25 @@
 [![Node.js 22 or later](https://img.shields.io/badge/node-%E2%89%A522-339933)](https://nodejs.org/)
 [![No runtime dependencies](https://img.shields.io/badge/runtime%20dependencies-0-brightgreen)](package.json)
 
-**Stop paying top-model prices for typo fixes.** Effort suggests a model and effort (low, medium or high) for every coding-agent prompt, and can switch them for you. It explains each choice, checks results with your tests, and runs locally with no runtime dependencies. It supports Claude Code, Codex, Gemini, OpenCode and local MCP hosts.
+**Not sure which model and effort to pick? Effort tells you, for every prompt.** It reads each coding-agent prompt and suggests a model and an effort level (low, medium or high), so you don't have to leave your agent on the top model at maximum effort just to be safe. It can also switch them for you. It explains each choice, checks results with your tests, and runs locally with no runtime dependencies. It supports Claude Code, Codex, Gemini, OpenCode and local MCP hosts.
 
-> **Status: experimental (0.3).** In two small benchmarks, routing cost a ninth to a sixth of always using the top model. Equal quality is not yet shown. See [Does it save money?](#does-it-save-money)
+In Claude Code, the suggestion appears under each prompt you send:
+
+```text
+> Fix the typo in the README
+Effort suggests haiku · low effort for this prompt (/model haiku, /effort low).
+
+> Investigate an intermittent race condition in the payments queue
+Effort suggests fable · high effort for this prompt (/model fable, /effort high).
+```
+
+> **Status: experimental (0.3).** The picks come from keyword rules you can read, not a trained model. In two small benchmarks they cost a ninth to a sixth of always using the top model. Equal quality is not yet shown. See [Does it save money?](#does-it-save-money)
 
 ## Why
 
-Coding agents let you choose how hard the model thinks. Effort makes that choice before each prompt, using rules you can read in one file ([`src/policy.mjs`](src/policy.mjs)), and raises effort when your tests keep failing the same way.
+Coding agents make you choose a model and how hard it thinks, and nothing tells you which choice fits the prompt in front of you. Many people settle it by leaving everything on the top model at maximum effort, which uses up a subscription or API credit on work a smaller setting does just as well.
+
+Effort makes that choice before each prompt, using rules you can read in one file ([`src/policy.mjs`](src/policy.mjs)). It tells you when the top model is worth it and when it is not, and raises effort when your tests keep failing the same way.
 
 It only uses each agent's real effort setting. It never edits your agent's settings files, never fakes effort by adding "think harder" to a prompt, and never interrupts a request that is already running.
 
