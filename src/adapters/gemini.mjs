@@ -105,6 +105,8 @@ function accessFailure(value) {
   if (/billing[_ ]error|credit balance|account_on_hold|payment required/i.test(value)) return 'account_blocked';
   if (/rate[ _-]limit|usage limit|quota|resource_exhausted|\b429\b/i.test(value)) return 'rate_limited';
   if (/permission[_ ]denied|not permitted|oauth_org_not_allowed/i.test(value)) return 'permission_denied';
+  // agy checks the account with Google before each turn; when that call fails no turn has run.
+  if (/eligibility check failed/i.test(value)) return 'service_unavailable';
   return null;
 }
 
@@ -113,6 +115,7 @@ const ERRORS = {
   account_blocked: ['blocked', 'Gemini reported an account or billing restriction.'],
   rate_limited: ['blocked', 'Gemini reported a rate or usage limit.'],
   permission_denied: ['blocked', 'Gemini reported a permission restriction.'],
+  service_unavailable: ['blocked', 'Antigravity could not check this account with Google, so no turn ran. Try again later.'],
   model_unavailable: ['blocked', 'The requested Gemini model is unavailable. No replacement model was selected by this adapter.'],
   unsupported_effort: ['blocked', 'The requested effort is unavailable for this Gemini model.'],
   tool_denied: ['blocked', 'Gemini denied a tool action.'],

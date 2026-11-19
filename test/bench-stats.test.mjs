@@ -455,7 +455,7 @@ test('provider failures are set aside like harness errors and listed with their 
   for (const code of ['max_turns', 'timeout', 'permission_denied', 'tool_not_allowed', 'output_limit', 'cli_error', 'aborted']) assert.ok(!PROVIDER_FAILURES.claude.includes(code), code);
   for (const code of ['cli_not_found', 'provider_error', 'model_rerouted']) assert.ok(PROVIDER_FAILURES.codex.includes(code), code);
   assert.ok(!PROVIDER_FAILURES.codex.includes('interaction_required'));
-  for (const code of ['authentication_required', 'account_blocked', 'rate_limited', 'permission_denied', 'model_unavailable', 'unsupported_effort', 'missing_cli', 'cli_unavailable', 'invalid_cwd']) assert.ok(PROVIDER_FAILURES.gemini.includes(code), code);
+  for (const code of ['authentication_required', 'account_blocked', 'rate_limited', 'permission_denied', 'service_unavailable', 'model_unavailable', 'unsupported_effort', 'missing_cli', 'cli_unavailable', 'invalid_cwd']) assert.ok(PROVIDER_FAILURES.gemini.includes(code), code);
   for (const code of ['tool_denied', 'empty_response', 'timeout', 'aborted', 'malformed_output', 'callback_error', 'cli_error']) assert.ok(!PROVIDER_FAILURES.gemini.includes(code), code);
 
   const tasks = [{ id: 't1', language: 'node', difficulty: 'easy' }, { id: 't2', language: 'node', difficulty: 'easy' }];

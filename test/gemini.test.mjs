@@ -241,6 +241,7 @@ test('Gemini blocks access failures using fixed messages without leaking prompt,
     ['rate-limit reached', 'rate_limited'],
     ['usage limit reached', 'rate_limited'],
     ['permission denied', 'permission_denied'],
+    ['Eligibility check failed: Post "https://example.invalid/v1internal:loadCodeAssist": EOF', 'service_unavailable'],
   ]) {
     const secret = 'PRIVATE_PROVIDER_SECRET';
     const prompt = 'PRIVATE_PROMPT_CONTENT';

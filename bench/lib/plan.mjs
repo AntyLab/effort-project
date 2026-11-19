@@ -50,7 +50,7 @@ export const PROVIDER_FAILURES = Object.freeze({
   codex: Object.freeze(['cli_not_found', 'process_error', 'cli_unavailable', 'session_busy', 'provider_error', 'model_rerouted',
     'model_mismatch', 'policy_mismatch', 'unsupported_effort', 'effort_mismatch']),
   // Gemini access restrictions use permission_denied; denied tools use tool_denied and are scored.
-  gemini: Object.freeze(['authentication_required', 'account_blocked', 'rate_limited', 'permission_denied', 'model_unavailable',
+  gemini: Object.freeze(['authentication_required', 'account_blocked', 'rate_limited', 'permission_denied', 'service_unavailable', 'model_unavailable',
     'unsupported_effort', 'missing_cli', 'cli_unavailable', 'invalid_cwd']),
 });
 
