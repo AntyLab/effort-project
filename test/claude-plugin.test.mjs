@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { PassThrough, Readable, Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
-import { MAX_INPUT_BYTES, promptAdvice, runPromptHook } from '../src/integrations/claude-code-hook.mjs';
+import { MAX_INPUT_BYTES, MAX_TRANSCRIPT_BYTES, promptAdvice, runPromptHook } from '../src/integrations/claude-code-hook.mjs';
 import { toolDefinitions } from '../src/mcp.mjs';
 import { MODELS } from '../src/policy.mjs';
 
@@ -302,8 +302,9 @@ test('transcript context ignores tool results, meta entries, commands, malformed
   assertSuggestion(JSON.parse((await runHook(hookEvent('continue', root, { transcript_path: tooFar }))).stdout), 'daily', 'medium');
 });
 
-test('transcript reads are bounded to the last 64 KiB and discard the first partial line', async (t) => {
-  const transcript_path = await transcript(t, [userLine(RACE), JSON.stringify({ padding: 'x'.repeat(70_000) }), userLine(TYPO)]);
+test('transcript reads are bounded to the last 4 MiB and discard the first partial line', async (t) => {
+  assert.equal(MAX_TRANSCRIPT_BYTES, 4 * 1024 * 1024);
+  const transcript_path = await transcript(t, [userLine(RACE), JSON.stringify({ padding: 'x'.repeat(MAX_TRANSCRIPT_BYTES) }), userLine(TYPO)]);
   const handle = await open(transcript_path, 'r');
   const { size } = await handle.stat();
   const prototype = Object.getPrototypeOf(handle);
@@ -317,7 +318,7 @@ test('transcript reads are bounded to the last 64 KiB and discard the first part
   const sink = new Writable({ write(chunk, encoding, callback) { callback(); } });
   const advice = await runPromptHook({ stdin: Readable.from([JSON.stringify(hookEvent('continue', root, { transcript_path }))]), stdout: sink, env: {} });
   assertSuggestion(advice, 'fast', 'low', true);
-  assert.deepEqual(reads, [{ length: 65_536, position: size - 65_536 }]);
+  assert.deepEqual(reads, [{ length: MAX_TRANSCRIPT_BYTES, position: size - MAX_TRANSCRIPT_BYTES }]);
   for (const prompt of [RACE, TYPO, 'x'.repeat(81)]) {
     await runPromptHook({ stdin: Readable.from([JSON.stringify(hookEvent(prompt, root, { transcript_path }))]), stdout: sink, env: {} });
   }
@@ -327,9 +328,25 @@ test('transcript reads are bounded to the last 64 KiB and discard the first part
   const partial = await transcript(t, []);
   const first = JSON.stringify(userLine(RACE)) + '\n';
   const last = '\n' + JSON.stringify(userLine('ok')) + '\n';
-  await writeFile(partial, 'x'.repeat(70_000) + first + ' '.repeat(65_536 - Buffer.byteLength(first + last)) + last);
+  await writeFile(partial, 'x'.repeat(70_000) + first + ' '.repeat(MAX_TRANSCRIPT_BYTES - Buffer.byteLength(first + last)) + last);
   const result = await runHook(hookEvent('continue', root, { transcript_path: partial }));
   assertSuggestion(JSON.parse(result.stdout), 'daily', 'medium');
+});
+
+test('follow-ups inherit past the large attachment and request entries Claude Code 2.1.325 writes', async (t) => {
+  // One turn of a 2.1.325 transcript: the prompt, then attachments up to 114 KB, a 75 KB
+  // request shape and tool results, which put the prompt about 330 KB before the end.
+  const bulky = (type, bytes) => JSON.stringify({ type, attachment: { content: 'x'.repeat(bytes) } });
+  const transcript_path = await transcript(t, [
+    userLine(TYPO), bulky('attachment', 19_562), bulky('attachment', 14_630),
+    JSON.stringify({ type: 'api-request-shape', shape: 'x'.repeat(75_794) }),
+    JSON.stringify({ type: 'api-request-blob', message: { role: 'user', content: [{ type: 'text', text: '<system-reminder>context</system-reminder>' }] } }),
+    userLine([{ type: 'tool_result', tool_use_id: 't1', content: 'file text' }]),
+    bulky('attachment', 114_269), bulky('attachment', 9_205), bulky('attachment', 90_000),
+  ]);
+  const result = await runHook(hookEvent('Now the one in CONTRIBUTING.md too', root, { transcript_path }));
+  assert.equal(result.code, 0);
+  assertSuggestion(JSON.parse(result.stdout), 'fast', 'low', true);
 });
 
 test('missing, relative, unreadable and directory transcript paths fall back silently', async (t) => {

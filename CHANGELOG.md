@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- In the Claude Code plugin, short follow-ups such as "Now the one in CONTRIBUTING.md too" inherit the earlier request's suggestion again. Claude Code 2.1.325 writes attachment and request entries of 100 KB and more into the transcript, so after a single turn the earlier prompt sat about 330 KB before the end, outside the 64 KiB the hook read, and every follow-up got the plain medium suggestion. The hook now reads up to the last 4 MiB and parses only the lines that can be user entries. Found in a live check on Windows on 2026-11-19; the same transcript format applies on every system.
+
 ## [0.3.2] - 2026-11-19
 
 ### Added
