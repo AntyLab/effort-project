@@ -4,7 +4,7 @@ export const POLICY_VERSION = 'rules-0.5';
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const MODELS = Object.freeze({
   claude: Object.freeze({ fast: 'haiku', daily: 'sonnet', frontier: 'fable' }),
-  codex: Object.freeze({ fast: 'gpt-6-luna', daily: 'gpt-6.1-sol', frontier: 'gpt-6-astra' }),
+  codex: Object.freeze({ fast: 'gpt-6-luna', daily: 'gpt-6.2-sol', frontier: 'gpt-6.2-astra' }),
   gemini: Object.freeze({ fast: 'gemini-4-hydrogen', daily: 'gemini-4-argon', frontier: 'gemini-4-argon' }),
 });
 export const TIERS = ['fast', 'daily', 'frontier'];

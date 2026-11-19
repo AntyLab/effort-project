@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Codex's built-in daily and frontier models are now `gpt-6.2-sol` and `gpt-6.2-astra` instead of `gpt-6.1-sol` and `gpt-6-astra`; fast remains `gpt-6-luna`. A `--model` pin or a `--routing-config` table still overrides them.
+
 ### Fixed
 
 - The OpenCode setup instructions now name the plugin file `.opencode/plugins/effort.js`. They said `effort.mjs`, which OpenCode 1.19.5 does not load, so the integration did nothing for anyone who followed them. Found in a live check on 2026-11-19; the plugin code is unchanged.
