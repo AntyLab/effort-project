@@ -2,6 +2,35 @@
 
 Release: **0.3.2 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
 
+## Windows live check of the routes, 2026-11-19
+
+Windows 11, Node 24.19, Claude Code 2.1.325 (the CLI bundled with the Claude desktop app), signed in through claude.ai. Effort at the `rules-0.6` commit, which holds the fast tier unless allowed. Functional checks, not quality or cost evidence; costs are Claude Code's list-price figures. Codex, Antigravity and OpenCode are not installed on this machine, so the Codex router, Gemini and the OpenCode plugin were not checked here.
+
+**Claude Code plugin.** Each prompt ran in a fresh folder with headless `claude -p` on Sonnet 5.5 at medium effort, and `--plugin-dir` pointed at a copy of the plugin with Windows (CRLF) line endings, as Git for Windows checks out by default. The plugin's MCP server connected. A logging `PreToolUse` hook recorded the effort of each tool call.
+
+| Prompt | Settings env | Observed |
+| --- | --- | --- |
+| `Fix the typo in README.md` | none | `Effort suggests haiku · low effort…`; no skill; Sonnet fixed the typo at medium |
+| `Fix the typo in README.md` | `EFFORT_AUTO_ROUTE=1` | The same suggestion line and no skill: the fast tier is held |
+| `Fix the typo in README.md` | `EFFORT_AUTO_ROUTE=1`, `EFFORT_ALLOW_FAST=1` | `Effort: haiku at low effort…`; `route-fast`; a `claude-haiku-5-5` fork fixed it, tool calls at low |
+| `Add a second heading called Usage to README.md` | `EFFORT_AUTO_ROUTE=1` | `Effort suggests sonnet · medium effort…`; no skill |
+| `In auth.js, require passwords to be at least 12 characters long.` | `EFFORT_AUTO_ROUTE=1` | `Effort: high effort…`; `route-hard`; the tool calls after the skill ran at high in the main conversation |
+| A race-condition investigation in `counter.mjs` | `EFFORT_AUTO_ROUTE=1` | `Effort: fable at high effort…`; `route-frontier`; a `claude-fable-5-2` fork fixed it at high, about $0.46 |
+| `Now the one in CONTRIBUTING.md too`, after a typo prompt in the same session | none | **Not inherited**: `sonnet · medium` instead of the earlier `haiku · low` |
+
+The follow-up did not inherit because Claude Code 2.1.325 writes large internal entries into the transcript. Attachment lines reach 114 KB and an `api-request-shape` line 75 KB, so after one turn the earlier prompt sat about 330 KB before the end of the file. The hook in 0.3.2 reads only the last 64 KiB, so on this version follow-up inheritance does not work. [#41](https://github.com/AntyLab/effort-project/pull/41) raises the limit to 4 MiB, and with it the same two-prompt session inherited `haiku · low … Based on your earlier request.`
+
+**Managed runs.** `effort run --provider claude --allow-write -- node test.mjs` in fresh folders whose test failed first:
+
+| Task | Flags | Chosen | Observed model | Result |
+| --- | --- | --- | --- | --- |
+| Rename a misspelled export | `--allow-fast` | `haiku`, low | `claude-haiku-5-5` | verified, 1 attempt, $0.001 |
+| Rename a misspelled export | none | `sonnet`, medium (held) | `claude-sonnet-5-5` | verified, 1 attempt, $0.009 |
+| Add `slugify` | none | `sonnet`, medium | `claude-sonnet-5-5` | verified, 1 attempt, $0.011 |
+| Fix a lost-update race | none | `fable`, high | `claude-fable-5-2` | verified, 1 attempt, $0.071 |
+
+Claude Code 2.1.325 reports a third built-in plugin in safe mode, `cc-plugin-privacy`, and the adapter's allowlist in 0.3.2 does not name it. On that adapter the first run above stopped with `isolation_mismatch` before any model call, and so does every managed Claude turn with this Claude Code version, on any system. The four runs used the adapter with that name added, a fix made while preparing the held-out benchmark on this machine. Not checked: `effort auto claude`, which needs an interactive terminal; the plugin installed from the GitHub marketplace instead of `--plugin-dir`; and the desktop Code tab.
+
 ## Gemini, OpenCode and Codex on 0.3.1, 2026-11-19
 
 macOS, Node 26.13, Effort 0.3.1 (`rules-0.5`), agy 1.5.12, OpenCode 1.19.5, codex-cli 0.170.0. Functional checks, not quality or cost evidence.

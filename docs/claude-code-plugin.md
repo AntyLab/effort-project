@@ -22,7 +22,20 @@ Automatic routing is opt-in. In Claude Code's `settings.json`, add or merge:
 }
 ```
 
-The values `1`, `true`, `yes` and `on` enable it, case-insensitively. With routing enabled, low effort asks Claude to invoke `effort-project:route-fast` in a fork on Haiku at low effort. High effort with the frontier tier asks for `effort-project:route-frontier` in a fork on Fable at high effort; other high recommendations ask for `effort-project:route-hard`, which sets high effort for the rest of the turn in the main conversation. Claude relays the fork's result. Medium still shows only the suggestion line.
+The values `1`, `true`, `yes` and `on` enable it, case-insensitively. With routing enabled, high effort with the frontier tier asks Claude to invoke `effort-project:route-frontier` in a fork on Fable at high effort. Other high recommendations ask for `effort-project:route-hard`, which sets high effort for the rest of the turn in the main conversation. Claude relays the fork's result. Medium still shows only the suggestion line.
+
+A low-effort pick, the fast tier, also shows only the suggestion line unless you allow routing to it as well:
+
+```json
+{
+  "env": {
+    "EFFORT_AUTO_ROUTE": "1",
+    "EFFORT_ALLOW_FAST": "1"
+  }
+}
+```
+
+With both set, a low-effort pick asks Claude to invoke `effort-project:route-fast` in a fork on Haiku at low effort. The fast tier is opt-in because it saved cents per task in the benchmarks, while a wrong pick of it failed silently. See [model routing](automatic.md#allowing-the-fast-tier).
 
 A hook cannot set model or effort directly. Opt-in routing adds an instruction for Claude to invoke the appropriate skill and retains the routing message, such as `Effort: haiku at low effort for this prompt.` The fork skills select their worker's model and effort; the main-conversation skill sets effort only.
 
@@ -64,7 +77,7 @@ The marketplace is a third-party marketplace. Like any plugin, the hook and the 
 2. The hook calls `recommend({ prompt, provider: 'claude', maxEffort: 'high' })`, with no repository facts. It ignores both event effort and `$CLAUDE_EFFORT`.
 3. If the trimmed prompt is at most 80 characters and has no critical, complex or mechanical rule signal, the hook can inherit context. It reads at most the last 64 KiB of the transcript, drops any first partial line, and looks at up to three earlier eligible user prompts for the most recent one with a signal. It uses text parts only, skips tool results, metadata and command wrappers, and skips text equal to the current prompt. The path must be absolute; missing, relative or unreadable paths and other read errors fall back to the current prompt's own recommendation.
 4. By default, the hook returns only `systemMessage`, containing the recommended model alias, effort and commands. Inherited suggestions append ` Based on your earlier request.` Effort never exceeds high.
-5. When `EFFORT_AUTO_ROUTE` enables routing, low selects `route-fast`. High with the frontier tier selects `route-frontier`; other high recommendations select `route-hard`. These responses also include `hookSpecificOutput.hookEventName: "UserPromptSubmit"` and a fixed instruction in `hookSpecificOutput.additionalContext`. Medium returns only the suggestion line. For fork routes, the instruction asks Claude to pass the request and needed earlier context to the skill and relay the result; `route-hard` runs before Claude carries out the request in the main conversation.
+5. When `EFFORT_AUTO_ROUTE` enables routing, low selects `route-fast` only if `EFFORT_ALLOW_FAST` is enabled too; otherwise low returns the suggestion line. High with the frontier tier selects `route-frontier`; other high recommendations select `route-hard`. These responses also include `hookSpecificOutput.hookEventName: "UserPromptSubmit"` and a fixed instruction in `hookSpecificOutput.additionalContext`. Medium returns only the suggestion line. For fork routes, the instruction asks Claude to pass the request and needed earlier context to the skill and relay the result; `route-hard` runs before Claude carries out the request in the main conversation.
 
 It prints nothing and exits 0 in these cases:
 
@@ -171,7 +184,7 @@ Disable the plugin in `/plugin`, or run `claude plugin disable effort-project@ef
 
 - With opt-in routing, fork routes run without the earlier conversation unless Claude passes the needed context along. The hook asks it to do so.
 - With fork routing enabled, the main conversation model still reads the prompt and relays the worker's answer. A skill's `model` field changes the fork's model, not the main conversation's model.
-- Opt-in routing depends on Claude following the hook's instruction to invoke the named skill. Remove `EFFORT_AUTO_ROUTE` or set it to `0` to return to suggestions only; disable the plugin to stop suggestions too.
+- Opt-in routing depends on Claude following the hook's instruction to invoke the named skill. Remove `EFFORT_AUTO_ROUTE` or set it to `0` to return to suggestions only; disable the plugin to stop suggestions too. Remove `EFFORT_ALLOW_FAST` to keep routing but stop the Haiku route.
 - The rules are a keyword and length heuristic with low confidence. Short follow-ups can inherit a recent signal from the bounded transcript tail; other conversation context is not assessed. The hook uses no repository facts; `effort recommend --cwd` can recommend a different route when the request names many files.
 - Prompts starting with `/` or `!` are skipped, including a prompt that starts with an absolute path.
 - `node` must be on the `PATH` that Claude Code uses to start hooks and MCP servers.

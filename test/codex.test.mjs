@@ -185,7 +185,7 @@ test('Codex distinguishes rejected preflight RPCs from unacknowledged submitted 
 test('automatic tasks fall back through the real Codex adapter without submitting the rejected model', async (t) => {
   const f = await setup(t);
   const saved = [];
-  const result = await runTask({ ...f.options, prompt: 'Rename a variable', model: 'auto', timeoutMs: 10_000 },
+  const result = await runTask({ ...f.options, prompt: 'Rename a variable', model: 'auto', allowFast: true, timeoutMs: 10_000 },
     { adapter: { run, capabilities }, store: { async save(task) { saved.push(structuredClone(task)); } } });
   assert.equal(result.task.status, 'unverified');
   assert.equal(result.task.modelSelection, 'default-after-fallback');

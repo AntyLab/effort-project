@@ -11,7 +11,8 @@ import { chooseModel, recommend } from '../src/policy.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const cli = join(root, 'bin/effort.mjs');
 export const cases = [
-  { name: 'typo', file: 'greeting.mjs', tier: 'fast', effort: 'low',
+  // Automatic routing uses the fast tier only when allowed, so this case passes --allow-fast.
+  { name: 'typo', file: 'greeting.mjs', tier: 'fast', effort: 'low', allowFast: true,
     prompt: 'Fix the typo: the exported function in greeting.mjs is misspelled geet; rename it to greet.',
     broken: 'export function geet() { return "hello"; }\n',
     fixed: 'export function greet() { return "hello"; }\n',
@@ -119,11 +120,11 @@ export async function runAcceptance(args, { runCommand = execute, print = text =
       const cwd = await mkdtemp(join(scratch, `${provider}-${fixture.name}-`));
       await writeFile(join(cwd, fixture.file), fixture.broken);
       await writeFile(join(cwd, 'test.mjs'), fixture.test);
-      const prediction = recommend({ prompt: fixture.prompt, provider });
+      const prediction = recommend({ prompt: fixture.prompt, provider, allowFast: fixture.allowFast === true });
       const expected = { tier: fixture.tier, model: chooseModel(provider, fixture.tier), effort: fixture.effort };
       assert.deepEqual({ tier: prediction.tier, model: prediction.model, effort: prediction.effort }, expected);
       const command = [cli, 'run', fixture.prompt, '--provider', provider, '--cwd', cwd,
-        '--allow-write', '--max-attempts', '2', '--json', '--', 'node', 'test.mjs'];
+        '--allow-write', '--max-attempts', '2', ...(fixture.allowFast ? ['--allow-fast'] : []), '--json', '--', 'node', 'test.mjs'];
       plans.push({ provider, fixture, cwd, command, expected });
       if (!values.live) print(`Plan ${JSON.stringify({ provider, case: fixture.name, expected, command: [process.execPath, ...command] })}`);
       const check = () => run(['test.mjs'], { cwd, timeoutMs: 30_000 });

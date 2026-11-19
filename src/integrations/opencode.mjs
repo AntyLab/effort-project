@@ -1,6 +1,6 @@
 import { createAutomaticRouter } from '../automatic.mjs';
 import { repositoryFacts } from '../repository.mjs';
-import { LEVELS } from '../policy.mjs';
+import { fastAllowed, LEVELS } from '../policy.mjs';
 
 // OpenCode v1.18.32: chat.message captures a submitted task; chat.params runs
 // after provider defaults and explicit variants have been merged, before send.
@@ -52,9 +52,10 @@ function mergeVariant(base, patch) {
  * repositoryFactsFn is injectable for offline contract tests.
  */
 export function createEffortPlugin({
-  minEffort = 'low', maxEffort = 'high', agents = ['build', 'plan'],
+  minEffort = 'low', maxEffort = 'high', agents = ['build', 'plan'], allowFast = fastAllowed(process.env),
   maxCachedMessages = 128, pendingTtlMs = 60_000, metadataTimeoutMs = 1000, repositoryFactsFn = repositoryFacts,
 } = {}) {
+  if (typeof allowFast !== 'boolean') throw new TypeError('allowFast must be true or false.');
   if (!Array.isArray(agents) || !agents.length || agents.some(agent => !identifier(agent))) throw new TypeError('agents must contain agent names.');
   if (!Number.isInteger(maxCachedMessages) || maxCachedMessages < 1 || maxCachedMessages > 1024) throw new RangeError('maxCachedMessages must be from 1 to 1024.');
   if (!Number.isInteger(pendingTtlMs) || pendingTtlMs < 1 || pendingTtlMs > 300_000) throw new RangeError('pendingTtlMs must be from 1 to 300000.');
@@ -63,7 +64,7 @@ export function createEffortPlugin({
   const allowedAgents = new Set(agents);
 
   return async function EffortPlugin({ directory, client } = {}) {
-    const router = createAutomaticRouter({ minEffort, maxEffort });
+    const router = createAutomaticRouter({ minEffort, maxEffort, allowFast });
     const messages = new Map();
     let configSeen = false;
     let disposed = false;

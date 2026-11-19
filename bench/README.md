@@ -66,6 +66,9 @@ A run that ends with a provider-side failure is not a result of its arm: the CLI
 | `fixed-frontier` (opt-in) | high | high | 1 | Frontier model baseline |
 | `auto-route` (opt-in) | auto | high | 1 | Rules choose both model and effort |
 | `auto-route-escalate` (opt-in) | auto | high | up to 3 | Model routing plus the product's retries and escalation |
+| `auto-route-fast` (opt-in) | auto | high | 1 | Model routing with the fast tier allowed, as `effort run --allow-fast` |
+
+Since `rules-0.6`, the automatic arms do what `effort run` does by default: a fast pick runs at medium effort, and in the routing arms on the daily model. `auto-route-fast` allows the fast tier, so it reproduces `auto-route` as it ran up to `rules-0.5`. Add it with `--arms routing,auto-route-fast`.
 
 Use `--arms routing` to select the four model-routing arms together, for example:
 
