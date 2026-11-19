@@ -7,7 +7,11 @@ import { MODELS, recommend } from '../policy.mjs';
 // https://code.claude.com/docs/en/hooks#userpromptsubmit
 const CEILING = 'high'; // Effort's rules never suggest more than high.
 const MAX_PROMPT_CHARACTERS = 100_000;
-const MAX_TRANSCRIPT_BYTES = 65_536;
+// Claude Code 2.1.325 writes attachment and request entries of 100 KB and more into
+// the transcript, so a single turn can put the previous prompt hundreds of KB back.
+export const MAX_TRANSCRIPT_BYTES = 4 * 1024 * 1024;
+// Only lines that can be user entries are parsed; the large entries are skipped as text.
+const USER_ENTRY = /"type"\s*:\s*"user"/;
 export const MAX_INPUT_BYTES = 1_048_576;
 
 function eligiblePrompt(event) {
@@ -77,6 +81,7 @@ async function previousPrompts(event) {
     if (offset > 0) lines.shift(); // The tail can start in the middle of a JSON line.
     const prompts = [];
     for (let i = lines.length - 1; i >= 0 && prompts.length < 3; i--) {
+      if (!USER_ENTRY.test(lines[i])) continue;
       let entry;
       try { entry = JSON.parse(lines[i]); } catch { continue; }
       if (entry?.type !== 'user' || entry.isMeta === true || entry.message?.role !== 'user') continue;
