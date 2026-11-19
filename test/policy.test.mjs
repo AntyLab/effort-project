@@ -26,7 +26,7 @@ test('built-in models are frozen and recommendations map every provider and tier
   assert.deepEqual(TIERS, ['fast', 'daily', 'frontier']);
   assert.deepEqual(MODELS, {
     claude: { fast: 'haiku', daily: 'sonnet', frontier: 'fable' },
-    codex: { fast: 'gpt-6-luna', daily: 'gpt-6.1-sol', frontier: 'gpt-6-astra' },
+    codex: { fast: 'gpt-6-luna', daily: 'gpt-6.2-sol', frontier: 'gpt-6.2-astra' },
     gemini: { fast: 'gemini-4-hydrogen', daily: 'gemini-4-argon', frontier: 'gemini-4-argon' },
   });
   assert.ok(Object.isFrozen(MODELS));

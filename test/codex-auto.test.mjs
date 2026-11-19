@@ -137,7 +137,7 @@ test('Codex fixed effort pins override heuristic and TUI effort within bounds', 
 });
 
 test('Codex explicit model maps use discovered models, while launcher model pin wins', async () => {
-  const request = async () => ({ data: [catalogModel(), catalogModel('fast-model'), catalogModel('deep-model'), catalogModel('gpt-6-luna'), catalogModel('gpt-6-astra')], nextCursor: null });
+  const request = async () => ({ data: [catalogModel(), catalogModel('fast-model'), catalogModel('deep-model'), catalogModel('gpt-6-luna'), catalogModel('gpt-6.2-astra')], nextCursor: null });
   const f = fixture({ request, models: { low: 'fast-model', high: 'deep-model' } });
   await f.thread();
   const easy = await f.fromClient(f.turn());
@@ -161,14 +161,14 @@ test('Codex explicit model maps use discovered models, while launcher model pin 
 
 test('Codex selects built-in tier models when advertised by model ID or picker alias', async () => {
   for (const pickerAliases of [false, true]) {
-    const models = ['gpt-6-luna', 'gpt-6.1-sol', 'gpt-6-astra'];
+    const models = ['gpt-6-luna', 'gpt-6.2-sol', 'gpt-6.2-astra'];
     const f = fixture({ request: async () => ({ data: [catalogModel(), ...models.map(model =>
       pickerAliases ? catalogModel(`resolved-${model}`, ['low', 'medium', 'high'], model) : catalogModel(model))], nextCursor: null }) });
     await f.thread();
     for (const [prompt, tier, model] of [
       ['Correct a spelling typo.', 'fast', 'gpt-6-luna'],
-      ['Describe the project.', 'daily', 'gpt-6.1-sol'],
-      ['Investigate an authentication regression.', 'frontier', 'gpt-6-astra'],
+      ['Describe the project.', 'daily', 'gpt-6.2-sol'],
+      ['Investigate an authentication regression.', 'frontier', 'gpt-6.2-astra'],
     ]) {
       const rewritten = await f.fromClient(f.turn(prompt));
       const expected = pickerAliases ? `resolved-${model}` : model;
@@ -182,7 +182,7 @@ test('Codex selects built-in tier models when advertised by model ID or picker a
 });
 
 test('Codex preserves the previous model when the built-in tier is absent from the catalog', async () => {
-  const f = fixture({ request: async () => ({ data: [catalogModel(), catalogModel('gpt-6-astra')], nextCursor: null }) });
+  const f = fixture({ request: async () => ({ data: [catalogModel(), catalogModel('gpt-6.2-astra')], nextCursor: null }) });
   await f.thread();
   const original = f.turn();
   const rewritten = await f.fromClient(original);
@@ -192,7 +192,7 @@ test('Codex preserves the previous model when the built-in tier is absent from t
 });
 
 test('Codex built-in selections still require a suitable advertised effort', async () => {
-  const f = fixture({ request: async () => ({ data: [catalogModel(), catalogModel('gpt-6-astra', ['low'])], nextCursor: null }) });
+  const f = fixture({ request: async () => ({ data: [catalogModel(), catalogModel('gpt-6.2-astra', ['low'])], nextCursor: null }) });
   await f.thread();
   const original = f.turn('Investigate an authentication regression.');
   assert.strictEqual(await f.fromClient(original), original);

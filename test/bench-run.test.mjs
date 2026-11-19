@@ -126,8 +126,8 @@ describe('offline benchmark runs', { concurrency: 1 }, () => {
     const summary = await readFile(result.summaryPath, 'utf8');
     assert.match(summary, /Models are selected per arm/);
     assert.match(summary, /\| Arm \| Models requested \| Models observed \|/);
-    assert.match(summary, /\| `fixed-daily` \| `gpt-6.1-sol` \| `gpt-6.1-sol` \|/);
-    assert.match(summary, /\| `fixed-frontier` \| `gpt-6-astra` \| `gpt-6-astra` \|/);
+    assert.match(summary, /\| `fixed-daily` \| `gpt-6.2-sol` \| `gpt-6.2-sol` \|/);
+    assert.match(summary, /\| `fixed-frontier` \| `gpt-6.2-astra` \| `gpt-6.2-astra` \|/);
     assert.doesNotMatch(summary, /arms may not be comparable/);
     for (const provider of aggregate(records, result.meta).providers) {
       for (const arm of provider.arms) {

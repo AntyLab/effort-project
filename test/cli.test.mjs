@@ -112,8 +112,8 @@ test('run dry-run resolves automatic tier models and preserves explicit model pi
   const f = await fixture(t);
   for (const [provider, prompt, tier, model] of [
     ['codex', 'Rename a variable', 'fast', 'gpt-6-luna'],
-    ['codex', 'Add a settings page', 'daily', 'gpt-6.1-sol'],
-    ['codex', 'Investigate a security regression', 'frontier', 'gpt-6-astra'],
+    ['codex', 'Add a settings page', 'daily', 'gpt-6.2-sol'],
+    ['codex', 'Investigate a security regression', 'frontier', 'gpt-6.2-astra'],
     ['claude', 'Rename a variable', 'fast', 'haiku'],
     ['claude', 'Add a settings page', 'daily', 'sonnet'],
     ['gemini', 'Rename a variable', 'fast', 'gemini-4-hydrogen'],

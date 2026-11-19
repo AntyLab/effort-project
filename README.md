@@ -83,7 +83,7 @@ A transparent heuristic, not a trained difficulty model or a measured quality gu
 
 $ effort recommend "Investigate an intermittent race condition in the job queue" --provider codex
 HIGH · heuristic recommendation
-Model: gpt-6-astra · tier: frontier
+Model: gpt-6.2-astra · tier: frontier
 The request touches behavior where an incorrect change can be costly.
 The request suggests investigation or changes with interacting parts.
 A transparent heuristic, not a trained difficulty model or a measured quality guarantee.
@@ -108,7 +108,7 @@ The model tier is **fast** for short mechanical requests, **frontier** when a re
 | Provider | fast | daily | frontier |
 | --- | --- | --- | --- |
 | Claude | haiku | sonnet | fable |
-| Codex | gpt-6-luna | gpt-6.1-sol | gpt-6-astra |
+| Codex | gpt-6-luna | gpt-6.2-sol | gpt-6.2-astra |
 | Gemini | gemini-4-hydrogen | gemini-4-argon | gemini-4-argon |
 
 Pin a model with `--model MODEL_ID`. In `effort auto`, `--routing-config` can override the built-in choices with an effort-to-model table. Precedence is the pin, configured table, built-in tier, then current/default model. See [model routing](docs/automatic.md#model-routing).

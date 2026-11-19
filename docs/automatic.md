@@ -102,7 +102,7 @@ Built-in model selection is on by default in managed runs, managed text sessions
 | Provider | fast | daily | frontier |
 | --- | --- | --- | --- |
 | Claude | haiku | sonnet | fable |
-| Codex | gpt-6-luna | gpt-6.1-sol | gpt-6-astra |
+| Codex | gpt-6-luna | gpt-6.2-sol | gpt-6.2-astra |
 | Gemini | gemini-4-hydrogen | gemini-4-argon | gemini-4-argon |
 
 A `--model MODEL_ID` pin wins. In `effort auto`, a `--routing-config` effort-to-model table comes next, followed by the built-in tier choice, then the current/default model. OpenCode keeps its selected model, and the Claude Code plugin uses its skills rather than this table.

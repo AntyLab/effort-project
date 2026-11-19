@@ -309,7 +309,7 @@ const completed={status:'completed',sessionId:'fake-session',text:'sensitive res
 test('automatic run models resolve per tier while pins and omitted models retain their behavior',async()=>{
   const calls=[];const f=await fixture(async o=>{calls.push(o);return completed;});
   assert.doesNotThrow(()=>checkRunOptions({model:'auto'},{adapter:f.adapter}));
-  for(const [prompt,tier,model] of [['Rename variable','fast','gpt-6-luna'],['Add a settings page','daily','gpt-6.1-sol'],['Investigate a security regression','frontier','gpt-6-astra']]){
+  for(const [prompt,tier,model] of [['Rename variable','fast','gpt-6-luna'],['Add a settings page','daily','gpt-6.2-sol'],['Investigate a security regression','frontier','gpt-6.2-astra']]){
     const events=[];
     const result=await runTask({prompt,cwd:f.cwd,model:'auto',onEvent:e=>events.push(e)},f);
     assert.equal(calls.at(-1).model,model);assert.equal(result.task.model,model);
