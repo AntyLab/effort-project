@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Managed Claude turns work with Claude Code 2.1.325. In safe mode it reports a third built-in plugin, `cc-plugin-privacy`, so the adapter stopped every turn with `isolation_mismatch` before any model call: `effort run` and live benchmarks could not use Claude at all. The plugin's only hook refuses a call that would send the signed-in account's email address as a client's identity; it adds no tools, skills or prompt text. Its built-in descriptor is now accepted, and any other plugin, or a disk plugin with that name, still stops the turn. Found when starting the held-out benchmark on Windows on 2026-11-19.
+
 ## [0.3.2] - 2026-11-19
 
 ### Added
