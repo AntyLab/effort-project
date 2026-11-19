@@ -61,7 +61,7 @@ Generate a local module using the installed Effort path:
 node bin/effort.mjs config opencode
 ```
 
-Create a new `.opencode/plugins/effort.mjs` in the chosen project and paste the printed single export. Preserve existing plugins and config. OpenCode loads this project plugin on the next session. Effort does not write global settings. Regenerate the module if you move the Effort installation; remove that one module to disable the integration.
+Create a new `.opencode/plugins/effort.js` in the chosen project and paste the printed single export. Use the `.js` ending: OpenCode 1.19.5 does not load a plugin file ending in `.mjs`. Preserve existing plugins and config. OpenCode loads this project plugin on the next session. Effort does not write global settings. Regenerate the module if you move the Effort installation; remove that one module to disable the integration.
 
 For custom bounds, use a wrapper exporting only one initializer:
 
