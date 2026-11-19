@@ -2,6 +2,14 @@
 
 Release: **0.3.1 experimental**. This is a functional acceptance record, not a study of coding quality or cost savings. Historical checks retain their dates and environments below.
 
+## Gemini, OpenCode and Codex on 0.3.1, 2026-11-19
+
+macOS, Node 26.13, Effort 0.3.1 (`rules-0.5`), agy 1.5.12, OpenCode 1.19.5, codex-cli 0.160.0. Functional checks, not quality or cost evidence.
+
+- **Gemini.** `effort run --provider gemini` on a one-file typo task chose `gemini-4-hydrogen` at low effort automatically, the file was fixed, and the `node --test` verification passed.
+- **OpenCode.** With no credentials and the free `opencode/flint-40b-free` model, the plugin from `effort config opencode` saved as `.opencode/plugins/effort.mjs` was not loaded: two runs logged nothing from Effort. Saved as `effort.js`, a typo prompt logged `Automatic effort: apply` with `effort=low` and a race-condition prompt logged `apply` with `effort=high`. The instructions now say `effort.js`. `providerAccepted` stays `null`.
+- **Codex.** Not checked: the account's weekly Codex limit was used up, and Codex refused every call until 2026-11-25. The November 16 and 17 records below are the latest Codex evidence.
+
 ## Suggestion line in the Claude Code terminal UI, 2026-11-18
 
 macOS, Claude Code 2.1.310, Haiku 5.5. One functional check, not quality or cost evidence.

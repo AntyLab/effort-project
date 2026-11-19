@@ -52,7 +52,7 @@ Effort plugs into the tool you already use. Choose a native plugin, an automatic
 | You use | One-time setup | What you get in every session |
 | --- | --- | --- |
 | **Claude Code** | In Claude Code, run `/plugin marketplace add AntyLab/effort-project`, then `/plugin install effort-project@effort-project` | A model and effort suggestion for every eligible prompt, with commands to apply it. Set `EFFORT_AUTO_ROUTE=1` in Claude Code's `settings.json` env to opt into skill routing. MCP tools and `/effort-project:explain` are included. [Details](docs/claude-code-plugin.md) |
-| **OpenCode** | Run `effort config opencode` and save the output as `.opencode/plugins/effort.mjs` in your project | Effort switches the model's effort automatically before each prompt. [Details](docs/automatic.md#opencode-plugin) |
+| **OpenCode** | Run `effort config opencode` and save the output as `.opencode/plugins/effort.js` in your project | Effort switches the model's effort automatically before each prompt. [Details](docs/automatic.md#opencode-plugin) |
 | **Codex CLI** | Start with `effort auto codex` | Model and effort routing in the normal terminal UI, using a built-in WebSocket server with no extra packages. [Details](docs/automatic.md#codex-terminal-router) |
 | **Gemini** | Install and sign in to the Antigravity CLI (`agy`) | `effort run --provider gemini` for verified tasks; `effort auto gemini` for a text conversation. [Details](docs/automatic.md#gemini-through-antigravity) |
 | **Claude desktop, or any app with local MCP** | Run `effort config claude` and merge the output into the app's MCP settings | The same MCP tools in that app. [Details](docs/desktop.md) |
