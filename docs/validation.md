@@ -18,7 +18,7 @@ Windows 11, Node 24.19, Claude Code 2.1.325 (the CLI bundled with the Claude des
 | A race-condition investigation in `counter.mjs` | `EFFORT_AUTO_ROUTE=1` | `Effort: fable at high effort…`; `route-frontier`; a `claude-fable-5-2` fork fixed it at high, about $0.46 |
 | `Now the one in CONTRIBUTING.md too`, after a typo prompt in the same session | none | **Not inherited**: `sonnet · medium` instead of the earlier `haiku · low` |
 
-The follow-up did not inherit because Claude Code 2.1.325 writes large internal entries into the transcript. Attachment lines reach 114 KB and an `api-request-shape` line 75 KB, so after one turn the earlier prompt sat about 330 KB before the end of the file. The hook reads only the last 64 KiB, so on this version follow-up inheritance does not work.
+The follow-up did not inherit because Claude Code 2.1.325 writes large internal entries into the transcript. Attachment lines reach 114 KB and an `api-request-shape` line 75 KB, so after one turn the earlier prompt sat about 330 KB before the end of the file. The hook in 0.3.2 reads only the last 64 KiB, so on this version follow-up inheritance does not work. [#41](https://github.com/AntyLab/effort-project/pull/41) raises the limit to 4 MiB, and with it the same two-prompt session inherited `haiku · low … Based on your earlier request.`
 
 **Managed runs.** `effort run --provider claude --allow-write -- node test.mjs` in fresh folders whose test failed first:
 
