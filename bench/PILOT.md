@@ -300,4 +300,11 @@ What this shows and does not show:
 - **The other two Haiku picks passed** (`node-event-name`, a rename, and `node-record-key`, a refactor), at about a tenth of a cent each. The fast tier's saving against the daily model is a few cents per task; its risk is a silent failure.
 - **Caveats.** One repeat, one provider, tasks sized for minutes. The workers' wrong-fix checks are their own reports. Two topics appear in both languages. If the "format" rule is changed in response, this task no longer counts as held out for that rule.
 
-Next steps the data points to: count "format" as mechanical only as a verb next to code or files; reconsider whether automatic routing should ever drop below the daily model without the user asking; and run the other providers on this corpus.
+Next steps the data points to: count "format" as mechanical only as a verb next to code or files (done below); reconsider whether automatic routing should ever drop below the daily model without the user asking; and run the other providers on this corpus.
+
+### Follow-up: "format" as a verb only (`rules-0.5`), 2026-11-19
+
+`rules-0.5` counts "format" as mechanical only when the prompt asks to format something: at the start of a sentence or after words such as "please", "to", "and" or "can you", with an object after it. Of the 40 held-out tasks, two change route, both from Haiku at low effort to Sonnet at medium: `py-properties-reader` ("the format documented in properties.py") and `node-record-key` ("README.md has the key format"). The other 38 keep the route they had; `node-event-name` is now the only fast-tier pick.
+
+No new live run was made. The new route for both tasks is exactly the `fixed-daily` setting, which passed both in the run above, so a fresh run would repeat that arm. Read this way, `auto-route` would have passed 40 of 40 for about the same cost as `fixed-daily`, but that is a reading of one earlier run per task, not a new measurement. The rule was written after seeing these prompts, so neither task counts as held out for it, and it does not show the change generalizes.
+

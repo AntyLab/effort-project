@@ -1,6 +1,6 @@
 import { plainReport, reportsTestFailure, suiteBlocker } from './test-reports.mjs';
 
-export const POLICY_VERSION = 'rules-0.4';
+export const POLICY_VERSION = 'rules-0.5';
 export const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'];
 export const MODELS = Object.freeze({
   claude: Object.freeze({ fast: 'haiku', daily: 'sonnet', frontier: 'fable' }),
@@ -37,7 +37,10 @@ const complexWords = keywordPattern([
   String.raw`indagare|debuggare|rifattorizzare|condizione\s+di\s+gara|intermittente|arresto\s+anomalo`,
 ]);
 const mechanicalWords = keywordPattern([
-  String.raw`rename|typo|spelling|format|translate|summarize|capitaliz\w*`,
+  String.raw`rename|typo|spelling|translate|summarize|capitaliz\w*`,
+  // "format" only as a request to format something ("Format src/a.js", "please format the table").
+  // As a noun ("the format documented in X", "the key format.") it describes real work.
+  String.raw`(?<=^\s*|[.!?;:,\n]\s*|(?<![\p{L}\p{N}_])(?:please|to|and|then|you|just|also|should|must|could|can|will)\s+)format(?=\s+\S)`,
   // Only a comment edit is mechanical: "follow its doc comment" or review comments are real work.
   String.raw`(?:add|write|fix|update|remove|delete|reword|improve)\s+(?:a\s+|an\s+|the\s+|some\s+|its\s+)?(?:code\s+|inline\s+)?(?:comments?|docstrings?)|lint|indent(?:ation)?|bump\s+the\s+version|version\s+bump|wording|reword|whitespace|sort\s+imports`,
   String.raw`errata|falta\s+de\s+ortografía|ortografía|renombrar|traducir|formatear`,
