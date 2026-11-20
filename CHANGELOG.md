@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Results of the private held-out corpus's first three rounds on Claude on Windows, in [bench/PILOT.md](bench/PILOT.md#held-out-rounds-1-to-3-on-claude-windows-2026-11-19): 60 tasks the rules had never met. Routing cost about a tenth of always using the frontier model and 17% more than the daily model. It passed as many tasks as the daily model (57 of 60) and one fewer than the frontier model; both differences are inconclusive. The rules never picked a setting below the daily model's; the routed arms' failures were tasks every arm failed, or run-to-run variation at a Sonnet setting that passed the same task in another arm.
+
 ### Fixed
 
 - Managed Claude turns work with Claude Code 2.1.325. In safe mode it reports a third built-in plugin, `cc-plugin-privacy`, so the adapter stopped every turn with `isolation_mismatch` before any model call: `effort run` and live benchmarks could not use Claude at all. The plugin's only hook refuses a call that would send the signed-in account's email address as a client's identity; it adds no tools, skills or prompt text. Its built-in descriptor is now accepted, and any other plugin, or a disk plugin with that name, still stops the turn. Found when starting the held-out benchmark on Windows on 2026-11-19.
