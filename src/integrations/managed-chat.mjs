@@ -31,7 +31,7 @@ function modelTable(models) {
 
 /** Local routing over isolated adapter turns; provider transcripts stay with the provider. */
 export function createManagedChat({ adapter, cwd, model, models, effort = 'auto',
-  minEffort = 'low', maxEffort = 'high', allowWrite = false, timeoutMs = 120_000,
+  minEffort = 'low', maxEffort = 'high', allowFast = false, allowWrite = false, timeoutMs = 120_000,
   onEvent = () => {}, signal, env, executable, executableArgs, maxTurns, maxBudgetUsd } = {}) {
   if (!adapter || typeof adapter.run !== 'function' || typeof adapter.capabilities?.id !== 'string' ||
       !Array.isArray(adapter.capabilities.levels) || adapter.capabilities.levels.some((level) => !LEVELS.includes(level))) {
@@ -55,7 +55,7 @@ export function createManagedChat({ adapter, cwd, model, models, effort = 'auto'
 
   const provider = adapter.capabilities.id;
   const supportedEfforts = [...adapter.capabilities.levels];
-  const router = createAutomaticRouter({ minEffort, maxEffort,
+  const router = createAutomaticRouter({ minEffort, maxEffort, allowFast,
     provider: Object.hasOwn(MODELS, provider) ? provider : 'generic' });
   const routingSessionId = 'local-conversation';
   let sessionId;

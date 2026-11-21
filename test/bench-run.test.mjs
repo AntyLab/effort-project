@@ -105,24 +105,29 @@ describe('offline benchmark runs', { concurrency: 1 }, () => {
   test('per-arm models reach every fake CLI and results, with per-arm report statistics', async (t) => {
     const directory = await scratch(t);
     const tasks = selectTasks(corpus.tasks, { ids: 'node-rename-export,node-map-limit,node-money-refactor' });
-    const picks = new Map(await Promise.all(tasks.map(async (task) => [task.id, recommend({ prompt: task.prompt, facts: await repositoryFacts(task.repoDir, task.prompt) })])));
-    assert.deepEqual(new Set([...picks.values()].map((pick) => pick.tier)), new Set(['fast', 'daily', 'frontier']));
-    const result = await runBenchmark({ corpus, tasks, arms: ROUTING_ARMS, providers: ['codex', 'claude', 'gemini'],
+    const facts = new Map(await Promise.all(tasks.map(async (task) => [task.id, await repositoryFacts(task.repoDir, task.prompt)])));
+    const pick = (id, allowFast) => recommend({ prompt: tasks.find((task) => task.id === id).prompt, facts: facts.get(id), allowFast });
+    assert.deepEqual(new Set(tasks.map((task) => pick(task.id, true).tier)), new Set(['fast', 'daily', 'frontier']));
+    const result = await runBenchmark({ corpus, tasks, arms: [...ROUTING_ARMS, 'auto-route-fast'], providers: ['codex', 'claude', 'gemini'],
       seed: 'effort-bench', timeoutMs: 60_000, outDir: join(directory, 'out'), referenceArm: 'fixed-frontier' });
     const records = await readRecords(result.runsPath);
-    assert.equal(records.length, 36);
+    assert.equal(records.length, 45);
     for (const record of records) {
       assert.equal(record.harnessError, null, record.key);
       assert.equal(record.providerError, null, record.key);
       const arm = ARMS[record.arm];
-      const pick = picks.get(record.task);
-      const requested = chooseModel(record.provider, arm.model === 'auto' ? pick.tier : arm.model);
+      const choice = pick(record.task, arm.allowFast ?? false);
+      const requested = chooseModel(record.provider, arm.model === 'auto' ? choice.tier : arm.model);
       assert.equal(record.model.requested, requested, record.key);
       assert.deepEqual(record.model.observed, [requested], record.key);
-      assert.equal(record.effort.initial, arm.effort === 'auto' ? pick.effort : arm.effort);
+      assert.equal(record.effort.initial, arm.effort === 'auto' ? choice.effort : arm.effort);
       assert.ok(record.attempts.length >= 1 && record.attempts.length <= arm.maxAttempts);
     }
     assert.ok(records.some((record) => record.arm === 'auto-route-escalate' && record.attempts.length > 1));
+    // Only the arm that allows the fast tier sends the fast pick to the fast model.
+    const fastModel = (record) => record.model.requested === chooseModel(record.provider, 'fast');
+    assert.ok(records.some((record) => record.arm === 'auto-route-fast' && fastModel(record)));
+    assert.ok(!records.some((record) => ['auto-route', 'auto-route-escalate'].includes(record.arm) && fastModel(record)));
     const summary = await readFile(result.summaryPath, 'utf8');
     assert.match(summary, /Models are selected per arm/);
     assert.match(summary, /\| Arm \| Models requested \| Models observed \|/);

@@ -218,7 +218,8 @@ test('Codex remote rewrites the child request and hides its private model discov
   assert.ok(discovered.id.startsWith('effort_'));
   assert.deepEqual(discovered.params, { includeHidden: true });
   const forwarded = requests.find(value => value.method === 'turn/start');
-  assert.deepEqual(forwarded, { ...turn, params: { ...turn.params, effort: 'low' } });
+  // The default holds the typo's fast pick, so the high request is rewritten to medium.
+  assert.deepEqual(forwarded, { ...turn, params: { ...turn.params, effort: 'medium' } });
   assert.equal(ws.sent.some(value => value.id === discovered.id), false);
   assert.equal(ws.sent.some(value => value.result?.data?.[0]?.supportedReasoningEfforts), false);
   assert.equal(f.decisions[0].evidence, 'turn-request-rewrite');

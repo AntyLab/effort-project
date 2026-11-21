@@ -5,6 +5,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import EffortPlugin, { createEffortPlugin } from '../src/integrations/opencode.mjs';
+import { fastAllowed } from '../src/policy.mjs';
 
 const nativeModel = (change = {}) => ({
   id: 'fixture-reasoning-model', providerID: 'fixture-provider', capabilities: { reasoning: true },
@@ -15,7 +16,9 @@ const nativeModel = (change = {}) => ({
 
 async function fixture(t, options = {}, config = {}, context = {}) {
   const calls = [], logs = [];
+  // These tests were written with the fast tier in use; the default hold has its own test.
   const hooks = await createEffortPlugin({
+    allowFast: true,
     repositoryFactsFn: async (...args) => { calls.push(args); return { languages: ['javascript'] }; },
     ...options,
   })({ directory: '/fixture/project', client: { app: { log: async event => logs.push(event) } }, ...context });
@@ -65,7 +68,8 @@ test('default export uses real local repository metadata without an SDK dependen
   await hooks['chat.message']({ sessionID: 'real' }, { message, parts: [{ type: 'text', text: 'Rename fixture.js.' }] });
   const output = { options: {} };
   await hooks['chat.params']({ sessionID: 'real', agent: 'build', message, model: nativeModel() }, output);
-  assert.equal(output.options.reasoningEffort, 'low');
+  // The default export allows the fast tier only when EFFORT_ALLOW_FAST was set as OpenCode loaded it.
+  assert.equal(output.options.reasoningEffort, fastAllowed(process.env) ? 'low' : 'medium');
 });
 
 test('explicit native variants survive in all supported hook shapes', async t => {
@@ -303,6 +307,14 @@ test('prototype-polluting and invalid variant objects are rejected atomically', 
 test('invalid plugin options are rejected before installation', () => {
   for (const options of [
     { agents: [] }, { agents: 'build' }, { maxCachedMessages: 0 }, { maxCachedMessages: Infinity },
-    { pendingTtlMs: -1 }, { metadataTimeoutMs: 0 }, { repositoryFactsFn: null },
+    { pendingTtlMs: -1 }, { metadataTimeoutMs: 0 }, { repositoryFactsFn: null }, { allowFast: 'yes' },
   ]) assert.throws(() => createEffortPlugin(options));
+});
+
+test('without allowFast a fast pick applies medium effort, not low', async t => {
+  const f = await fixture(t, { allowFast: false });
+  const simple = await f.submit();
+  assert.equal((await f.params(simple, { reasoningEffort: 'high' })).options.reasoningEffort, 'medium');
+  assert.equal(f.logs[0].body.extra.action, 'apply');
+  assert.equal(f.logs[0].body.extra.effort, 'medium');
 });

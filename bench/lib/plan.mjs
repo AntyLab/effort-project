@@ -23,6 +23,8 @@ export const ARMS = Object.freeze({
   'fixed-frontier': Object.freeze({ effort: 'high', model: 'frontier', maxEffort: 'high', maxAttempts: 1, optional: true, label: 'Frontier model at high effort, one attempt' }),
   'auto-route': Object.freeze({ effort: 'auto', model: 'auto', maxEffort: 'high', maxAttempts: 1, optional: true, label: 'Rules choose model and effort, one attempt' }),
   'auto-route-escalate': Object.freeze({ effort: 'auto', model: 'auto', maxEffort: 'high', maxAttempts: 3, optional: true, label: '`effort run` defaults: model and effort routing, retries and escalation' }),
+  // Routing as it was up to rules-0.5: fast picks use the fast model at low effort.
+  'auto-route-fast': Object.freeze({ effort: 'auto', model: 'auto', allowFast: true, maxEffort: 'high', maxAttempts: 1, optional: true, label: 'Rules choose model and effort with the fast tier allowed (--allow-fast), one attempt' }),
 });
 export const DEFAULT_ARMS = Object.freeze(['fixed-low', 'fixed-medium', 'fixed-high', 'auto-rules', 'auto-escalate']);
 export const ROUTING_ARMS = Object.freeze(['fixed-daily', 'fixed-frontier', 'auto-route', 'auto-route-escalate']);

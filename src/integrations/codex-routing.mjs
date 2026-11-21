@@ -55,8 +55,8 @@ function textPrompt(params) {
  * model pin wins over an optional effort-to-model map, then built-in tier models
  * apply when discovered. Otherwise the normal TUI model selection is preserved.
  */
-export function createCodexRouting({ cwd, effort = 'auto', model, models, minEffort = 'low', maxEffort = 'high', onDecision = () => {}, request, repositoryFactsFn = repositoryFacts } = {}) {
-  const router = createAutomaticRouter({ provider: 'codex', effort, minEffort, maxEffort });
+export function createCodexRouting({ cwd, effort = 'auto', model, models, minEffort = 'low', maxEffort = 'high', allowFast = false, onDecision = () => {}, request, repositoryFactsFn = repositoryFacts } = {}) {
+  const router = createAutomaticRouter({ provider: 'codex', effort, minEffort, maxEffort, allowFast });
   if (model != null) validateModelMap({ low: model });
   const modelMap = validateModelMap(models) ?? {};
   const threads = new Map();

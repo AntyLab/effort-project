@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { recommend, nextDecision, classifyFailure, MODELS, TIERS, modelTier, chooseModel } from '../src/policy.mjs';
+import { recommend, nextDecision, classifyFailure, MODELS, TIERS, modelTier, chooseModel, fastAllowed } from '../src/policy.mjs';
 
 test('model tiers follow task features independently of effort bounds', () => {
   for (const [prompt, facts, tier] of [
@@ -36,7 +36,7 @@ test('built-in models are frozen and recommendations map every provider and tier
       const result = recommend({ prompt, provider });
       assert.equal(result.tier, tier);
       assert.equal(result.model, MODELS[provider][tier]);
-      assert.equal(result.policyVersion, 'rules-0.5');
+      assert.equal(result.policyVersion, 'rules-0.6');
       assert.equal(chooseModel(provider, tier), MODELS[provider][tier]);
     }
   }
@@ -289,4 +289,33 @@ test('money movement is risky work, and a plain file transfer is not', () => {
   for (const prompt of ['Transfer the file to the new server.', 'Add a load balancer.', 'Keep the columns balanced.']) {
     assert.equal(recommend({ prompt }).features.critical, false, prompt);
   }
+});
+
+test('automatic routing holds a fast pick at the daily tier and medium effort unless allowed', () => {
+  for (const provider of ['codex', 'claude', 'gemini', 'generic']) {
+    const advice = recommend({ prompt: 'Fix a typo in the README.', provider });
+    assert.equal(advice.tier, 'fast'); assert.equal(advice.effort, 'low');
+    const held = recommend({ prompt: 'Fix a typo in the README.', provider, allowFast: false });
+    assert.equal(held.tier, 'daily'); assert.equal(held.effort, 'medium');
+    assert.equal(held.model, provider === 'generic' ? null : MODELS[provider].daily);
+    assert.ok(held.reasons.some(reason => reason.includes('--allow-fast or EFFORT_ALLOW_FAST=1')));
+    assert.deepEqual(held.features, advice.features);
+  }
+  // Only fast picks change; the other tiers route exactly as advised.
+  for (const prompt of ['Add a settings page.', 'Investigate the intermittent payment race condition.', 'Review the authentication permissions.']) {
+    assert.deepEqual(recommend({ prompt, provider: 'claude', allowFast: false }), recommend({ prompt, provider: 'claude' }));
+  }
+  // The configured bounds apply after the hold.
+  const capped = recommend({ prompt: 'Fix a typo.', provider: 'claude', allowFast: false, maxEffort: 'low' });
+  assert.equal(capped.effort, 'low'); assert.equal(capped.tier, 'daily');
+  assert.ok(capped.reasons.some(reason => reason.includes('changed medium to low')));
+  const floored = recommend({ prompt: 'Fix a typo.', provider: 'claude', allowFast: false, minEffort: 'high' });
+  assert.equal(floored.effort, 'high'); assert.equal(floored.tier, 'daily');
+  for (const allowFast of ['false', 0, null]) assert.throws(() => recommend({ prompt: 'Fix a typo.', allowFast }), /allowFast/);
+});
+
+test('EFFORT_ALLOW_FAST takes the same on values as EFFORT_AUTO_ROUTE', () => {
+  for (const value of ['1', 'true', 'yes', 'on', 'TRUE', ' On ', '1 ']) assert.equal(fastAllowed({ EFFORT_ALLOW_FAST: value }), true);
+  for (const value of [undefined, '', '0', 'false', 'no', 'off', 'enabled', '11']) assert.equal(fastAllowed({ EFFORT_ALLOW_FAST: value }), false);
+  assert.equal(fastAllowed(), false); assert.equal(fastAllowed(null), false);
 });

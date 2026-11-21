@@ -69,7 +69,7 @@ async function tempProject(t) {
 function runProcess(args, { input = '', env = {}, cwd = root } = {}) {
   return new Promise((done, fail) => {
     const started = performance.now();
-    const child = spawn(process.execPath, args, { cwd, env: { ...process.env, EFFORT_AUTO_ROUTE: '', ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+    const child = spawn(process.execPath, args, { cwd, env: { ...process.env, EFFORT_AUTO_ROUTE: '', EFFORT_ALLOW_FAST: '', ...env }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let stdout = '', stderr = '';
     child.stdout.setEncoding('utf8').on('data', (data) => { stdout += data; });
     child.stderr.setEncoding('utf8').on('data', (data) => { stderr += data; });
@@ -211,15 +211,24 @@ test('default advice is only a suggestion for every eligible effort and never ec
   assertSuggestion(promptAdvice({ prompt: TYPO }), 'fast', 'low');
 });
 
-test('auto-route explicitly opts into the old low/high routes and a plain medium suggestion', () => {
+test('auto-route opts into high routes; fast picks route only when EFFORT_ALLOW_FAST allows them too', () => {
   for (const value of ['1', 'true', 'yes', 'on', 'TRUE', 'Yes', 'oN']) {
     const options = { env: { EFFORT_AUTO_ROUTE: value } };
-    for (const [prompt, route] of [[TYPO, 'fast'], [HARD, 'hard'], [INVESTIGATE, 'hard'], [RACE, 'frontier']]) {
+    for (const [prompt, route] of [[HARD, 'hard'], [INVESTIGATE, 'hard'], [RACE, 'frontier']]) {
       const advice = promptAdvice(hookEvent(prompt, root), options);
       assertRoute(advice, route);
       assert.ok(!JSON.stringify(advice).includes(prompt));
     }
     assertSuggestion(promptAdvice(hookEvent(PLAIN, root), options), 'daily', 'medium');
+    // A fast pick stays a suggestion unless the fast tier is allowed as well.
+    assertSuggestion(promptAdvice(hookEvent(TYPO, root), options), 'fast', 'low');
+    const allowed = promptAdvice(hookEvent(TYPO, root), { env: { EFFORT_AUTO_ROUTE: value, EFFORT_ALLOW_FAST: value } });
+    assertRoute(allowed, 'fast');
+    assert.ok(!JSON.stringify(allowed).includes(TYPO));
+    assertSuggestion(promptAdvice(hookEvent(TYPO, root), { env: { EFFORT_ALLOW_FAST: value } }), 'fast', 'low');
+  }
+  for (const value of [undefined, '', '0', 'false', 'no', 'off', 'enabled', '11']) {
+    assertSuggestion(promptAdvice(hookEvent(TYPO, root), { env: { EFFORT_AUTO_ROUTE: '1', EFFORT_ALLOW_FAST: value } }), 'fast', 'low');
   }
   for (const value of [undefined, '', '0', 'false', 'no', 'off', 'enabled', '11']) {
     assertSuggestion(promptAdvice({ prompt: RACE }, { env: { EFFORT_AUTO_ROUTE: value } }), 'frontier', 'high');
@@ -232,7 +241,7 @@ test('routing ignores event effort and inherited $CLAUDE_EFFORT', async (t) => {
     for (const [prompt, route, tier, level] of [[RACE, 'frontier', 'frontier', 'high'],
       [TYPO, 'fast', 'fast', 'low'], [HARD, 'hard', 'daily', 'high']]) {
       assertSuggestion(promptAdvice(hookEvent(prompt, root, { effort })), tier, level);
-      assertRoute(promptAdvice(hookEvent(prompt, root, { effort }), { env: { EFFORT_AUTO_ROUTE: '1' } }), route);
+      assertRoute(promptAdvice(hookEvent(prompt, root, { effort }), { env: { EFFORT_AUTO_ROUTE: '1', EFFORT_ALLOW_FAST: '1' } }), route);
     }
     for (const prompt of [PLAIN, 'continue', 'yes, go ahead']) {
       assertSuggestion(promptAdvice(hookEvent(prompt, root, { effort })), 'daily', 'medium');
@@ -240,12 +249,14 @@ test('routing ignores event effort and inherited $CLAUDE_EFFORT', async (t) => {
   }
   const cwd = await tempProject(t);
   for (const [prompt, route] of [[TYPO, 'fast'], [HARD, 'hard'], [RACE, 'frontier']]) {
-    const result = await runHook(hookEvent(prompt, cwd), { env: { CLAUDE_EFFORT: 'max', EFFORT_AUTO_ROUTE: '1' }, cwd });
+    const result = await runHook(hookEvent(prompt, cwd), { env: { CLAUDE_EFFORT: 'max', EFFORT_AUTO_ROUTE: '1', EFFORT_ALLOW_FAST: '1' }, cwd });
     assert.equal(result.code, 0);
     assertRoute(JSON.parse(result.stdout), route);
   }
   const medium = await runHook(hookEvent(PLAIN, cwd), { env: { EFFORT_AUTO_ROUTE: '1' }, cwd });
   assertSuggestion(JSON.parse(medium.stdout), 'daily', 'medium');
+  const held = await runHook(hookEvent(TYPO, cwd), { env: { EFFORT_AUTO_ROUTE: '1' }, cwd });
+  assertSuggestion(JSON.parse(held.stdout), 'fast', 'low');
 });
 
 const userLine = (content, extra = {}) => ({ type: 'user', message: { role: 'user', content }, ...extra });
@@ -261,7 +272,7 @@ test('short follow-ups inherit the most recent signal within three earlier user 
   for (const [earlier, tier, effort, route] of [[TYPO, 'fast', 'low', 'fast'], [RACE, 'frontier', 'high', 'frontier'], [HARD, 'daily', 'high', 'hard']]) {
     const transcript_path = await transcript(t, [userLine(earlier), userLine('ok'), userLine('continue')]);
     for (const auto of [false, true]) {
-      const result = await runHook(hookEvent('continue', root, { transcript_path }), { env: { EFFORT_AUTO_ROUTE: auto ? '1' : '' } });
+      const result = await runHook(hookEvent('continue', root, { transcript_path }), { env: { EFFORT_AUTO_ROUTE: auto ? '1' : '', EFFORT_ALLOW_FAST: auto ? '1' : '' } });
       assert.equal(result.code, 0);
       assert.equal(result.stderr, '');
       const advice = JSON.parse(result.stdout);

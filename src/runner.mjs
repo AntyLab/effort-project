@@ -8,6 +8,8 @@ import { repositoryFacts } from './repository.mjs';
 export function checkRunOptions(options, { adapter, verifyFn = verify } = {}) {
   const maxAttempts = options.maxAttempts ?? 3, timeoutMs = options.timeoutMs ?? 600_000, verifyTimeoutMs = options.verifyTimeoutMs;
   const maxEffort = validateLevel(options.maxEffort ?? 'high');
+  const allowFast = options.allowFast ?? false;
+  if (typeof allowFast !== 'boolean') throw new Error('allowFast (--allow-fast) must be true or false.');
   if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 5) throw new Error('maxAttempts (--max-attempts) must be between 1 and 5.');
   if (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 3_600_000) throw new Error('timeoutMs (--timeout) must be between 0.1 and 3600 seconds.');
   if (verifyTimeoutMs !== undefined && (!Number.isInteger(verifyTimeoutMs) || verifyTimeoutMs < 100 || verifyTimeoutMs > timeoutMs)) throw new Error('verifyTimeoutMs (--verify-timeout) must be at least 0.1 seconds and no longer than timeoutMs (--timeout).');
@@ -25,17 +27,17 @@ export function checkRunOptions(options, { adapter, verifyFn = verify } = {}) {
     if (!adapter.capabilities.levels.includes(options.effort)) throw new Error('Selected adapter does not support this effort.');
     if (LEVELS.indexOf(options.effort) > LEVELS.indexOf(maxEffort)) throw new Error('Requested effort exceeds --max-effort.');
   }
-  return { maxAttempts, timeoutMs, verifyTimeoutMs, maxEffort };
+  return { maxAttempts, timeoutMs, verifyTimeoutMs, maxEffort, allowFast };
 }
 
 export async function runTask(options, { adapter, store, verifyFn = verify } = {}) {
   const {prompt,cwd,allowWrite=false,signal,onEvent=()=>{},env,executable,executableArgs} = options;
-  const { maxAttempts, timeoutMs, verifyTimeoutMs, maxEffort } = checkRunOptions(options, { adapter, verifyFn });
+  const { maxAttempts, timeoutMs, verifyTimeoutMs, maxEffort, allowFast } = checkRunOptions(options, { adapter, verifyFn });
   // An adapter can bound one turn below the task budget (Claude: 30 minutes).
   const turnLimitMs = adapter.capabilities.maxTurnTimeoutMs ?? Infinity;
   const facts = await repositoryFacts(cwd, prompt);
   const provider = adapter.capabilities.id;
-  const prediction = recommend({prompt,provider:Object.hasOwn(MODELS,provider)?provider:'generic',facts,maxEffort});
+  const prediction = recommend({prompt,provider:Object.hasOwn(MODELS,provider)?provider:'generic',facts,maxEffort,allowFast});
   let model = options.model === 'auto' ? chooseModel(provider,prediction.tier) : options.model;
   const modelSelection = options.model === 'auto' && model !== undefined ? 'automatic' : model !== undefined ? 'pinned' : 'default';
   let effort = options.effort && options.effort !== 'auto' ? validateLevel(options.effort) : prediction.effort;

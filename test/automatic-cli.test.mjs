@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { fastAllowed } from '../src/policy.mjs';
 import assert from 'node:assert/strict';
 import { mkdtemp, writeFile, readFile, access, cp, mkdir, realpath, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -162,6 +163,7 @@ test('config generators preserve installation paths containing spaces and percen
     providerID: 'fixture', id: 'reasoning-model', capabilities: { reasoning: true },
     variants: { low: { reasoningEffort: 'low' }, medium: { reasoningEffort: 'medium' }, high: { reasoningEffort: 'high' } },
   } }, output);
-  assert.equal(output.options.reasoningEffort, 'low');
+  // The generated plugin allows the fast tier only when EFFORT_ALLOW_FAST was set as it loaded.
+  assert.equal(output.options.reasoningEffort, fastAllowed(process.env) ? 'low' : 'medium');
   assert.equal(output.options.unrelated, 'preserved');
 });

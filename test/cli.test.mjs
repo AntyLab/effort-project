@@ -104,21 +104,30 @@ test('recommend names the built-in model and tier for providers with a model tab
   assert.equal(text.status, 0, text.stderr);
   assert.match(text.stdout, /Model: sonnet · tier: daily/);
   const json = JSON.parse(f.invoke([...daily, '--json']).stdout);
-  assert.equal(json.model, 'sonnet'); assert.equal(json.policyVersion, 'rules-0.5');
+  assert.equal(json.model, 'sonnet'); assert.equal(json.policyVersion, 'rules-0.6');
   assert.doesNotMatch(f.invoke(['recommend', 'Rename a variable']).stdout, /Model:/);
 });
 
 test('run dry-run resolves automatic tier models and preserves explicit model pins', async (t) => {
   const f = await fixture(t);
-  for (const [provider, prompt, tier, model] of [
-    ['codex', 'Rename a variable', 'fast', 'gpt-6-luna'],
+  for (const [provider, prompt, tier, model, held] of [
+    ['codex', 'Rename a variable', 'fast', 'gpt-6-luna', 'gpt-6.2-sol'],
     ['codex', 'Add a settings page', 'daily', 'gpt-6.2-sol'],
     ['codex', 'Investigate a security regression', 'frontier', 'gpt-6.2-astra'],
-    ['claude', 'Rename a variable', 'fast', 'haiku'],
+    ['claude', 'Rename a variable', 'fast', 'haiku', 'sonnet'],
     ['claude', 'Add a settings page', 'daily', 'sonnet'],
-    ['gemini', 'Rename a variable', 'fast', 'gemini-4-hydrogen'],
+    ['gemini', 'Rename a variable', 'fast', 'gemini-4-hydrogen', 'gemini-4-argon'],
   ]) {
-    const args = ['run', prompt, '--provider', provider, '--cwd', f.cwd, '--dry-run'];
+    const base = ['run', prompt, '--provider', provider, '--cwd', f.cwd, '--dry-run'];
+    if (held) {
+      // Without --allow-fast (or EFFORT_ALLOW_FAST=1) a fast pick runs as the daily setting.
+      const plan = JSON.parse(f.invoke(base).stdout);
+      assert.equal(plan.model, held); assert.equal(plan.tier, 'daily'); assert.equal(plan.effort, 'medium');
+      assert.ok(plan.recommendation.reasons.some(reason => reason.includes('--allow-fast')));
+      for (const value of ['1', 'true']) assert.equal(JSON.parse(f.invoke(base, { EFFORT_ALLOW_FAST: value }).stdout).model, model);
+      assert.equal(JSON.parse(f.invoke([...base, '--allow-fast'], { EFFORT_ALLOW_FAST: '0' }).stdout).effort, 'low');
+    }
+    const args = held ? [...base, '--allow-fast'] : base;
     for (const flags of [[], ['--model', 'auto']]) {
       const result = f.invoke([...args, ...flags]);
       assert.equal(result.status, 0, result.stderr);
@@ -140,6 +149,7 @@ test('auto Gemini uses managed chat options and routing configuration', async (t
   assert.equal(plan.effort, 'auto');
   assert.equal(plan.allowWrite, false);
   assert.equal(plan.timeoutMs, 120_000);
+  assert.equal(plan.allowFast, false);
   assert.equal(plan.willExecute, false);
   const routing = join(f.cwd, 'routing.json');
   await writeFile(routing, JSON.stringify({ models: { low: 'gemini-4-hydrogen', high: 'gemini-4-argon' }, minEffort: 'medium', maxEffort: 'high' }));
@@ -156,10 +166,21 @@ test('auto Gemini uses managed chat options and routing configuration', async (t
     assert.equal(result.status, 1, result.stdout);
     assert.match(result.stderr, message);
   }
+  for (const [config, flags, env, allowFast] of [
+    [{ allowFast: true }, [], {}, true], [{}, ['--allow-fast'], {}, true], [{}, [], { EFFORT_ALLOW_FAST: '1' }, true],
+    [{ allowFast: false }, [], { EFFORT_ALLOW_FAST: '1' }, false], [{}, [], { EFFORT_ALLOW_FAST: 'no' }, false],
+  ]) {
+    await writeFile(routing, JSON.stringify(config));
+    const result = f.invoke(['auto', 'gemini', '--cwd', f.cwd, '--routing-config', routing, ...flags, '--dry-run'], env);
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(JSON.parse(result.stdout).allowFast, allowFast);
+  }
+  await writeFile(routing, '{"allowFast":"yes"}');
+  assert.match(f.invoke(['auto', 'gemini', '--routing-config', routing, '--dry-run']).stderr, /allowFast must be true or false/);
   await writeFile(routing, '{"unknown":true}');
   const invalid = f.invoke(['auto', 'gemini', '--routing-config', routing, '--dry-run']);
   assert.equal(invalid.status, 1);
-  assert.match(invalid.stderr, /Routing configuration accepts models, minEffort, and maxEffort only/);
+  assert.match(invalid.stderr, /Routing configuration accepts models, minEffort, maxEffort, and allowFast only/);
 });
 
 test('the verification command can follow -- and the JSON form still works', async (t) => {

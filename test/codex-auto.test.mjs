@@ -20,6 +20,8 @@ function fixture(options = {}) {
       return { data: [catalogModel()], nextCursor: null };
     },
     repositoryFactsFn: async (cwd, prompt) => { factsCalls.push({ cwd, prompt }); return { languages: ['javascript'], mentionedFiles: 0 }; },
+    // These tests were written with the fast tier in use; the default hold has its own test.
+    allowFast: true,
     ...options,
     onDecision: event => { events.push(event); options.onDecision?.(event); },
   });
@@ -338,4 +340,14 @@ test('Codex releases closed thread state and bounds retained metadata', async ()
   for (let i = 0; i < 129; i++) await f.thread(`bounded-${i}`);
   const evicted = f.turn(undefined, 'bounded-0');
   assert.strictEqual(await f.fromClient(evicted), evicted);
+});
+
+test('Codex automatic routing holds a fast pick at medium effort unless the fast tier is allowed', async () => {
+  const f = fixture({ allowFast: false });
+  await f.thread();
+  const rewritten = await f.fromClient(f.turn());
+  assert.equal(rewritten.params.effort, 'medium');
+  assert.equal(f.events.at(-1).action, 'apply');
+  assert.equal(f.events.at(-1).tier, 'daily');
+  assert.throws(() => createCodexRouting({ allowFast: 'yes' }), /allowFast/);
 });
