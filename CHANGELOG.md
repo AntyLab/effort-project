@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Managed Claude turns work with Claude Code 2.1.325. In safe mode it reports a third built-in plugin, `cc-plugin-privacy`, so the adapter stopped every turn with `isolation_mismatch` before any model call: `effort run` and live benchmarks could not use Claude at all. The plugin's only hook refuses a call that would send the signed-in account's email address as a client's identity; it adds no tools, skills or prompt text. Its built-in descriptor is now accepted, and any other plugin, or a disk plugin with that name, still stops the turn. Found when starting the held-out benchmark on Windows on 2026-11-19.
+- In the Claude Code plugin, short follow-ups such as "Now the one in CONTRIBUTING.md too" inherit the earlier request's suggestion again. Claude Code 2.1.325 writes attachment and request entries of 100 KB and more into the transcript, so after a single turn the earlier prompt sat about 330 KB before the end, outside the 64 KiB the hook read, and every follow-up got the plain medium suggestion. The hook now reads up to the last 4 MiB and parses only the lines that can be user entries. Found in a live check on Windows on 2026-11-19; the same transcript format applies on every system.
 
 ## [0.3.2] - 2026-11-19
 
