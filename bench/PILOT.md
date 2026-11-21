@@ -356,3 +356,52 @@ What was scored, all on the fixed code:
 - **To finish:** rerun the command with `--resume` after the quota resets. A 160-run benchmark on `gemini-4-argon` does not fit in one week of this plan's quota once the first attempt's turns are counted.
 
 Raw results for both providers are in the git-ignored `bench/results/` on the machine that ran them and are not committed.
+
+## Held-out rounds 1 to 3 on Claude, Windows, 2026-11-19
+
+The first live run of the private corpus's first three rounds: the 60 tasks described under [After the pilot](#after-the-pilot), 30 Node.js and 30 Python, 18 easy, 24 medium and 18 hard, with 8 or 9 in each of the seven categories. Three Claude Code sessions wrote them in October without opening `src/policy.mjs`, its tests, the changelog or the routing docs. Each round's prompts were frozen in a commit before any command applied the rules to them, and the manifest has not changed since round 3's freeze (SHA-256 `d08be7f24f1b2d93f20ceed128ef8244d1686698bee1cd30e22f66966c6c0546`); one hidden check was changed afterwards so it runs on Node.js 22. The corpus's README records two exposures. After round 1's freeze its author saw an offline run's effort picks and read a changelog line that describes one rule, and the authors of rounds 2 and 3 read what that rule reacts to before freezing theirs. No rule has been changed after seeing this corpus, and it was never on the machine that ran round 4, so it is held out for `rules-0.5` except for that one rule.
+
+Policy `rules-0.5`, Effort 0.3.2 plus the adapter fix below (commit `c3db048`), Windows 11, Node 24.19.0, Python 3.14.7, and Claude Code 2.1.325, the build bundled with the Claude desktop app. The CLI was signed in through claude.ai on a Max plan, so the runs used plan usage and nothing was billed. Costs are Claude Code's list-price estimates, which on a subscription price cache writes at the 1-hour rate; round 4's were billed with an API key. Arms `--arms routing`, one repeat, 240 runs, seed `heldout-r1-3-claude-2026-11-19`, 600 s per run, margin 5 pp. Fixed with these before the run: both headline comparisons, `auto-route` against `fixed-frontier` (the summary's reference) and against `fixed-daily` (the same `newcombePairedByTask` over the same runs), and the expected limit: if both arms passed all 60 tasks, the interval would be ±6.0 pp, so the verdict would be inconclusive even if routing lost nothing.
+
+```powershell
+$env:EFFORT_CLAUDE_BIN = "$env:LOCALAPPDATA\Claude-Data\claude_pzs8sxrjxfjjc\claude-code\2.1.325\806e0a45e6f5\claude.exe"
+$env:CLAUDE_CONFIG_DIR = "$env:USERPROFILE\.claude-effort-bench"
+node bench/run.mjs self-test --manifest <corpus>\tasks\manifest.json
+node bench/run.mjs --live --max-runs 240 --providers claude --arms routing --manifest <corpus>\tasks\manifest.json --seed heldout-r1-3-claude-2026-11-19 --margin 0.05 --timeout 600 --reference-arm fixed-frontier --out <corpus>\results\live-claude-2026-11-19
+```
+
+Before it, `self-test` passed all 60 tasks, and a fake-provider run of the same four arms (240 runs, split by `--language`) had no harness error, so the corpus needed no harness change. Two problems then stopped the first live attempts before any task ran; neither is a result of an arm.
+
+1. **Startup refusal, fixed.** Claude Code 2.1.325 reports a third built-in plugin in safe mode, `cc-plugin-privacy`. The adapter's allowlist named only the built-ins of 2.1.282 and 2.1.299, so every managed Claude turn, `effort run`'s included, stopped with `isolation_mismatch` before any model call. The plugin's only hook refuses a call that would send the signed-in account's email address as a client's identity; it adds no tools, skills or prompt text. Commit `c3db048` accepts its built-in descriptor, with a regression test.
+2. **Expired sign-in.** The CLI's own login in `~/.claude` had reached its time limit and could not be renewed. Inside a desktop session `auth status` still reports a login, because the app signs its own sessions in. The adapter's stripped environment saw none, and the turn ended `authentication_required`, a provider failure that stops the benchmark. A fresh `auth login` into a separate `CLAUDE_CONFIG_DIR` fixed it and kept the benchmark's session records apart from the desktop app's.
+
+A 2-run smoke test on the seed task `node-paginate` then passed on `claude-sonnet-5-5` and `claude-fable-5-2` for $0.12. The benchmark stopped once more, after 213 scored runs, when the plan's usage limit answered `rate_limited`; that run was set aside, and the same command with `--resume` finished the last 27 the next morning on the same commit and CLI. All 240 runs were scored, with usage known for every one.
+
+| Arm | Passed | Pass rate (95% CI) | vs `fixed-frontier` (95% CI) | vs `fixed-daily` (95% CI) | Cost |
+| --- | --- | --- | --- | --- | --- |
+| `fixed-frontier` (Fable 5.2, high) | 58/60 | 96.7% (88.6–99.1) | reference | — | $23.51 |
+| `fixed-daily` (Sonnet 5.5, medium) | 57/60 | 95.0% (86.3–98.3) | −1.7 pp (−9.2 to +5.0), inconclusive | reference | $2.06 |
+| `auto-route` | 57/60 | 95.0% (86.3–98.3) | −1.7 pp (−9.2 to +5.0), inconclusive | 0.0 pp (−7.7 to +7.7), inconclusive | $2.42 |
+| `auto-route-escalate` | 56/60 | 93.3% (84.1–97.4) | −3.3 pp (−11.6 to +3.6), inconclusive | −1.7 pp (−9.0 to +4.8), inconclusive | $2.51 |
+
+The rules picked Sonnet for 59 tasks, at medium effort for 41 and high for 18, and Fable at high for one; never Haiku. Each tier reported one model. The fast-tier hold proposed as `rules-0.6` (#40) routes all 60 tasks the same way, checked with `plan` only, so these results stand for it too. The whole run used $30.52 of plan usage at list price, the set-aside run included, and its runs took 1.8 hours in all. The median run took 45 s on Fable and 14–15 s in the other arms.
+
+What this shows and does not show:
+
+- **Against always using the frontier model**, routing cost about a tenth as much ($2.42 against $23.51) and passed one task fewer. The interval still reaches −9.2 pp, so equal quality is not shown, as expected with 60 tasks.
+- **Against defaulting to the daily model**, routing bought nothing measurable: both arms passed 57 tasks, with an interval of ±7.7 pp, and routing cost 17% more ($2.42 against $2.06). The rules kept the daily model for 59 tasks, raised its effort for 18 of them and sent one to Fable. Each arm passed one task the other failed.
+- **No failure came from a pick below the daily setting.** Unlike round 4, where the one routed failure was a fast-tier pick, the rules never chose a setting below `fixed-daily`'s. Where a routed arm failed a task that Fable passed (three runs), the same Sonnet setting passed it in another arm, so those read as run-to-run variation, not as routing decisions. Per failed task:
+  - `py-env-names` and `py-header-fold` failed in all four arms, Fable included, with the same hidden tests failing every time. In `py-env-names` every model fixed one of two misspelled names that the README documents and kept the other.
+  - `py-envfile-quotes` failed on Sonnet at medium (`fixed-daily`) and at high (`auto-route-escalate`), each time on a different rule, and passed on Sonnet at high (`auto-route`) and on Fable.
+  - `node-async-inventory` failed once, in `auto-route`, at exactly the setting with which `fixed-daily` passed it.
+  - `py-apply-patch` failed once, in `auto-route-escalate`, after a blocked turn (below).
+- **Escalation had nothing to react to.** `auto-route-escalate` never retried. Every first attempt passed its visible check except that blocked one, and a blocked turn is not retried, so its pass rate is that of one attempt.
+- **A refused file access ends a turn as blocked.** All three permission denials came from `py-apply-patch`: its prompt pastes a stack trace with a path outside the workspace, Sonnet tried to read that path, and `--restricted` refused. In two runs the edit still passed the hidden check; in `auto-route-escalate` it did not, and the blocked turn got no retry.
+- **One hidden check may ask for more than its prompt says.** All four failing `py-header-fold` runs folded an over-long word in a way the prompt's rules seem to allow and the hidden check rejects. That is for the corpus's owner to review; the task counts as it stands. Since every arm fails it, it lowers the pass rates, not the differences.
+- **No agent left its workspace.** The CLI's records of all 241 sessions, one per run, hold 1,455 tool calls (Read, Edit, Grep, Glob and Write). The only four that named a path outside the run's workspace were the refused reads above, and none named the corpus, a solution or a hidden check.
+- **Fable edits visible tests far more often.** It changed visible tests in 44 of its 62 runs, Sonnet in 18 of 178, mostly by adding test cases. Pass and fail come from the hidden checks, so this changes no score.
+- **Caveats.** One repeat, one provider, one machine, tasks sized for minutes. Costs are Claude Code's estimates at 1-hour cache-write prices, so they run higher than round 4's API-key figures. Claude Code sessions wrote these tasks, so the authors and the models under test are one family. The hidden checks and their wrong-fix checks are the authors' own, and one rule was described to two of the three authors. Every attempt had Claude Code's default of 12 agentic turns.
+
+Next steps the data points to: on 100 held-out tasks (round 4's 40 and these 60), automatic routing on Claude has not beaten simply using the daily model; it passed no more tasks at about the same cost or more. With the fast tier held back, the rules can depart from the daily model only upwards, and showing that those picks are worth their cost needs tasks the daily model fails. An equal-quality verdict at 5 pp needs at least 73 tasks even if every pair agrees, and more with disagreements like these. `py-header-fold`'s check should be reviewed before the corpus is used for a claim.
+
+The raw results are in the corpus's git-ignored `results/` folder on the machine that ran them and are not committed; the corpus stays private.
