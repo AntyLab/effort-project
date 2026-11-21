@@ -6,10 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Results of the private held-out corpus's first three rounds on Claude on Windows, in [bench/PILOT.md](bench/PILOT.md#held-out-rounds-1-to-3-on-claude-windows-2026-11-19): 60 tasks the rules had never met. Routing cost about a tenth of always using the frontier model and 17% more than the daily model. It passed as many tasks as the daily model (57 of 60) and one fewer than the frontier model; both differences are inconclusive. The rules never picked a setting below the daily model's; the routed arms' failures were tasks every arm failed, or run-to-run variation at a Sonnet setting that passed the same task in another arm.
+
 ### Changed
 
 - Automatic routing no longer drops to the fast tier on its own (policy `rules-0.6`). When the rules pick the fast tier, `effort run`, `effort auto`, the Codex router and the OpenCode plugin use the daily model at medium effort instead, and the Claude Code plugin shows the suggestion line instead of invoking `route-fast`. To allow the fast tier, pass `--allow-fast`, put `"allowFast": true` in an `effort auto --routing-config` file, or set `EFFORT_ALLOW_FAST=1`; the Claude Code plugin needs it next to `EFFORT_AUTO_ROUTE=1`. `effort recommend`, the MCP tools and the suggestion line still show the fast pick, and the `--min-effort` and `--max-effort` bounds still apply. In the benchmarks the fast tier saved a few cents per task against the daily tier, and its one wrong pick, `py-properties-reader`, failed silently. The benchmark's automatic arms follow the new default, and a new `auto-route-fast` arm allows the fast tier. `scripts/live-acceptance.mjs` passes `--allow-fast` for its typo case, so it still checks the fast tier live.
 - `EFFORT_AUTO_ROUTE` and `EFFORT_ALLOW_FAST` accept their on values with surrounding spaces, such as the trailing space that `set EFFORT_AUTO_ROUTE=1 && claude` leaves in cmd.exe.
+
+### Fixed
+
+- Managed Claude turns work with Claude Code 2.1.325. In safe mode it reports a third built-in plugin, `cc-plugin-privacy`, so the adapter stopped every turn with `isolation_mismatch` before any model call: `effort run` and live benchmarks could not use Claude at all. The plugin's only hook refuses a call that would send the signed-in account's email address as a client's identity; it adds no tools, skills or prompt text. Its built-in descriptor is now accepted, and any other plugin, or a disk plugin with that name, still stops the turn. Found when starting the held-out benchmark on Windows on 2026-11-19.
+- In the Claude Code plugin, short follow-ups such as "Now the one in CONTRIBUTING.md too" inherit the earlier request's suggestion again. Claude Code 2.1.325 writes attachment and request entries of 100 KB and more into the transcript, so after a single turn the earlier prompt sat about 330 KB before the end, outside the 64 KiB the hook read, and every follow-up got the plain medium suggestion. The hook now reads up to the last 4 MiB and parses only the lines that can be user entries. Found in a live check on Windows on 2026-11-19; the same transcript format applies on every system.
 
 ## [0.3.2] - 2026-11-19
 
